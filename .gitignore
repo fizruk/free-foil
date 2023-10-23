@@ -1,3 +1,7 @@
+haskell/free-foil/src/Language/**/Test.hs
+haskell/free-foil/src/Language/**/Skel.hs
+haskell/free-foil/src/Language/**/ErrM.hs
+
 dist
 dist-*
 cabal-dev
@@ -21,3 +25,4 @@ cabal.project.local
 cabal.project.local~
 .HTF/
 .ghc.environment.*
+*.bak

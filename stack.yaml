@@ -1,0 +1,3 @@
+resolver: nightly-2023-09-30
+packages:
+  - haskell/free-foil
