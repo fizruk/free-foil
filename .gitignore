@@ -26,3 +26,7 @@ cabal.project.local~
 .HTF/
 .ghc.environment.*
 *.bak
+*.bsp
+*.scala-build
+*.metals
+*.vscode
