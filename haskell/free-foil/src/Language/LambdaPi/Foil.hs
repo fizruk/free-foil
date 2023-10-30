@@ -1,4 +1,4 @@
-module Language.LamEbdaPi.Foil where
+module Language.LambdaPi.Foil where
 
 import qualified Data.StringMap as SM
 
@@ -10,24 +10,6 @@ data {- kind -} S
   = {- type -} VoidS
   -- | {- type -} Singleton
   -- | {- type -} List
-
--- values:
--- 0, 1, 2        :: Int
--- True           :: Bool
--- (+1)           :: Int -> Int
-
--- types:
--- Int, Bool      :: Type
--- (Int -> Int)   :: Type
--- Maybe Int      :: Type
--- Maybe          :: Type -> Type
--- VoidS          :: S
-
--- kinds:
--- Type
--- Type -> Type
--- (Type -> Type) -> Type
--- S
 
 data Scope (n :: S) = UnsafeScope RawScope
 data Name (n :: S) = UnsafeName RawName
@@ -78,19 +60,6 @@ data Expr n where
   VarEE :: Name n -> Expr n
   AppEE :: Expr n -> Expr n -> Expr n
   LamEE :: NameBinder n l -> Expr l -> Expr n
-
--- λ s. s
-identity :: Expr VoidS
-identity = withFreshBinder emptyScope
-  (\ s -> LamE s (VarEE (nameOf s)))
-
--- λ s. λ z. s (s z)
-two :: Expr VoidS
-two = withFreshBinder emptyScope
-  (\ s -> LamE s $ withFreshBinder (extendScope s emptyScope)
-    (\ z -> LamE z (AppE (VarEE (sink z (nameOf s)))
-                        (AppE (VarE (sink z (nameOf s)))
-                             (VarE (nameOf z))))))
 
 -- >>> putStrLn $ ppExpr identity
 -- λx1. x1
