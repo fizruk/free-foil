@@ -95,11 +95,11 @@ object Foil extends  App{
     withFreshBinder[N, R](scope){(binder: NameBinder[N, _]) => unsafeAssertFresh(binder)(cont)}
 
 
-  def unsafeAssertFresh(binder: NameBinder[_, _])(cont: [N, L, R] => DExt[N, L] ?=>  NameBinder[N, L] => R) = ???
+  def unsafeAssertFresh[N,L,R](binder: NameBinder[_, _])(cont: DExt[N, L] ?=>  NameBinder[N, L] => R) = ???
 
   def withRefreshed[O: Distinct, I <: S, R](scope: Scope[O], name: Name[I])(cont: [O_] => DExt[O, O_] ?=> NameBinder[O, O_] => R): R =
     if (member[I, O](name)(scope)) withFresh(scope)(cont)
-    else unsafeAssertFresh(NameBinder[O, I](name))(cont)
+    else unsafeAssertFresh(NameBinder[O, I](name))(cont[O])
 
   case class Substitution[E[_], I <: S, O <: S](f: [N <: S] => Name[N] => E[N], env: IntMap[E[O]])
 
