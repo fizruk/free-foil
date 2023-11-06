@@ -2,6 +2,8 @@ haskell/free-foil/src/Language/**/Test.hs
 haskell/free-foil/src/Language/**/Skel.hs
 haskell/free-foil/src/Language/**/ErrM.hs
 
+scala/free-foil/src/main/scala/.scala-build/
+
 dist
 dist-*
 cabal-dev
