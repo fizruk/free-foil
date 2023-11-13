@@ -88,3 +88,4 @@ tests:
       - Glob
       - QuickCheck
       - template-haskell
+      - containers
