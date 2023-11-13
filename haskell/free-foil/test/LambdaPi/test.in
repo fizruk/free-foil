@@ -15,3 +15,13 @@ check
 compute
   (λ x. λ y. x) y
   : Π (w : A) → B
+
+compute
+  (λ A . λ x . x)
+    (λ z . z)
+  : Π (w : B) → B
+
+compute
+  (λ y . λ x . y)
+    (λ z . z)
+  : Π (w : B) → B

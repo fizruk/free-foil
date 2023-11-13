@@ -9,6 +9,8 @@
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE BlockArguments #-}
 
 module Language.LambdaPi.Foil where
 
@@ -19,6 +21,8 @@ import Language.LambdaPi.Simple.Lex (tokens)
 import Language.LambdaPi.Simple.Layout (resolveLayout)
 import Language.LambdaPi.Simple.Par (pProgram)
 import Language.LambdaPi.Simple.Print (printTree)
+import Unsafe.Coerce
+import System.Exit (exitFailure)
 
 type Id = String
 type RawName = Id
@@ -146,6 +150,17 @@ instance Sinkable Name where
 sink :: (Sinkable e, DExt n l) => e n -> e l
 sink = unsafeCoerce
 
+instance Sinkable Expr where
+  sinkabilityProof rename (VarE v) = VarE (rename v)
+  sinkabilityProof rename (AppE f e) = AppE (sinkabilityProof rename f) (sinkabilityProof rename e)
+  sinkabilityProof rename (LamE binder body) = extendRenaming rename binder \rename' binder' ->
+    LamE binder' (sinkabilityProof rename' body)
+
+extendRenaming :: (Name n -> Name n') -> NameBinder n l
+  -> (forall l'. (Name l -> Name l') -> NameBinder n' l' -> r ) -> r
+extendRenaming _ (UnsafeNameBinder name) cont =
+  cont unsafeCoerce (UnsafeNameBinder name)
+
 -- Substitution
 data Substitution (e :: S -> *) (i :: S) (o :: S) = UnsafeSubstitution (forall n. Name n -> e n) (Map String (e o))
 
@@ -183,31 +198,30 @@ substitute scope subst = \case
         )
 
 toFoilTerm :: (Distinct n) => Term -> Scope n -> Map String (Name n) -> Expr n
-toFoilTerm (App a b) scope env = AppE (toFoilTerm a scope env) (toFoilTerm a scope env)
-toFoilTerm (Lam str body) scope env = withFresh scope (\s ->
+toFoilTerm (App a b) scope env = AppE (toFoilTerm a scope env) (toFoilTerm b scope env)
+toFoilTerm (Lam (Ident str) body) scope env = withFresh scope (\s ->
   let scope' = extendScope s scope
       env' = Map.insert str (nameOf s) (fmap sink env) in LamE s (toFoilTerm body scope' env'))
-toFoilTerm (Var str) scope env = case Map.lookup str env of
+toFoilTerm (Var (Ident str)) scope env = case Map.lookup str env of
   Just name -> VarE name
   Nothing -> error ("Unbound variable " ++ str)
 -- #TODO: suppori Pi expressions
 toFoilTerm (Pi _ _ _) scope env = error ("Not yet implemented")
 
-whnf :: (Distinct l) => Scope n -> Expr n -> Expr l
+whnf :: (Distinct n) => Scope n -> Expr n -> Expr n
 whnf scope = \case
   AppE f arg ->
     case whnf scope f of
       LamE z body ->
-        let scope' = extendScope z scope
-            subst = UnsafeSubstitution VarE (Map.insert (nameOf z) arg Map.empty)
-        in substitute scope' subst body
-      f' -> AppE f' (sink arg)
-  t -> sink t
+        let subst = UnsafeSubstitution VarE (Map.insert (ppName (nameOf z)) arg Map.empty)
+        in substitute scope subst body
+      f' -> AppE f' arg
+  t -> t
 
 -- | Interpret a λΠ command.
 interpretCommand :: Command -> IO ()
 interpretCommand (CommandCompute term type_) =
-      putStrLn ("  ↦ " ++ ppExpr (whnf emptyScope (toFoilTerm term)))
+      putStrLn ("  ↦ " ++ ppExpr (whnf emptyScope (toFoilTerm term emptyScope Map.empty)))
 -- #TODO: add typeCheck
 interpretCommand (CommandCheck term type_) =
       putStrLn ("Not yet implemented")
