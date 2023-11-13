@@ -162,10 +162,11 @@ extendRenaming _ (UnsafeNameBinder name) cont =
   cont unsafeCoerce (UnsafeNameBinder name)
 
 -- Substitution
-data Substitution (e :: S -> *) (i :: S) (o :: S) = UnsafeSubstitution (forall n. Name n -> e n) (Map String (e o))
+data Substitution (e :: S -> *) (i :: S) (o :: S) =
+  UnsafeSubstitution (forall n. Name n -> e n) (Map String (e o))
 
-lookupSusbst :: Substitution e i o -> Name i -> e o
-lookupSusbst (UnsafeSubstitution f env) (UnsafeName name) =
+lookupSubst :: Substitution e i o -> Name i -> e o
+lookupSubst (UnsafeSubstitution f env) (UnsafeName name) =
     case Map.lookup name env of
         Just ex -> ex
         Nothing -> f (UnsafeName name)
@@ -189,7 +190,7 @@ instance (Sinkable e) => Sinkable (Substitution e i) where
 -- Substitute part
 substitute :: Distinct o => Scope o -> Substitution Expr i o -> Expr i -> Expr o
 substitute scope subst = \case
-    VarE name -> lookupSusbst subst name
+    VarE name -> lookupSubst subst name
     AppE f x -> AppE (substitute scope subst f) (substitute scope subst x)
     LamE binder body -> withRefreshed scope (nameOf binder) (\binder' ->
         let subst' = addRename (sink subst) binder (nameOf binder')
