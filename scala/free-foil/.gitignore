@@ -37,6 +37,7 @@ build/
 
 ### VS Code ###
 .vscode/
+.metals/
 
 ### Mac OS ###
 .DS_Store
