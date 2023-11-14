@@ -1,14 +1,13 @@
-import Foil.{DistinctEvidence, ExtEvidence}
-
+import Foil.DExt
 import scala.collection.immutable.IntMap
-import scala.language.implicitConversions
 
-object Foil extends  App{
-  sealed trait Expr[+N]
-  case class Var[N <: S](name: Name[N]) extends Expr[N]
-  case class Lam[N <: S, L <: S](lamExpr: LamExpr[N, L]) extends Expr[N]
-  case class App[N <: S](expr1: Expr[N], expr2: Expr[N]) extends Expr[N]
-  case class LamExpr[N <: S, L <: S](nameBinder: NameBinder[N, L], expr: Expr[L])
+object Foil extends App {
+
+  sealed trait Expr[N <: S]
+
+  case class VarE[N <: S](name: Name[N])                                   extends Expr[N]
+  case class AppE[N <: S](fun: Expr[N], arg: Expr[N])                      extends Expr[N]
+  case class LamE[N <: S, L <: S](binder: NameBinder[N, L], body: Expr[L]) extends Expr[N]
 
   case class RawName(rawId: Int)
 
@@ -18,7 +17,7 @@ object Foil extends  App{
 
   def rawFreshName(rawScope: RawScope): RawName = rawScope match {
     case RawScope(s) if s.isEmpty => RawName(0)
-    case RawScope(s) => RawName(s.max + 1)
+    case RawScope(s)              => RawName(s.max + 1)
   }
 
   def rawExtendScope(rawName: RawName, rawScope: RawScope): RawScope =
@@ -37,8 +36,6 @@ object Foil extends  App{
   def rawExtendSubst[A](rawName: RawName, value: A, rawSubst: RawSubst[A]): RawSubst[A] =
     RawSubst(rawSubst.rawMap.updated(rawName.rawId, value))
 
-
-
   sealed trait S
   case class VoidS() extends S
 
@@ -50,94 +47,112 @@ object Foil extends  App{
   def member[L <: S, N <: S](name: Name[L])(scope: Scope[N]): Boolean =
     rawMember(name.unsafeName)(scope.unsafeScope)
 
-
-
   case class NameBinder[N <: S, L <: S](unsafeBinder: Name[L])
 
   def nameOf[N <: S, L <: S](nameBinder: NameBinder[N, L]): Name[L] =
     nameBinder.unsafeBinder
 
+  def withFreshBinder[N <: S, R](scope: Scope[N])(cont: [L <: S] => NameBinder[N, L] => R): R =
+    cont(NameBinder(Name(rawFreshName(scope.unsafeScope))))
+
+  class Distinct[N <: S]
+  class ExtEndo[N <: S]
+  class Ext[N <: S, L <: S](implicit ev: ExtEndo[N] <:< ExtEndo[L])
+
+  type DExt[N <: S, L <: S] = (Distinct[L], Ext[N, L])
+
+  sealed trait DistinctEvidence[N <: S]
+  case object Distinct extends DistinctEvidence[VoidS]
+  val unsafeDistinct: DistinctEvidence[VoidS] = Distinct
+
+  sealed trait ExtEvidence[N <: S, L <: S]
+  case object Ext extends ExtEvidence[VoidS, VoidS]
+  val unsafeExt: ExtEvidence[VoidS, VoidS] = Ext
+
+  class Sinkable[E[_ <: S]] {
+    def sinkabilityProof[N <: S, L <: S](rename: Name[N] => Name[L]): E[N] => E[L] = ???
+  }
+
+  object Sinkable {
+    given nameSinkable: Sinkable[Name] = new Sinkable[Name]
+    given exprSinkable: Sinkable[Expr] = new Sinkable[Expr]
+    given substitutionSinkable[E[_ <: S], I <: S](
+        using sinkable: Sinkable[E],
+    ): Sinkable[[O <: S] =>> Substitution[E, I, O]] with {
+      def sinkabilityProof[N <: S, L <: S](
+          rename: Name[N] => Name[L],
+          substitution: Substitution[E, I, N],
+      ): Substitution[E, I, L] = ???
+    }
+  }
+
+  def sink[E[_ <: S]: Sinkable, N <: S, L <: S](en: E[N])(using ev: DExt[N, L]): E[L] = en.asInstanceOf[E[L]]
+
+  def unsafeAssertFresh[N <: S, L <: S, N1 <: S, L1 <: S, R](
+      binder: NameBinder[N, L],
+  )(cont: DExt[N1, L1] ?=> NameBinder[N1, L1] => R): R = {
+    given DExt[N1, L1] = (unsafeDistinct.asInstanceOf[Distinct[L1]], unsafeExt.asInstanceOf[Ext[N1, L1]])
+    cont(binder.asInstanceOf[NameBinder[N1, L1]])
+  }
+
+  def withFresh[N <: S: Distinct, R](scope: Scope[N])(cont: [L <: S] => DExt[N, L] ?=> NameBinder[N, L] => R): R = {
+    withFreshBinder[N, R](scope)([L <: S] => (binder: NameBinder[N, L]) => unsafeAssertFresh(binder)(cont[L]))
+  }
+
+  def withRefreshed[O <: S, I <: S, R](scope: Scope[O], name: Name[I])(
+      cont: [O1 <: S] => DExt[O, O1] ?=> NameBinder[O, O1] => R,
+  ): R = {
+
+    given Distinct[O] = unsafeDistinct.asInstanceOf[Distinct[O]]
+    given DExt[O, O]  = (unsafeDistinct.asInstanceOf[Distinct[O]], unsafeExt.asInstanceOf[Ext[O, O]])
+    if (member(name)(scope))
+      withFresh(scope)(cont)
+    else
+      unsafeAssertFresh[O, I, O, I, R](NameBinder[O, I](name))(cont[I])
+  }
+
   def extendScope[N <: S, L <: S](nameBinder: NameBinder[N, L], scope: Scope[N]): Scope[L] =
     Scope[L](rawExtendScope(nameBinder.unsafeBinder.unsafeName, scope.unsafeScope))
 
-  def withFreshBinder[N <: S, R](scope: Scope[N])(cont: [L] => NameBinder[N, L] => R): R =
-    cont(NameBinder(Name(rawFreshName(scope.unsafeScope))))
+  case class Substitution[E[_ <: S], I <: S, O <: S](f: [N <: S] => Name[N] => E[N], env: IntMap[E[O]])
 
-  trait Ext[N, L]
-  trait Distinct[N <: S]
-
-  type DExt[N, L <: S] = (Distinct[L], Ext[N, L])
-
-  sealed trait DistinctEvidence[N <: S]
-  case class DistinctConstruct[N <: S](distinct: Distinct[N]) extends DistinctEvidence[N]
-
-  sealed trait ExtEvidence[N <: S, L <: S]
-  case class ExtConstruct[N <: S, L <: S](ext: Ext[N, L]) extends ExtEvidence[N, L]
-
-  def unsafeDistinct[N <: S]: DistinctEvidence[N] =
-    DistinctConstruct[VoidS].asInstanceOf[DistinctEvidence[N]]
-
-  def unsafeExt[N <: S, L <: S]: ExtEvidence[N, L] =
-    ExtConstruct[VoidS, VoidS].asInstanceOf[ExtEvidence[N, L]]
-
-  trait Sinkable[E[_]] {
-    def sinkabilityProof[N <: S, L <: S](rename: Name[N] => Name[L]): E[N] => E[L]
-  }
-
-  implicit object NameIsSinkable extends Sinkable[Name] {
-    def sinkabilityProof[N <: S, L <: S](rename: Name[N] => Name[L]): Name[N] => Name[L] =
-      unsafeName => Name(rename(unsafeName).unsafeName)
-  }
-
-  def sink[E[_]: Sinkable, N, L](en: E[N])(implicit ev: DExt[L, N]): E[L] = en.asInstanceOf[E[L]]
-
-  def withFresh[N : Distinct, R](scope: Scope[N])(cont: [L] => DExt[N, L] ?=> NameBinder[N, L] => R): R =
-    withFreshBinder[N, R](scope){(binder: NameBinder[N, _]) => unsafeAssertFresh(binder)(cont)}
-
-
-  def unsafeAssertFresh[N,L,R](binder: NameBinder[_, _])(cont: DExt[N, L] ?=>  NameBinder[N, L] => R) = ???
-
-  def withRefreshed[O: Distinct, I <: S, R](scope: Scope[O], name: Name[I])(cont: [O_] => DExt[O, O_] ?=> NameBinder[O, O_] => R): R =
-    if (member[I, O](name)(scope)) withFresh(scope)(cont)
-    else unsafeAssertFresh(NameBinder[O, I](name))(cont[O])
-
-  case class Substitution[E[_], I <: S, O <: S](f: [N <: S] => Name[N] => E[N], env: IntMap[E[O]])
-
-  def lookupSubst[E[_], I <: S, O <: S](subst: Substitution[E, I, O], name: Name[I]): E[O] =
+  def lookupSubst[E[_ <: S], I <: S, O <: S](subst: Substitution[E, I, O], name: Name[I]): E[O] =
     subst.env.get(name.unsafeName.rawId) match {
       case Some(e) => e
-      case None => subst.f(Name(RawName(name.unsafeName.rawId)))
+      case None    => subst.f(Name(RawName(name.unsafeName.rawId)))
     }
 
-  def idSubst[E[_], I <: S](f: [N <: S] => Name[N] => E[N]): Substitution[E, I, I] =
+  def idSubst[E[_ <: S], I <: S](f: [N <: S] => Name[N] => E[N]): Substitution[E, I, I] =
     Substitution(f, IntMap.empty)
 
-  def addSubst[E[_], I <: S, O <: S, IPrime <: S](s: Substitution[E, I, O])(
-    b: NameBinder[I, IPrime])(e: E[O]): Substitution[E, IPrime, O] = s match {
+  def addSubst[E[_ <: S], I <: S, O <: S, I1 <: S](
+      s: Substitution[E, I, O],
+  )(b: NameBinder[I, I1])(e: E[O]): Substitution[E, I1, O] = s match {
     case Substitution(f, env) => Substitution(f, env)
   }
 
-  def addRename[E[_], I <: S, O <: S](s: Substitution[E, I, O])(
-    b: NameBinder[I, I], n: Name[O]): Substitution[E, I, O] = s match {
-    case Substitution(f, env) =>
-      val name1 = b.unsafeBinder.unsafeName
-      val name2 = n.unsafeName
-      if (name1 == name2) s
-      else addSubst(s)(b)(f(n))
+  def addRename[E[_ <: S], I <: S, I1 <: S, O <: S](
+      s: Substitution[E, I, O],
+      b: NameBinder[I, I1],
+      n: Name[O],
+  ): Substitution[E, I1, O] = (s, b, n) match {
+    case (Substitution(f, env), NameBinder(Name(name1)), Name(name2)) =>
+      if (name1 == name2)
+        Substitution(f, env)
+      else
+        addSubst(s)(b)(f(n))
   }
 
-//  def substituteExpr[O <: S, I](scope: Scope[O], subst: Substitution[Expr, I, O])(expr: Expr[I])(implicit ev: Distinct[O]): Expr[O] = expr match {
-//    case variable: Var[I] => lookupSubst[Expr, I, O](subst, variable.name)
-//    case app: App[I] => App(substituteExpr(scope, subst)(app.expr1), substituteExpr(scope, subst)(app.expr2))
-//    case lam: Lam[I, I] =>
-//
-//      val binder_ = withRefreshed(scope, lam.lamExpr.nameBinder.unsafeBinder){binder =>
-//        val subst_ = addRename[Expr, I, O](subst)(binder, nameOf(binder)) // add sink
-//        val scope_ = extendScope(binder, scope)
-//        val body_ = substituteExpr(scope_, subst_)(lam.lamExpr.expr)
-//        Lam[O, O](LamExpr(binder, body_))
-//      }
-//      binder_
-//  }
+  def substitute[O <: S, I <: S](scope: Scope[O], subst: Substitution[Expr, I, O], expr: Expr[I]): Expr[O] = expr match {
+    case VarE(name) => lookupSubst(subst, name)
+    case AppE(f, x) => AppE(substitute(scope, subst, f), substitute(scope, subst, x))
+    case LamE(binder, body) => withRefreshed(scope, nameOf(binder))
+      { [O1 <: S] => implicit dext: DExt[O, O1] => (binder_ : NameBinder[O, O1]) =>
+      val subst_ = addRename(sink(subst), binder, nameOf(binder_))
+      val scope_ = extendScope(binder_, scope)
+      val body_ = substitute(scope_, subst_, body)
+      LamE(binder_, body_)
+    }
+  }
 
 }
