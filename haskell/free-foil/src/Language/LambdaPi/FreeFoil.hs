@@ -103,14 +103,14 @@ toLambdaPi scope env = \case
 
 fromLambdaPi :: LambdaPi n -> Syntax.Term
 fromLambdaPi = \case
-  Var (Foil.UnsafeName name) -> Syntax.Var (Syntax.Ident name)
+  Var (Foil.UnsafeName name) -> Syntax.Var (Syntax.Ident ("x" <> show name))
   App fun arg -> Syntax.App (fromLambdaPi fun) (fromLambdaPi arg)
   Lam binder body ->
     let Foil.UnsafeName x = Foil.nameOf binder
-    in Syntax.Lam (Syntax.Ident x) (fromLambdaPi body)
+    in Syntax.Lam (Syntax.Ident ("x" <> show x)) (fromLambdaPi body)
   Pi binder a b ->
     let Foil.UnsafeName x = Foil.nameOf binder
-    in Syntax.Pi (Syntax.Ident x) (fromLambdaPi a) (fromLambdaPi b)
+    in Syntax.Pi (Syntax.Ident ("x" <> show x)) (fromLambdaPi a) (fromLambdaPi b)
 
 ppLambdaPi :: LambdaPi n -> String
 ppLambdaPi = Print.printTree . fromLambdaPi

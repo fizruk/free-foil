@@ -16,6 +16,7 @@ module Language.LambdaPi.Foil where
 
 import Data.Map (Map)
 import qualified Data.Map as Map
+import qualified Data.IntSet as Set
 import Language.LambdaPi.Simple.Abs
 import Language.LambdaPi.Simple.Lex (tokens)
 import Language.LambdaPi.Simple.Layout (resolveLayout)
@@ -24,9 +25,9 @@ import Language.LambdaPi.Simple.Print (printTree)
 import Unsafe.Coerce
 import System.Exit (exitFailure)
 
-type Id = String
+type Id = Int
 type RawName = Id
-type RawScope = [Id]
+type RawScope = Set.IntSet
 
 data {- kind -} S
   = {- type -} VoidS
@@ -38,7 +39,7 @@ data Name (n :: S) = UnsafeName RawName
 data NameBinder (n :: S) (l :: S) =
   UnsafeNameBinder (Name l)
 
-ppName :: Name n -> String
+ppName :: Name n -> Int
 ppName (UnsafeName name) = name
 
 -- UnsafeName "z" :: Name ["x", "y", "z"]
@@ -46,19 +47,15 @@ ppName (UnsafeName name) = name
 --   :: NameBinder ["x"] ["x", "y", "z"]
 
 emptyScope :: Scope VoidS
-emptyScope = UnsafeScope []
+emptyScope = UnsafeScope Set.empty
 
 extendScope :: NameBinder n l -> Scope n -> Scope l
 extendScope (UnsafeNameBinder (UnsafeName name)) (UnsafeScope scope) =
-  UnsafeScope (name : scope)
+  UnsafeScope (Set.insert name scope)
 
 rawFreshName :: RawScope -> RawName
-rawFreshName scope = head {- DO NOT WRITE LIKE ME -}
-  [ name
-  | n <- [1..]
-  , let name = "x" <> show n
-  , name `notElem` scope
-  ]
+rawFreshName scope | Set.null scope = 0
+                   | otherwise = Set.findMax scope + 1
 
 withFreshBinder
   :: Scope n
@@ -73,7 +70,7 @@ nameOf :: NameBinder n l -> Name l
 nameOf (UnsafeNameBinder name) = name
 
 rawMember :: RawName -> RawScope -> Bool
-rawMember i s = elem i s
+rawMember i s = Set.member i s
 
 member :: Name l -> Scope n -> Bool
 member (UnsafeName name) (UnsafeScope s) = rawMember name s
@@ -89,9 +86,9 @@ data Expr n where
 -- λx1. λx2. x1(x1(x2))
 ppExpr :: Expr n -> String
 ppExpr expr = case expr of
-  VarE name -> ppName name
+  VarE name -> show (ppName name)
   AppE e1 e2 -> ppExpr e1 ++ "(" ++ ppExpr e2 ++ ")"
-  LamE x body -> "λ" ++ ppName (nameOf x) ++ ". " ++ ppExpr body
+  LamE x body -> "λ" ++ show (ppName (nameOf x)) ++ ". " ++ ppExpr body
 
 
 -- Distinct constraints
@@ -163,7 +160,7 @@ extendRenaming _ (UnsafeNameBinder name) cont =
 
 -- Substitution
 data Substitution (e :: S -> *) (i :: S) (o :: S) =
-  UnsafeSubstitution (forall n. Name n -> e n) (Map String (e o))
+  UnsafeSubstitution (forall n. Name n -> e n) (Map Int (e o))
 
 lookupSubst :: Substitution e i o -> Name i -> e o
 lookupSubst (UnsafeSubstitution f env) (UnsafeName name) =
