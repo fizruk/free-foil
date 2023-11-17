@@ -12,7 +12,7 @@ terminator Command ";" ;
 VarIdent. VarIdent ::= Ident ;
 variable name VarIdent ;
 
-Lam.  Term ::= "λ" Pattern "." Term ;
+Lam.  Term ::= "λ" Pattern "." ScopedTerm ;
 Pi.   Term ::= "Π" "(" Pattern ":" Term ")" "→" ScopedTerm ;
 App.  Term1 ::= Term1 Term2 ;
 Var.  Term2 ::= VarIdent ;
