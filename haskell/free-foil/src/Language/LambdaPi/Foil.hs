@@ -35,8 +35,10 @@ data {- kind -} S
 
 data Scope (n :: S) = UnsafeScope RawScope
 data Name (n :: S) = UnsafeName RawName
+    deriving (Show)
 data NameBinder (n :: S) (l :: S) =
   UnsafeNameBinder (Name l)
+    deriving (Show)
 
 ppName :: Name n -> String
 ppName (UnsafeName name) = name
