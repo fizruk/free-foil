@@ -32,13 +32,13 @@ mkFoil termT nameT scopeT patternT = do
   let foilScopeCons = map (toScopeCon n) scopeCons
   let foilTermCons = map (toTermCon n l) termCons
   return $
-    [ DataD [] foilTermT [PlainTV n ()] Nothing foilTermCons [DerivClause Nothing [ConT ''Show]]
+    [ DataD [] foilTermT [PlainTV n ()] Nothing foilTermCons []
+    , StandaloneDerivD Nothing [] (AppT (ConT ''Show) (AppT (ConT foilTermT) (VarT n)))
     , DataD [] foilScopeT [PlainTV n ()] Nothing foilScopeCons [DerivClause Nothing [ConT ''Show]]
     , DataD [] foilPatternT [PlainTV n (), PlainTV l ()] Nothing foilPatternCons [DerivClause Nothing [ConT ''Show]]
     ]
   where
     foilTermT = mkName ("Foil" ++ nameBase termT)
-    foilNameT = ''Foil.Name
     foilScopeT = mkName ("Foil" ++ nameBase scopeT)
     foilPatternT = mkName ("Foil" ++ nameBase patternT)
 

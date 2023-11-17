@@ -1,4 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RankNTypes #-}
@@ -35,17 +36,16 @@ two = Lam (PatternVar "s") (ScopedTerm (Lam (PatternVar "z") (ScopedTerm (App (V
 
 mkFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
 
-
 toFoilTerm :: Distinct n => (VarIdent -> Name n) -> Scope n -> Term -> FoilTerm n
-toFoilTerm toName scope = \case 
+toFoilTerm toName scope = \case
     Var x -> FoilVar (toName x)
     Lit n -> FoilLit n
-    App fun arg -> FoilApp (toFoilTerm toName scope fun) (toFoilTerm toName scope arg) 
+    App fun arg -> FoilApp (toFoilTerm toName scope fun) (toFoilTerm toName scope arg)
     Lam pat scopedTerm -> withPattern toName scope pat $ \pat' toName' scope' ->
       FoilLam pat' (toFoilScopedTerm toName' scope' scopedTerm)
 
 withPattern
-  :: Distinct n 
+  :: Distinct n
   => (VarIdent -> Name n)
   -> Scope n
   -> Pattern
@@ -55,7 +55,7 @@ withPattern toName scope pat cont =
   case pat of
     PatternVar var -> withFresh scope $ \binder ->
       let scope' = extendScope binder scope
-          toName' x 
+          toName' x
             | x == var = nameOf binder
             | otherwise = sink (toName x)
           pat' = toFoilPattern binder pat
@@ -71,5 +71,5 @@ toFoilPattern binder = \case
   PatternLit n -> FoilPatternLit n
 
 toFoilScopedTerm :: Distinct n => (VarIdent -> Name n) -> Scope n -> ScopedTerm -> FoilScopedTerm n
-toFoilScopedTerm toName scope = \case 
-  ScopedTerm term -> FoilScopedTerm (toFoilTerm toName scope term) 
+toFoilScopedTerm toName scope = \case
+  ScopedTerm term -> FoilScopedTerm (toFoilTerm toName scope term)
