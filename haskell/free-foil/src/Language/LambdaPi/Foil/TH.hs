@@ -2,6 +2,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
+{-# OPTIONS_GHC -Wno-incomplete-patterns #-} -- Закомментировать
 module Language.LambdaPi.Foil.TH where
 
 import Language.Haskell.TH
@@ -31,16 +32,53 @@ mkFoil termT nameT scopeT patternT = do
   let foilPatternCons = map (toPatternCon n l) patternCons
   let foilScopeCons = map (toScopeCon n) scopeCons
   let foilTermCons = map (toTermCon n l) termCons
+
+  let toFoilTBody = NormalB (LamCaseE (map toMatchTerm termCons))
   return $
     [ DataD [] foilTermT [PlainTV n ()] Nothing foilTermCons []
     , StandaloneDerivD Nothing [] (AppT (ConT ''Show) (AppT (ConT foilTermT) (VarT n)))
     , DataD [] foilScopeT [PlainTV n ()] Nothing foilScopeCons [DerivClause Nothing [ConT ''Show]]
     , DataD [] foilPatternT [PlainTV n (), PlainTV l ()] Nothing foilPatternCons [DerivClause Nothing [ConT ''Show]]
+    , FunD toFoilT [Clause [VarP (mkName "toName"), VarP (mkName "scope")] toFoilTBody []]
+    -- , FunD fromFoilT []
     ]
   where
     foilTermT = mkName ("Foil" ++ nameBase termT)
     foilScopeT = mkName ("Foil" ++ nameBase scopeT)
     foilPatternT = mkName ("Foil" ++ nameBase patternT)
+    toFoilT = mkName ("mktoFoil" ++ nameBase termT)
+    fromFoilT = mkName ("fromFoil" ++ nameBase termT)
+
+    toMatchTerm :: Con -> Match
+    toMatchTerm (NormalC conName params) =
+      Match matchPat (matchBody matchPat) []
+
+      where 
+        matchPat = ConP conName conTypes (toPats 0 conTypes)
+        conTypes = map snd params
+
+        toPats :: Int -> [Type] -> [Pat]
+        toPats _ [] = []
+        toPats n ((ConT tyName):types)
+          | tyName == nameT = VarP (mkName $ "varName" ++ show n):toPats (n+1) types
+          | tyName == patternT = VarP (mkName $ "pat" ++ show n):toPats (n+1) types
+          | tyName == scopeT = VarP (mkName $ "scopedTerm" ++ show n):toPats (n+1) types
+          | tyName == termT = VarP (mkName $ "term" ++ show n):toPats (n+1) types
+          | otherwise = VarP (mkName ("x" ++ show n)):toPats (n+1) types
+        
+        matchBody :: Pat -> Body 
+        matchBody (ConP name matchTypes matchParams) = 
+          NormalB (foldr (\l r -> AppE r l) (ConE $ mkName ("Foil" ++ nameBase name)) (reverse (map toExpr (zip matchTypes matchParams))))
+
+          where 
+            toExpr :: (Type, Pat) -> Exp
+            toExpr (ConT tyName, VarP patName)
+              | tyName == nameT = AppE (VarE $ mkName "toName") (VarE patName)
+              | tyName == patternT = VarE patName --Incorrect
+              | tyName == scopeT = VarE patName --Incorrect
+              | tyName == termT = AppE (AppE (AppE (VarE toFoilT) (VarE (mkName "toName"))) (VarE (mkName "scope"))) (VarE patName)
+              | otherwise = VarE patName
+            
 
     toPatternCon :: Name -> Name -> Con -> Con
     toPatternCon n l (NormalC conName params) =
