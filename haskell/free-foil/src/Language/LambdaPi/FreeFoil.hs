@@ -91,26 +91,26 @@ toLambdaPi scope env = \case
   Syntax.App fun arg ->
     App (toLambdaPi scope env fun) (toLambdaPi scope env arg)
 
-  Syntax.Lam (Syntax.Ident x) body -> Foil.withFresh scope $ \binder ->
+  Syntax.Lam (Syntax.Ident x) body -> Foil.withFresh scope x $ \binder ->
     let scope' = Foil.extendScope binder scope
         env' = Map.insert x (Foil.nameOf binder) (Foil.sink <$> env)
     in Lam binder (toLambdaPi scope' env' body)
 
-  Syntax.Pi (Syntax.Ident x) a b -> Foil.withFresh scope $ \binder ->
+  Syntax.Pi (Syntax.Ident x) a b -> Foil.withFresh scope x $ \binder ->
     let scope' = Foil.extendScope binder scope
         env' = Map.insert x (Foil.nameOf binder) (Foil.sink <$> env)
     in Pi binder (toLambdaPi scope env a) (toLambdaPi scope' env' b)
 
 fromLambdaPi :: LambdaPi n -> Syntax.Term
 fromLambdaPi = \case
-  Var (Foil.UnsafeName name) -> Syntax.Var (Syntax.Ident ("x" <> show name))
+  Var (Foil.UnsafeName (id, x)) -> Syntax.Var (Syntax.Ident x)
   App fun arg -> Syntax.App (fromLambdaPi fun) (fromLambdaPi arg)
   Lam binder body ->
-    let Foil.UnsafeName x = Foil.nameOf binder
-    in Syntax.Lam (Syntax.Ident ("x" <> show x)) (fromLambdaPi body)
+    let Foil.UnsafeName (id, x) = Foil.nameOf binder
+    in Syntax.Lam (Syntax.Ident x) (fromLambdaPi body)
   Pi binder a b ->
-    let Foil.UnsafeName x = Foil.nameOf binder
-    in Syntax.Pi (Syntax.Ident ("x" <> show x)) (fromLambdaPi a) (fromLambdaPi b)
+    let Foil.UnsafeName (id, x) = Foil.nameOf binder
+    in Syntax.Pi (Syntax.Ident x) (fromLambdaPi a) (fromLambdaPi b)
 
 ppLambdaPi :: LambdaPi n -> String
 ppLambdaPi = Print.printTree . fromLambdaPi
