@@ -22,6 +22,7 @@ import Language.LambdaPi.Foil (Scope(..), Name (UnsafeName), NameBinder(UnsafeNa
 import Language.LambdaPi.Foil.TH
 import qualified Language.LambdaPi.Foil.TH as TH
 import qualified Language.Haskell.TH as Foil
+import Unsafe.Coerce (unsafeCoerce)
 
 data Term
   = Var VarIdent
@@ -102,15 +103,27 @@ mkInstancesFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
 -- fromFoilScopedTerm = \case
 --   FoilScopedTerm term -> ScopedTerm (fromFoilTerm term)
 
-instance Sinkable FoilTerm where
-  sinkabilityProof :: (Name n -> Name l) -> FoilTerm n -> FoilTerm l
-  sinkabilityProof f (FoilVar n) = FoilVar (f n)
-  sinkabilityProof _ (FoilLit i) = FoilLit i
-  sinkabilityProof f (FoilApp t1 t2) = FoilApp (sinkabilityProof f t1) (sinkabilityProof f t2)
-  sinkabilityProof f (FoilLam binder (FoilScopedTerm body)) = case binder of 
-    FoilPatternLit binder -> FoilLam (FoilPatternLit binder) (FoilScopedTerm body)
-    FoilPatternVar binder -> extendRenaming f binder (\f' binder' ->
-      FoilLam (FoilPatternVar binder') (FoilScopedTerm (sinkabilityProof f' body)))
+-- instance Sinkable FoilTerm where
+--   sinkabilityProof :: (Name n -> Name l) -> FoilTerm n -> FoilTerm l
+--   sinkabilityProof f (FoilVar n) = FoilVar (f n)
+--   sinkabilityProof _ (FoilLit i) = FoilLit i
+--   sinkabilityProof f (FoilApp t1 t2) = FoilApp (sinkabilityProof f t1) (sinkabilityProof f t2)
+--   sinkabilityProof f (FoilLam pattern body) = 
+--     extendRenamingPattern f pattern $ \f' pattern' ->
+--       FoilLam pattern' (sinkabilityProof f' body)
+
+-- TODO:
+-- 1. Why not a typeclass for patterns and name binders (CoSinkable?)?
+-- 2. How do they implement it in Dex?
+-- 3. Is it always safe to use unsafeCoerce here?
+
+-- extendRenamingPattern
+--   :: (Name n -> Name n')
+--   -> FoilPattern n l
+--   -> (forall l'. (Name l -> Name l') -> FoilPattern n' l' -> r)
+--   -> r
+-- extendRenamingPattern _ pattern cont =
+--   cont unsafeCoerce (unsafeCoerce pattern)
 
 -- instance Sinkable (FoilPattern n) where
 --   sinkabilityProof :: (Name n2 -> Name l) -> FoilPattern n1 n2 -> FoilPattern n1 l

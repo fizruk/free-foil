@@ -9,6 +9,7 @@ module Language.LambdaPi.Foil.TH where
 import Language.Haskell.TH
 
 import qualified Language.LambdaPi.Foil as Foil
+import Data.Maybe (fromJust)
 
 -- Foil
 
@@ -291,10 +292,16 @@ mkToFoil termT nameT scopeT patternT = do
               | tyName == termT = AppE (AppE (AppE (VarE toFoilTermT) (VarE (mkName "toName"))) (VarE (mkName "scope"))) (VarE patName)
               | otherwise = VarE patName
             
-            toExprScopeExt = foldl AppE (VarE withPatternT) [VarE (mkName "toName"), VarE (mkName "scope"), VarE (mkName "pat0"), lamCase]
+            toExprScopeExt = foldl AppE (VarE withPatternT) [VarE (mkName "toName"), VarE (mkName "scope"), VarE (fromJust (findPatternName matchTypes matchParams)), lamCase]
               where 
                 lamCase = LamE [VarP (mkName "pat'"), VarP (mkName "toName'"), VarP (mkName "scope'")] 
                   (foldl AppE (ConE (mkName ("Foil" ++ nameBase name))) [VarE (mkName "pat'"), foldl AppE (VarE toFoilScopedT) [VarE (mkName "toName'"), VarE (mkName "scope'"), VarE (mkName "scopedTerm1")]])
+                
+                findPatternName :: [Type] -> [Pat] -> Maybe Name
+                findPatternName [] [] = Nothing
+                findPatternName  ((ConT tyName):_) ((VarP varName):_)
+                  | tyName == patternT = Just varName
+                findPatternName (_:restT) (_:restP) = findPatternName restT restP
 
 
 mkFromFoil :: Name -> Name -> Name -> Name -> Q [Dec]
@@ -440,14 +447,16 @@ mkInstancesFoil termT nameT scopeT patternT = do
       [FunD (mkName "sinkabilityProof") (map clauseScopedTerm foilScopeCons)]
     , InstanceD Nothing [] (AppT (ConT (mkName "Sinkable")) (AppT (ConT foilPatternT) (VarT n)))
       [FunD (mkName "sinkabilityProof") (map clausePattern foilPatternCons)]
-    -- , InstanceD Nothing [] (AppT (ConT (mkName "Sinkable")) (ConT foilTermT))
-    --   [FunD (mkName "sinkabilityProof") (map (\x -> clauseTerm x patternCons scopeCons) foilTermCons)]
+    , InstanceD Nothing [] (AppT (ConT (mkName "Sinkable")) (ConT foilTermT))
+      [FunD (mkName "sinkabilityProof") (map clauseTerm foilTermCons)]
+    , FunD (mkName "extendRenamingPattern") [Clause [WildP, VarP (mkName "pattern"), VarP (mkName "cont")] extendRenamingPatternBody []]
     ]
 
   where
     foilTermT = mkName ("Foil" ++ nameBase termT)
     foilScopeT = mkName ("Foil" ++ nameBase scopeT)
     foilPatternT = mkName ("Foil" ++ nameBase patternT)
+    extendRenamingPatternT = mkName "extendRenamingPattern"
 
     clauseScopedTerm :: Con -> Clause
     clauseScopedTerm (NormalC conName params) = 
@@ -506,82 +515,77 @@ mkInstancesFoil termT nameT scopeT patternT = do
               | var == ''Foil.NameBinder = AppE (ConE 'Foil.UnsafeNameBinder) (AppE (VarE (mkName "f")) (VarE singleVar))
             toExpr _ (VarP patName) = VarE patName
 
-    -- clauseTerm :: Con -> [Con] -> [Con] -> Clause
-    -- clauseTerm (NormalC conNameTerm paramsTerm) consPattern consScoped =   
-    --   Clause [VarP (mkName "f"), ConP conNameTerm [] conPats] 
-    --     (matchBody conTypes conNameTerm conPats)
-    --   []
+    clauseTerm :: Con -> Clause
+    -- clauseTerm (NormalC conNameTerm paramsTerm) =
+    clauseTerm (GadtC [conNameTerm] paramsTerm _) =   
+      Clause [VarP (mkName "f"), ConP conNameTerm [] conPats] 
+        (matchBody conTypes conNameTerm conPats)
+      []
 
-    --   where 
-    --     conPats = toPats 0 conTypes
-    --     conTypes = map snd paramsTerm
+      where 
+        conPats = toPats 0 conTypes
+        conTypes = map snd paramsTerm
 
-    --     toPats :: Int -> [Type] -> [Pat]
-    --     toPats _ [] = []
-    --     toPats n (AppT (AppT (ConT fPT) (VarT _)) (VarT _):types) 
-    --       | fPT == foilPatternT = VarP (mkName $ "pat" ++ show n):toPats (n+1) types  
-    --     toPats n ((AppT (ConT _conName) (VarT _)):types)
-    --       | _conName == ''Foil.Name = VarP (mkName ("varName" ++ show n)):toPats (n+1) types 
-    --       | _conName == foilTermT = VarP (mkName $ "term" ++ show n):toPats (n+1) types 
-    --       | _conName == foilScopeT = ConP foilScopeT [] [VarP (mkName $ "body" ++ show n)]:toPats (n+1) types -- Плохо что используется foilSopeT
-    --       | otherwise = VarP (mkName ("x" ++ show n)):toPats (n+1) types
+        toPats :: Int -> [Type] -> [Pat]
+        toPats _ [] = []
+        toPats n (AppT (AppT (ConT fPT) (VarT _)) (VarT _):types) 
+          | fPT == foilPatternT = VarP (mkName $ "pattern" ++ show n):toPats (n+1) types  
+          | otherwise = VarP (mkName ("x" ++ show n)):toPats (n+1) types
+        toPats n (AppT (ConT _conName) (VarT _):types)
+          | _conName == ''Foil.Name = VarP (mkName $ "varName" ++ show n):toPats (n+1) types 
+          | _conName == foilTermT = VarP (mkName $ "term" ++ show n):toPats (n+1) types 
+          | _conName == foilScopeT = VarP (mkName $ "body" ++ show n):toPats (n+1) types -- Плохо что используется foilSopeT
+          | otherwise = VarP (mkName ("x" ++ show n)):toPats (n+1) types
+        toPats n (_:types) = VarP (mkName ("x" ++ show n)):toPats (n+1) types
 
-    --     matchBody :: [Type] -> Name -> [Pat] -> Body 
-    --     matchBody matchTypes name _conPats = NormalB constr
+        matchBody :: [Type] -> Name -> [Pat] -> Body 
+        matchBody matchTypes name _conPats = NormalB constr
 
-    --       where 
-    --         constr = if checkPatScope matchTypes False
-    --           then sinkProofPatScope
-    --           else foldl AppE (ConE name) (zipWith toExpr matchTypes _conPats)
+          where 
+            constr = if checkPatScope matchTypes False
+              then sinkProofPatScope
+              else foldl AppE (ConE name) (zipWith toExpr matchTypes _conPats)
 
 
-    --         checkPatScope :: [Type] -> Bool -> Bool
-    --         checkPatScope [] _ = False
-    --         checkPatScope (AppT (AppT (ConT fPT) (VarT _)) (VarT _):rest) patFound
-    --           | fPT == foilPatternT = checkPatScope rest True
-    --           | otherwise = checkPatScope rest patFound
-    --         checkPatScope ((AppT (ConT _conName) (VarT _)):rest) patFound
-    --           | _conName == foilScopeT && patFound = True
-    --           | otherwise = checkPatScope rest patFound
+            checkPatScope :: [Type] -> Bool -> Bool
+            checkPatScope [] _ = False
+            checkPatScope (AppT (AppT (ConT fPT) (VarT _)) (VarT _):rest) patFound
+              | fPT == foilPatternT = checkPatScope rest True
+              | otherwise = checkPatScope rest patFound
+            checkPatScope (AppT (ConT _conName) (VarT _):rest) patFound
+              | _conName == foilScopeT && patFound = True
+              | otherwise = checkPatScope rest patFound
+            checkPatScope (_:rest) patFound = checkPatScope rest patFound
 
-    --         toExpr :: Type -> Pat -> Exp
-    --         toExpr ((AppT (ConT _conName) (VarT _))) (VarP varName) 
-    --           | _conName == ''Foil.Name = AppE (VarE (mkName "f")) (VarE varName)
-    --           | _conName == foilTermT = AppE (AppE (VarE (mkName "sinkabilityProof")) (VarE (mkName "f"))) (VarE varName)
-    --           | otherwise = VarE varName
-    --         toExpr _ (VarP patName) = VarE patName
+            toExpr :: Type -> Pat -> Exp
+            toExpr ((AppT (ConT _conName) (VarT _))) (VarP varName) 
+              | _conName == ''Foil.Name = AppE (VarE (mkName "f")) (VarE varName)
+              | _conName == foilTermT = AppE (AppE (VarE (mkName "sinkabilityProof")) (VarE (mkName "f"))) (VarE varName)
+              | otherwise = VarE varName
+            toExpr _ (VarP patName) = VarE patName
 
-    --         sinkProofPatScope = LamCaseE (map sinkPatMathc consPattern)
-    --           where
-    --             sinkPatMathc :: Con -> Match
-    --             sinkPatMathc (NormalC conName paramsSinkPat) = 
-    --               Match (ConP conName [] conPatsSinkPat) sinkPatBody []
-                
-    --               where 
-    --                 sinkPatBody = 
-    --                   if checkSinkNameBinder conTypesSinkPat
-    --                     then VarE (mkName "f")
-    --                     else AppE (ConE conNameTerm) (AppE (ConE conName))
+            sinkProofPatScope = 
+              AppE (AppE (AppE (VarE extendRenamingPatternT) (VarE (mkName "f"))) (VarE (fromJust(findPatternName matchTypes _conPats)))) 
+                (LamE [VarP (mkName "f'"), VarP (mkName "pattern'")] 
+                  (foldl AppE (ConE name) (zipWith toExprSink matchTypes _conPats)))
+                  where 
+                    findPatternName :: [Type] -> [Pat] -> Maybe (Name)
+                    findPatternName [] [] = Nothing
+                    findPatternName  (AppT (AppT (ConT fPT) (VarT _)) (VarT _):_) ((VarP varName):_)
+                      | fPT == foilPatternT = Just varName
+                    findPatternName (_:restT) (_:restP) = findPatternName restT restP
 
-    --                 toExprSinkPat :: Type -> Pat -> Exp
-    --                 toExprSinkPat (AppT (AppT (ConT fPT) (VarT _)) (VarT _)) _ 
-    --                   | fPT == foilPatternT = 
+                    toExprSink :: Type -> Pat -> Exp
+                    toExprSink (AppT (AppT (ConT _conName) (VarT _)) (VarT _)) (VarP varName)
+                      | _conName == foilPatternT = VarE (mkName "pattern'")
+                      | otherwise = VarE varName
+                    toExprSink ((AppT (ConT _conName) (VarT _))) (VarP varName) 
+                      | _conName == foilScopeT = AppE (AppE (VarE (mkName "sinkabilityProof")) (VarE (mkName "f'"))) (VarE varName)
+                      | _conName == foilTermT = AppE (AppE (VarE (mkName "sinkabilityProof")) (VarE (mkName "f"))) (VarE varName)
+                      | _conName == ''Foil.Name = AppE (VarE (mkName "f")) (VarE varName)
+                      | otherwise = VarE varName
 
-    --                 conPatsSinkPat = toPatsSinkPat 0 conTypesSinkPat
-    --                 conTypesSinkPat = map snd paramsSinkPat
-
-    --                 checkSinkNameBinder :: [Type] -> Bool
-    --                 checkSinkNameBinder [] = False
-    --                 checkSinkNameBinder (AppT (AppT (ConT fPT) (VarT _)) (VarT _):types) 
-    --                   | fPT == ''Foil.NameBinder = True  
-    --                 checkSinkNameBinder (_:types) = checkSinkNameBinder types
-
-    --                 toPatsSinkPat :: Int -> [Type] -> [Pat]
-    --                 toPatsSinkPat _ [] = []
-    --                 toPatsSinkPat n (AppT (AppT (ConT fPT) (VarT _)) (VarT _):types) 
-    --                   | fPT == ''Foil.NameBinder = VarP (mkName $ "binder" ++ show n):toPats (n+1) types  
-    --                 toPatsSinkPat n (_:types) = VarP (mkName ("x" ++ show n)):toPats (n+1) types
-
+    extendRenamingPatternBody = NormalB (AppE (AppE (VarE (mkName "cont")) (VarE (mkName "unsafeCoerce"))) (AppE (VarE (mkName "unsafeCoerce")) (VarE (mkName "pattern")) ))
 
     toPatternCon :: Name -> Name -> Con -> Con
     toPatternCon n l (NormalC conName  params) =
