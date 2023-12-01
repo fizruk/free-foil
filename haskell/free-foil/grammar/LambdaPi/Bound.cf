@@ -3,14 +3,16 @@ comment "{-" "-}" ;
 
 layout toplevel ;
 
+token VarIdent letter (letter | digit | '_' | '\'')* ;
+
 AProgram. Program ::= [Command] ;
 
 CommandCheck.   Command ::= "check"   Term ":" Term ;
 CommandCompute. Command ::= "compute" Term ":" Term ;
 terminator Command ";" ;
 
-VarIdent. VarIdent ::= Ident ;
-variable name VarIdent ;
+--VarIdent. VarIdent ::= Ident ;
+-- variable name VarIdent ;
 
 Lam.  Term ::= "λ" Pattern "." ScopedTerm ;
 Pi.   Term ::= "Π" "(" Pattern ":" Term ")" "→" ScopedTerm ;
@@ -19,7 +21,7 @@ Var.  Term2 ::= VarIdent ;
 coercions Term 2 ;
 
 AScopedTerm. ScopedTerm ::= Term ;
-variable scope ScopedTerm ;
+-- variable scope ScopedTerm ;
 
 PatternVar. Pattern ::= VarIdent ;
-variable binder Pattern ;
+-- variable binder Pattern ;

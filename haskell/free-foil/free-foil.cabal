@@ -35,7 +35,13 @@ custom-setup
 library
   exposed-modules:
       LambdaPi.Simple.Interpret
+      Language.LambdaPi.Bound.Abs
+      Language.LambdaPi.Bound.Layout
+      Language.LambdaPi.Bound.Lex
+      Language.LambdaPi.Bound.Par
+      Language.LambdaPi.Bound.Print
       Language.LambdaPi.Foil
+      Language.LambdaPi.Foil.BoundExample
       Language.LambdaPi.Foil.Example
       Language.LambdaPi.Foil.TH
       Language.LambdaPi.FreeFoil
