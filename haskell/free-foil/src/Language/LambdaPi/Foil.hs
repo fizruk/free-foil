@@ -51,10 +51,10 @@ extendScope (UnsafeNameBinder (UnsafeName (id, name))) (UnsafeScope scope) =
   UnsafeScope (Map.insert id name scope)
 
 rawFreshName :: RawScope -> Label -> RawName
-rawFreshName scope labelToBind | Map.null scope = (0, labelToBind)
+rawFreshName scope labelToBind | Map.null scope = (0, labelToBind ++ show 0)
                                | otherwise =
                                   let (maxId, _) = Map.findMax scope
-                                    in (maxId + 1, labelToBind)
+                                    in (maxId + 1, labelToBind ++ show (maxId + 1))
 
 withFreshBinder
   :: Scope n
