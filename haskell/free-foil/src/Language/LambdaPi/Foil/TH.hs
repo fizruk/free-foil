@@ -144,6 +144,8 @@ mkToFoil termT nameT scopeT patternT = do
       (ParensT (AppT (ConT foilTermT) (VarT n)))) -- FoilTerm n
     )))
     , FunD toFoilTermT [Clause [VarP (mkName "toName"), VarP (mkName "scope")] toFoilTBody []]
+
+    , FunD extend'T [Clause [TupP [VarP (mkName "toName'"), VarP (mkName "scope'"), VarP (mkName "binder")], VarP (mkName "var")] (NormalB withFreshE) []]
     ]
   where
     foilTermT = mkName ("Foil" ++ nameBase termT)
@@ -154,6 +156,18 @@ mkToFoil termT nameT scopeT patternT = do
     toFoilPatternT = mkName ("toFoil" ++ nameBase patternT)
     toFoilScopedT = mkName ("toFoil" ++ nameBase scopeT)
     withPatternT = mkName "withPattern"
+    extend'T = mkName "extend'"
+
+    withFreshE = AppE (AppE (VarE (mkName "withFresh")) (VarE (mkName "scope'"))) (LamE [VarP (mkName "binder'")]
+                  (LetE [
+                    ValD (VarP (mkName "scope''")) (NormalB (foldl AppE (VarE 'Foil.extendScope) [VarE (mkName "binder'"), VarE (mkName "scope'")])) [],
+                    FunD (mkName "toName''") [Clause [VarP (mkName "x")]
+                        (GuardedB [
+                          (NormalG (AppE (AppE (VarE (mkName "==")) (VarE (mkName "x"))) (VarE (mkName "var"))), AppE (VarE (mkName "nameOf")) (VarE (mkName "binder'"))),
+                          (NormalG (VarE (mkName "otherwise")), AppE (VarE 'Foil.sink) (AppE (VarE (mkName "toName'")) (VarE (mkName "x"))))
+                        ]) []]]
+                    (TupE [Just (VarE (mkName "toName''")), Just (VarE (mkName "scope''"))
+                        , Just (AppE (AppE (VarE (mkName ":")) (VarE (mkName "binder'"))) (VarE (mkName "binders")))])))
 
     toFoilScopedMatch :: Con -> Match
     toFoilScopedMatch (NormalC conName params) =
@@ -217,23 +231,18 @@ mkToFoil termT nameT scopeT patternT = do
 
       where
         body
-         | ifContainTerm conTypes = AppE (AppE (VarE 'Foil.withFresh) (VarE (mkName "scope"))) withFreshLamPat
+         | ifContainTerm conTypes = LetE [foldlDec, patDec] bodyExpr
          | otherwise = LetE [decl] (AppE (AppE (AppE (VarE (mkName "cont")) (VarE (mkName "pat'"))) (VarE (mkName "toName"))) (VarE (mkName "scope")))
             where
               decl = ValD (VarP (mkName "pat'")) (NormalB (foldl AppE (ConE (mkName ("Foil" ++ nameBase conName))) ((\ (ConP _ _ conParams) -> map (\(VarP x) -> VarE x) conParams) matchPat))) []
 
-              withFreshLamPat = LamE [VarP (mkName "binder")]
-                  (LetE [
-                    ValD (VarP (mkName "scope'")) (NormalB (foldl AppE (VarE 'Foil.extendScope) [VarE (mkName "binder"), VarE (mkName "scope")])) [],
-                    FunD (mkName "toName'")
-                      [Clause [VarP (mkName "x")]
-                        (GuardedB [
-                          (NormalG (AppE (AppE (VarE (mkName "==")) (VarE (mkName "x"))) (VarE (mkName "varName0"))), AppE (VarE (mkName "nameOf")) (VarE (mkName "binder"))),
-                          (NormalG (VarE (mkName "otherwise")), AppE (VarE 'Foil.sink) (AppE (VarE (mkName "toName")) (VarE (mkName "x"))))
-                        ]) []],
-                    ValD (VarP (mkName "pat'")) (NormalB (foldl AppE (VarE toFoilPatternT) [VarE (mkName "binder"), VarE (mkName "pat")])) []
-                  ]
-                    (AppE (AppE (AppE (VarE (mkName "cont")) (VarE (mkName "pat'"))) (VarE (mkName "toName'"))) (VarE (mkName "scope'"))))
+              foldlDec = ValD (TupP [VarP (mkName "toName'"), VarP (mkName "scope'"), VarP (mkName "binders")]) 
+                (NormalB (AppE (AppE (VarE (mkName "extend'")) 
+                                    (TupE [Just (VarE (mkName "toName")), Just (VarE (mkName "scope")), Just (ListE [])])) 
+                                    (ListE (toExprs 0 conTypes)))) []
+              patDec = ValD (VarP (mkName "pat'")) (NormalB (foldl AppE (VarE toFoilPatternT) [VarE (mkName "binders"), VarE (mkName "pat")])) []
+              bodyExpr = foldl AppE (VarE (mkName "cont")) [VarE (mkName "pat'"), VarE (mkName "toName'"), VarE (mkName "scope'")]
+
 
         matchPat = ConP conName [] (toPats 0 conTypes)
         conTypes = map snd params
@@ -246,6 +255,15 @@ mkToFoil termT nameT scopeT patternT = do
           | tyName == scopeT = VarP (mkName "scopedTerm"):toPats (n+1) types
           | tyName == termT = VarP (mkName $ "term" ++ show n):toPats (n+1) types
           | otherwise = VarP (mkName ("x" ++ show n)):toPats (n+1) types
+        
+        toExprs :: Int -> [Type] -> [Exp]
+        toExprs _ [] = []
+        toExprs n ((ConT tyName):types)
+          | tyName == nameT = VarE (mkName $ "varName" ++ show n):toExprs (n+1) types
+          | tyName == patternT = VarE (mkName "pat"):toExprs (n+1) types
+          | tyName == scopeT = VarE (mkName "scopedTerm"):toExprs (n+1) types
+          | tyName == termT = VarE (mkName $ "term" ++ show n):toExprs (n+1) types
+          | otherwise = VarE (mkName ("x" ++ show n)):toExprs (n+1) types
 
         ifContainTerm :: [Type] -> Bool
         ifContainTerm [] = False
