@@ -44,6 +44,10 @@ library
       Language.LambdaPi.Foil.BoundExample
       Language.LambdaPi.Foil.Example
       Language.LambdaPi.Foil.TH
+      Language.LambdaPi.Foil.TH.MkFoilData
+      Language.LambdaPi.Foil.TH.MkFromFoil
+      Language.LambdaPi.Foil.TH.MkInstancesFoil
+      Language.LambdaPi.Foil.TH.MkToFoil
       Language.LambdaPi.FreeFoil
       Language.LambdaPi.FreeScoped
       Language.LambdaPi.Simple.Abs

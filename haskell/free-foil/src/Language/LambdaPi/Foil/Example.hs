@@ -45,60 +45,65 @@ data ScopedTerm = ScopedTerm Term
   deriving (Show)
 
 mkFoilData ''Term ''VarIdent ''ScopedTerm ''Pattern
--- mkToFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
+mkToFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
 -- mkFromFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
 -- mkInstancesFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
 
-toFoilTerm :: Distinct n => (VarIdent -> Name n) -> Scope n -> Term -> FoilTerm n
-toFoilTerm toName scope = \case
-    Var x -> FoilVar (toName x)
-    Lit n -> FoilLit n
-    App fun arg -> FoilApp (toFoilTerm toName scope fun) (toFoilTerm toName scope arg)
-    Lam pat scopedTerm -> withPattern toName scope pat $ \pat' toName' scope' ->
-      FoilLam pat' (toFoilScopedTerm toName' scope' scopedTerm) 
+-- toFoilTerm :: Distinct n => (VarIdent -> Name n) -> Scope n -> Term -> FoilTerm n
+-- toFoilTerm toName scope = \case
+--     Var x -> FoilVar (toName x)
+--     Lit n -> FoilLit n
+--     App fun arg -> FoilApp (toFoilTerm toName scope fun) (toFoilTerm toName scope arg)
+--     Lam pat scopedTerm -> withPattern toName scope pat $ \pat' toName' scope' ->
+--       FoilLam pat' (toFoilScopedTerm toName' scope' scopedTerm) 
 
 
-withPattern
-  :: Distinct n
-  => (VarIdent -> Name n)
-  -> Scope n
-  -> Pattern
-  -> (forall l. Distinct l => FoilPattern n l -> (VarIdent -> Name l) -> Scope l -> r)
-  -> r
-withPattern toName scope pat cont =
-  case pat of
-    PatternVar var -> 
-      let (toName', scope', binders) = foldl extend' (toName, scope, []) [var]
-          pat' = toFoilPattern binders pat
-        in cont pat' toName' scope'
+-- withPattern
+--   :: Distinct n 
+--   => (VarIdent -> Name n)
+--   -> Scope n
+--   -> Pattern
+--   -> (forall l n1. Distinct l => FoilPattern n n1 l -> (VarIdent -> Name l) -> Scope l -> r)
+--   -> r
+-- withPattern toName scope pat cont =
+--   case pat of
+--     PatternVar var ->
+--       withFresh scope $ \binder ->
+--         let scope' = extendScope binder scope
+--             toName' x
+--               | x == var = nameOf binder
+--               | otherwise = sink (toName x)
+--             pat' = FoilPatternVar binder
+--         in cont pat' toName' scope'
 
-    PatternPair var1 var2 -> 
-      let (toName', scope', binders) = foldl extend' (toName, scope, []) [var1, var2]
-          pat' = toFoilPattern binders pat
-        in cont pat' toName' scope'
+--     PatternPair var1 var2 ->
+--       withFresh scope $ \binder1 ->
+--         let scope1 = extendScope binder1 scope
+--             toName1 x 
+--                 | x == var1 = nameOf binder1
+--                 | otherwise = sink (toName x)
+--         in withFresh scope1 $ \binder2 ->
+--           let scope' = extendScope binder2 scope1
+--               toName' x
+--                 | x == var2 = nameOf binder2
+--                 | otherwise = sink (toName1 x)
+--               pat' = FoilPatternPair binder1 binder2
+--           in cont pat' toName' scope'
 
-    PatternLit n ->
-      let pat' = FoilPatternLit n
-      in cont pat' toName scope
-  
--- extend' :: Distinct n
---   => (VarIdent -> Name n, Scope n, Pattern, [NameBinder n l]) 
---   -> VarIdent 
---   -> (forall n l. Distinct n l => (VarIdent -> Name n, Scope n, Pattern, [NameBinder n l]))
-extend' (toName', scope', binders) var = 
-  withFresh scope' $ \binder' ->
-    let scope'' = extendScope binder' scope'
-        toName'' x
-          | x == var = nameOf binder'
-          | otherwise = sink (toName' x)
-    in (toName'', scope'', (:) binder' binders)
+--     PatternLit n ->
+--       let pat' = FoilPatternLit n
+--       in cont pat' toName scope
 
 
-toFoilPattern :: [forall n l . NameBinder n l] -> Pattern -> FoilPattern n l
+
+toFoilPattern :: NameBinder n l -> Pattern -> FoilPattern n n1 l
 toFoilPattern binder = \case
-  PatternVar _ -> FoilPatternVar (fst binder)
-  PatternPair _ _ -> FoilPatternPair (snd binder) (fst binder)
+  PatternVar _ -> FoilPatternVar binder
   PatternLit n -> FoilPatternLit n
+
+toFoilPatternPair :: NameBinder n n1 -> NameBinder n1 l -> Pattern -> FoilPattern n n1 l
+toFoilPatternPair binder1 binder2 = \case
+  PatternPair _ _ -> FoilPatternPair binder1 binder2
 
 -- toFoilScopedTerm :: Distinct n => (VarIdent -> Name n) -> Scope n -> ScopedTerm -> FoilScopedTerm n
 -- toFoilScopedTerm toName scope = \case
@@ -112,12 +117,12 @@ toFoilPattern binder = \case
 --   FoilApp fun arg -> App (fromFoilTerm fun) (fromFoilTerm arg)
 --   FoilLam pat scopedTerm -> Lam (fromFoilPattern pat) (fromFoilScopedTerm scopedTerm)
 
-fromFoilPattern :: FoilPattern n l -> Pattern
-fromFoilPattern = \case
-    FoilPatternVar (UnsafeNameBinder binder) -> PatternVar (VarIdent (ppName binder))
-    FoilPatternPair (UnsafeNameBinder binder1) (UnsafeNameBinder binder2) 
-      -> PatternPair (VarIdent (ppName binder1)) (VarIdent (ppName binder2))
-    FoilPatternLit n -> PatternLit n
+-- fromFoilPattern :: FoilPattern n n1 l -> Pattern
+-- fromFoilPattern = \case
+--     FoilPatternVar (UnsafeNameBinder binder) -> PatternVar (VarIdent (ppName binder))
+--     FoilPatternPair (UnsafeNameBinder binder1) (UnsafeNameBinder binder2) 
+--       -> PatternPair (VarIdent (ppName binder1)) (VarIdent (ppName binder2))
+--     FoilPatternLit n -> PatternLit n
 
 -- fromFoilScopedTerm :: FoilScopedTerm n -> ScopedTerm
 -- fromFoilScopedTerm = \case
