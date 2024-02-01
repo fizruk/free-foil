@@ -40,8 +40,8 @@ mkInstancesFoil termT nameT scopeT patternT = do
   return [
       InstanceD Nothing [] (AppT (ConT (mkName "Sinkable")) (ConT foilScopeT))
       [FunD (mkName "sinkabilityProof") (map clauseScopedTerm foilScopeCons)]
-    , InstanceD Nothing [] (AppT (ConT (mkName "Sinkable")) (AppT (ConT foilPatternT) (VarT n)))
-      [FunD (mkName "sinkabilityProof") (map clausePattern foilPatternCons)]
+    -- , InstanceD Nothing [] (AppT (ConT (mkName "Sinkable")) (AppT (ConT foilPatternT) (VarT n)))
+    --   [FunD (mkName "sinkabilityProof") (map clausePattern foilPatternCons)]
     , InstanceD Nothing [] (AppT (ConT (mkName "Sinkable")) (ConT foilTermT))
       [FunD (mkName "sinkabilityProof") (map clauseTerm foilTermCons)]
     , FunD extendRenamingPatternT [Clause [WildP, VarP (mkName "pattern"), VarP (mkName "cont")] extendRenamingPatternBody []]

@@ -37,6 +37,10 @@ mkFromFoil termT nameT scopeT patternT = do
   let fromFoilTBody = NormalB (LamCaseE (map fromMatchFoilTerm termCons))
   let fromFoilPatternBody = NormalB (LamCaseE (map fromMatchFoilPattern patternCons))
   let fromFoilScopedBody = NormalB (LamCaseE (map fromMatchFoilScoped scopeCons))
+
+  let fromFoilPatternVars = map VarT (generateNames 1 (maxBinderNumber patternCons))
+  let fromFoilPatternPlains = map (`PlainTV` SpecifiedSpec) (generateNames 1 (maxBinderNumber patternCons))
+
   return [
     SigD fromFoilTermT (ForallT [PlainTV n SpecifiedSpec] []
     (AppT (AppT ArrowT
@@ -45,9 +49,9 @@ mkFromFoil termT nameT scopeT patternT = do
     )
     , FunD fromFoilTermT [Clause [] fromFoilTBody []]
 
-    , SigD fromFoilPatternT (ForallT [PlainTV n SpecifiedSpec, PlainTV l SpecifiedSpec] []
+    , SigD fromFoilPatternT (ForallT ([PlainTV n SpecifiedSpec] ++ fromFoilPatternPlains ++ [PlainTV l SpecifiedSpec]) []
     (AppT (AppT ArrowT
-      ( AppT (AppT (ConT foilPatternT) (VarT n)) (VarT l))) -- FoilPattern n l
+      ( foldl AppT (ConT foilPatternT) ([VarT n] ++ fromFoilPatternVars ++ [VarT l]))) -- FoilPattern n t1..tn l
       (ConT patternT)) -- Pattern
     )
     , FunD fromFoilPatternT [Clause [] fromFoilPatternBody []]
@@ -67,6 +71,24 @@ mkFromFoil termT nameT scopeT patternT = do
     fromFoilTermT = mkName ("fromFoil" ++ nameBase termT)
     fromFoilPatternT = mkName ("fromFoil" ++ nameBase patternT)
     fromFoilScopedTermT = mkName ("fromFoil" ++ nameBase scopeT)
+
+    maxBinderNumber :: [Con] -> Int
+    maxBinderNumber cons = maximum (map
+        (\case
+            (NormalC _ params) -> (getBinderNumber (map snd params) 0)
+            _ -> 0
+        ) cons)
+    
+    generateNames :: Int -> Int -> [Name]
+    generateNames from to
+      | from >= to = []
+      | otherwise = mkName ("t" ++ show from) : generateNames (from + 1) to
+    
+    getBinderNumber :: [Type] -> Int -> Int
+    getBinderNumber [] counter = counter
+    getBinderNumber ((ConT tyName):types) counter
+      | tyName == nameT = getBinderNumber types (counter + 1)
+      | otherwise = getBinderNumber types counter
 
     fromMatchFoilPattern :: Con -> Match
     fromMatchFoilPattern (NormalC conName params) =

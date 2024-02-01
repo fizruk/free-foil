@@ -34,7 +34,7 @@ mkFoilData termT nameT scopeT patternT = do
   TyConI (DataD _ctx _name _tvars _kind scopeCons _deriv) <- reify scopeT
   TyConI (DataD _ctx _name _tvars _kind termCons _deriv) <- reify termT
 
-  let foilPatternConsNames = generateNames 1 (maximum (map getParamsNumber patternCons))
+  let foilPatternConsNames = generateNames 1 (maximum (map getBindersNumber patternCons))
   let foilPatternPlainTvs = map (`PlainTV` ()) ([n] ++ foilPatternConsNames ++ [l])
 
   let foilPatternCons = map (toPatternCon n l) patternCons
@@ -57,15 +57,21 @@ mkFoilData termT nameT scopeT patternT = do
       NormalC foilConName (map toPatternParam paramsWithBinders)
       where
         paramsWithBinders = zip3 params (n : foilNames) (foilNames ++ [l])
-        foilNames = generateNames 1 (length params)
+        foilNames = generateNames 1 (getBinderNumber (map snd params) 0)
         
         foilConName = mkName ("Foil" ++ nameBase conName)
         toPatternParam ((_bang, ConT tyName), localN, localL)
           | tyName == nameT = (_bang, AppT (AppT (ConT ''Foil.NameBinder) (VarT localN)) (VarT localL))
         toPatternParam (_bangType, _, _) = _bangType
 
-    getParamsNumber :: Con -> Int
-    getParamsNumber (NormalC _ params) = length params
+    getBindersNumber :: Con -> Int
+    getBindersNumber (NormalC _ params) = getBinderNumber (map snd params) 0
+
+    getBinderNumber :: [Type] -> Int -> Int
+    getBinderNumber [] counter = counter
+    getBinderNumber ((ConT tyName):types) counter
+      | tyName == nameT = getBinderNumber types (counter + 1)
+      | otherwise = getBinderNumber types counter
 
     generateNames :: Int -> Int -> [Name]
     generateNames from to

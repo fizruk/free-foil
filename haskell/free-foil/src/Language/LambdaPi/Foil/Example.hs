@@ -46,8 +46,8 @@ data ScopedTerm = ScopedTerm Term
 
 mkFoilData ''Term ''VarIdent ''ScopedTerm ''Pattern
 mkToFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
--- mkFromFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
--- mkInstancesFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
+mkFromFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
+mkInstancesFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
 
 -- toFoilTerm :: Distinct n => (VarIdent -> Name n) -> Scope n -> Term -> FoilTerm n
 -- toFoilTerm toName scope = \case
@@ -95,15 +95,14 @@ mkToFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
 --       in cont pat' toName scope
 
 
+-- toFoilPattern0 :: NameBinder n l -> Pattern -> FoilPattern n n1 l
+-- toFoilPattern0 binder = \case
+--   PatternVar _ -> FoilPatternVar binder
+--   PatternLit n -> FoilPatternLit n
 
-toFoilPattern :: NameBinder n l -> Pattern -> FoilPattern n n1 l
-toFoilPattern binder = \case
-  PatternVar _ -> FoilPatternVar binder
-  PatternLit n -> FoilPatternLit n
-
-toFoilPatternPair :: NameBinder n n1 -> NameBinder n1 l -> Pattern -> FoilPattern n n1 l
-toFoilPatternPair binder1 binder2 = \case
-  PatternPair _ _ -> FoilPatternPair binder1 binder2
+-- toFoilPattern2 :: NameBinder n n1 -> NameBinder n1 l -> Pattern -> FoilPattern n n1 l
+-- toFoilPattern2 binder1 binder2 = \case
+--   PatternPair _ _ -> FoilPatternPair binder1 binder2
 
 -- toFoilScopedTerm :: Distinct n => (VarIdent -> Name n) -> Scope n -> ScopedTerm -> FoilScopedTerm n
 -- toFoilScopedTerm toName scope = \case
@@ -150,10 +149,11 @@ toFoilPatternPair binder1 binder2 = \case
 -- extendRenamingPattern _ pattern cont =
 --   cont unsafeCoerce (unsafeCoerce pattern)
 
--- instance Sinkable (FoilPattern n) where
---   sinkabilityProof :: (Name n2 -> Name l) -> FoilPattern n1 n2 -> FoilPattern n1 l
---   sinkabilityProof f (FoilPatternVar (UnsafeNameBinder var)) = FoilPatternVar (UnsafeNameBinder (f var))
---   sinkabilityProof _ (FoilPatternLit i) = FoilPatternLit i
+instance Sinkable (FoilPattern n t1) where
+  sinkabilityProof :: (Name n2 -> Name l) -> FoilPattern n1 t1 n2 -> FoilPattern n1 t1 l
+  sinkabilityProof f (FoilPatternPair (UnsafeNameBinder _) (UnsafeNameBinder var2)) = FoilPatternVar (UnsafeNameBinder (f var2))
+  sinkabilityProof f (FoilPatternVar (UnsafeNameBinder var)) = FoilPatternVar (UnsafeNameBinder (f var))
+  sinkabilityProof _ (FoilPatternLit i) = FoilPatternLit i
 
 -- instance Sinkable FoilScopedTerm where
 --   sinkabilityProof :: (Name n -> Name l) -> FoilScopedTerm n -> FoilScopedTerm l
