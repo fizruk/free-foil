@@ -10,7 +10,6 @@ module Language.LambdaPi.Foil.TH.MkFromFoil (mkFromFoil) where
 import Language.Haskell.TH
 
 import qualified Language.LambdaPi.Foil as Foil
-import Data.Maybe (fromJust)
 import Data.Coerce (coerce)
 
 -- Foil
@@ -44,21 +43,21 @@ mkFromFoil termT nameT scopeT patternT = do
   return [
     SigD fromFoilTermT (ForallT [PlainTV n SpecifiedSpec] []
     (AppT (AppT ArrowT
-      ( AppT (ConT foilTermT) (VarT n))) -- FoilTerm n 
+      (AppT (ConT foilTermT) (VarT n))) -- FoilTerm n 
       (ConT termT)) -- Term
     )
     , FunD fromFoilTermT [Clause [] fromFoilTBody []]
 
     , SigD fromFoilPatternT (ForallT ([PlainTV n SpecifiedSpec] ++ fromFoilPatternPlains ++ [PlainTV l SpecifiedSpec]) []
     (AppT (AppT ArrowT
-      ( foldl AppT (ConT foilPatternT) ([VarT n] ++ fromFoilPatternVars ++ [VarT l]))) -- FoilPattern n t1..tn l
+      (foldl AppT (ConT foilPatternT) ([VarT n] ++ fromFoilPatternVars ++ [VarT l]))) -- FoilPattern n t1..tn l
       (ConT patternT)) -- Pattern
     )
     , FunD fromFoilPatternT [Clause [] fromFoilPatternBody []]
 
     , SigD fromFoilScopedTermT (ForallT [PlainTV n SpecifiedSpec] []
     (AppT (AppT ArrowT
-      ( AppT (ConT foilScopeT) (VarT n))) -- FoilScopedTerm n 
+      (AppT (ConT foilScopeT) (VarT n))) -- FoilScopedTerm n 
       (ConT scopeT)) -- ScopedTerm
     )
     , FunD fromFoilScopedTermT [Clause [] fromFoilScopedBody []]

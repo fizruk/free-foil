@@ -12,15 +12,10 @@ module Language.LambdaPi.Foil.TH (
   module Language.LambdaPi.Foil.TH.MkInstancesFoil
 ) where
 
-import Language.Haskell.TH
-
 import Language.LambdaPi.Foil.TH.MkFoilData
 import Language.LambdaPi.Foil.TH.MkFromFoil
 import Language.LambdaPi.Foil.TH.MkToFoil
 import Language.LambdaPi.Foil.TH.MkInstancesFoil
-import qualified Language.LambdaPi.Foil as Foil
-import Data.Maybe (fromJust)
-import Data.Coerce (coerce)
 
 -- Foil
 

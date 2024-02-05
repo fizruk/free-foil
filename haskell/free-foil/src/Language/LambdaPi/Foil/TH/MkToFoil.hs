@@ -11,7 +11,6 @@ import Language.Haskell.TH
 
 import qualified Language.LambdaPi.Foil as Foil
 import Data.Maybe (fromJust)
-import Data.Coerce (coerce)
 
 -- Foil
 
@@ -36,6 +35,8 @@ mkToFoil termT nameT scopeT patternT = do
 
   let toFoilTBody = NormalB (LamCaseE (map toMatchTerm termCons))
   -- let toFoilPatternBody = NormalB (LamCaseE (map toFoilPatternMatch patternCons))
+  let foilPatternConsNames = generateNames 1 (maximum (map (\(NormalC _ params) -> getBinderNumber (map snd params) 0) patternCons))
+  let foilPatternPlainTvs = map (`PlainTV` SpecifiedSpec) foilPatternConsNames
   let toFoilScopedBody = NormalB (LamCaseE (map toFoilScopedMatch scopeCons))
   let withPatternBody = NormalB (CaseE (VarE (mkName "pat")) (map withPatternMatch patternCons))
 
@@ -55,19 +56,9 @@ mkToFoil termT nameT scopeT patternT = do
     toFoilPatternSignatures ++ 
     toFoilPatternFunctions ++
     [
-    -- SigD toFoilPatternT (ForallT [PlainTV n SpecifiedSpec, PlainTV l SpecifiedSpec] []
-    -- (AppT (AppT ArrowT
-    --   ( AppT (AppT (ConT ''Foil.NameBinder) (VarT n)) (VarT l))) -- NameBinder n l
-    -- (AppT (AppT ArrowT
-    --   (ConT patternT)) -- Pattern
-    --   (AppT (AppT (ConT foilPatternT) (VarT n)) (VarT l))) -- FoilScopedTerm n
-    -- ))
-    -- , FunD toFoilPatternT [Clause [VarP (mkName "binder")] toFoilPatternBody []]
-
-    -- , 
     SigD toFoilScopedT (ForallT [PlainTV n SpecifiedSpec] [AppT (ConT (mkName "Distinct")) (VarT n)]
     (AppT (AppT ArrowT
-      ( AppT (AppT ArrowT (ConT nameT)) (AppT (ConT ''Foil.Name) (VarT n)))) -- (VarIdent -> Name n)
+      (AppT (AppT ArrowT (ConT nameT)) (AppT (ConT ''Foil.Name) (VarT n)))) -- (VarIdent -> Name n)
     (AppT (AppT ArrowT
       (ParensT (AppT (ConT (mkName "Scope")) (VarT n)))) -- Scope n
     (AppT (AppT ArrowT
@@ -76,18 +67,17 @@ mkToFoil termT nameT scopeT patternT = do
     )))
     , FunD toFoilScopedT [Clause [VarP (mkName "toName"), VarP (mkName "scope")] toFoilScopedBody []]
 
-    -- #TODO: FIX mkNamev "t1" - make it more general
     , SigD withPatternT (ForallT [PlainTV n SpecifiedSpec, PlainTV (mkName "r") SpecifiedSpec] [AppT (ConT (mkName "Distinct")) (VarT n)]
     (AppT (AppT ArrowT
-      ( AppT (AppT ArrowT (ConT nameT)) (AppT (ConT ''Foil.Name) (VarT n)))) --(VarIdent -> Name n) 
+      (AppT (AppT ArrowT (ConT nameT)) (AppT (ConT ''Foil.Name) (VarT n)))) --(VarIdent -> Name n) 
     (AppT (AppT ArrowT
       (ParensT (AppT (ConT (mkName "Scope")) (VarT n)))) -- Scope n
     (AppT (AppT ArrowT
        (ConT patternT)) -- Pattern
     (AppT (AppT ArrowT
-      (ForallT [PlainTV l SpecifiedSpec, PlainTV (mkName "t1") SpecifiedSpec] [AppT (ConT (mkName "Distinct")) (VarT l)]  -- forall l. Distinct l
+      (ForallT (PlainTV l SpecifiedSpec : foilPatternPlainTvs) [AppT (ConT (mkName "Distinct")) (VarT l)]  -- forall l. Distinct l
         (AppT (AppT ArrowT
-          (ParensT (foldl AppT (ConT foilPatternT) [VarT n, VarT (mkName "t1"), VarT l]))) -- FoilPattern n l
+          (ParensT (foldl AppT (ConT foilPatternT) ([VarT n] ++ map VarT foilPatternConsNames ++ [VarT l])))) -- FoilPattern n l
         (AppT (AppT ArrowT
           (ParensT (AppT (AppT ArrowT (ConT nameT)) (AppT (ConT ''Foil.Name) (VarT l))))) -- (VarIdent -> Name l)
         (AppT (AppT ArrowT
@@ -100,7 +90,7 @@ mkToFoil termT nameT scopeT patternT = do
 
     , SigD toFoilTermT (ForallT [PlainTV n SpecifiedSpec] [AppT (ConT (mkName "Distinct")) (VarT n)]
     (AppT (AppT ArrowT
-      ( AppT (AppT ArrowT (ConT nameT)) (AppT (ConT ''Foil.Name) (VarT n)))) -- (VarIdent -> Name n)
+      (AppT (AppT ArrowT (ConT nameT)) (AppT (ConT ''Foil.Name) (VarT n)))) -- (VarIdent -> Name n)
     (AppT (AppT ArrowT
       (ParensT (AppT (ConT (mkName "Scope")) (VarT n)))) -- Scope n
     (AppT (AppT ArrowT
@@ -140,6 +130,11 @@ mkToFoil termT nameT scopeT patternT = do
     getBinderNumber ((ConT tyName):types) counter
       | tyName == nameT = getBinderNumber types (counter + 1)
       | otherwise = getBinderNumber types counter
+    
+    generateNames :: Int -> Int -> [Name]
+    generateNames from to
+      | from >= to = []
+      | otherwise = mkName ("t" ++ show from) : generateNames (from + 1) to
 
     toFoilPatternSignatureGenerator :: [Con] -> [Dec]
     toFoilPatternSignatureGenerator cons =
@@ -181,10 +176,6 @@ mkToFoil termT nameT scopeT patternT = do
               nameBinderGenerator (_n, _l) = AppT ArrowT
                 (AppT (AppT (ConT ''Foil.NameBinder) (VarT _n)) (VarT _l))
 
-        generateNames :: Int -> Int -> [Name]
-        generateNames from to
-          | from >= to = []
-          | otherwise = mkName ("t" ++ show from) : generateNames (from + 1) to
 
     toFoilScopedMatch :: Con -> Match
     toFoilScopedMatch (NormalC conName params) =
