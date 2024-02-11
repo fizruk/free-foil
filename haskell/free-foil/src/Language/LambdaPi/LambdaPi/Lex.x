@@ -7,7 +7,7 @@
 
 {-# LANGUAGE PatternSynonyms #-}
 
-module Language.LambdaPi.Bound.Lex where
+module Language.LambdaPi.LambdaPi.Lex where
 
 import Prelude
 

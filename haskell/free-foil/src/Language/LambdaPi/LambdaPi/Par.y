@@ -5,7 +5,7 @@
 {-# OPTIONS_GHC -fno-warn-incomplete-patterns -fno-warn-overlapping-patterns #-}
 {-# LANGUAGE PatternSynonyms #-}
 
-module Language.LambdaPi.Bound.Par
+module Language.LambdaPi.LambdaPi.Par
   ( happyError
   , myLexer
   , pProgram
@@ -20,8 +20,8 @@ module Language.LambdaPi.Bound.Par
 
 import Prelude
 
-import qualified Language.LambdaPi.Bound.Abs
-import Language.LambdaPi.Bound.Lex
+import qualified Language.LambdaPi.LambdaPi.Abs
+import Language.LambdaPi.LambdaPi.Lex
 
 }
 
@@ -51,42 +51,46 @@ import Language.LambdaPi.Bound.Lex
 
 %%
 
-VarIdent :: { Language.LambdaPi.Bound.Abs.VarIdent }
-VarIdent  : L_VarIdent { Language.LambdaPi.Bound.Abs.VarIdent $1 }
+VarIdent :: { Language.LambdaPi.LambdaPi.Abs.VarIdent }
+VarIdent  : L_VarIdent { Language.LambdaPi.LambdaPi.Abs.VarIdent $1 }
 
-Program :: { Language.LambdaPi.Bound.Abs.Program }
-Program : ListCommand { Language.LambdaPi.Bound.Abs.AProgram $1 }
+Program :: { Language.LambdaPi.LambdaPi.Abs.Program }
+Program
+  : ListCommand { Language.LambdaPi.LambdaPi.Abs.AProgram $1 }
 
-Command :: { Language.LambdaPi.Bound.Abs.Command }
+Command :: { Language.LambdaPi.LambdaPi.Abs.Command }
 Command
-  : 'check' Term ':' Term { Language.LambdaPi.Bound.Abs.CommandCheck $2 $4 }
-  | 'compute' Term ':' Term { Language.LambdaPi.Bound.Abs.CommandCompute $2 $4 }
+  : 'check' Term ':' Term { Language.LambdaPi.LambdaPi.Abs.CommandCheck $2 $4 }
+  | 'compute' Term ':' Term { Language.LambdaPi.LambdaPi.Abs.CommandCompute $2 $4 }
 
-ListCommand :: { [Language.LambdaPi.Bound.Abs.Command] }
+ListCommand :: { [Language.LambdaPi.LambdaPi.Abs.Command] }
 ListCommand
   : {- empty -} { [] } | Command ';' ListCommand { (:) $1 $3 }
 
-Term :: { Language.LambdaPi.Bound.Abs.Term }
+Term :: { Language.LambdaPi.LambdaPi.Abs.Term }
 Term
-  : 'λ' Pattern '.' ScopedTerm { Language.LambdaPi.Bound.Abs.Lam $2 $4 }
-  | 'Π' '(' Pattern ':' Term ')' '→' ScopedTerm { Language.LambdaPi.Bound.Abs.Pi $3 $5 $8 }
+  : 'λ' Pattern '.' ScopedTerm { Language.LambdaPi.LambdaPi.Abs.Lam $2 $4 }
+  | 'Π' '(' Pattern ':' Term ')' '→' ScopedTerm { Language.LambdaPi.LambdaPi.Abs.Pi $3 $5 $8 }
   | Term1 { $1 }
 
-Term1 :: { Language.LambdaPi.Bound.Abs.Term }
+Term1 :: { Language.LambdaPi.LambdaPi.Abs.Term }
 Term1
-  : Term1 Term2 { Language.LambdaPi.Bound.Abs.App $1 $2 }
+  : Term1 Term2 { Language.LambdaPi.LambdaPi.Abs.App $1 $2 }
   | Term2 { $1 }
 
-Term2 :: { Language.LambdaPi.Bound.Abs.Term }
+Term2 :: { Language.LambdaPi.LambdaPi.Abs.Term }
 Term2
-  : VarIdent { Language.LambdaPi.Bound.Abs.Var $1 }
+  : VarIdent { Language.LambdaPi.LambdaPi.Abs.Var $1 }
   | '(' Term ')' { $2 }
 
-ScopedTerm :: { Language.LambdaPi.Bound.Abs.ScopedTerm }
-ScopedTerm : Term { Language.LambdaPi.Bound.Abs.AScopedTerm $1 }
+ScopedTerm :: { Language.LambdaPi.LambdaPi.Abs.ScopedTerm }
+ScopedTerm : Term { Language.LambdaPi.LambdaPi.Abs.AScopedTerm $1 }
 
-Pattern :: { Language.LambdaPi.Bound.Abs.Pattern }
-Pattern : VarIdent { Language.LambdaPi.Bound.Abs.PatternVar $1 }
+Pattern :: { Language.LambdaPi.LambdaPi.Abs.Pattern }
+Pattern
+  : VarIdent { Language.LambdaPi.LambdaPi.Abs.PatternVar $1 }
+  | VarIdent VarIdent { Language.LambdaPi.LambdaPi.Abs.PatternPair $1 $2 }
+  | VarIdent VarIdent VarIdent { Language.LambdaPi.LambdaPi.Abs.PatternTriplet $1 $2 $3 }
 
 {
 

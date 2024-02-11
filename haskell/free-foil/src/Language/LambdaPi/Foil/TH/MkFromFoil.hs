@@ -12,19 +12,6 @@ import Language.Haskell.TH
 import qualified Language.LambdaPi.Foil as Foil
 import Data.Coerce (coerce)
 
--- Foil
-
--- data FoilTerm n where
---   FoilVar :: Foil.Name n -> FoilTerm n
---   FoilApp :: FoilTerm n -> FoilTerm n -> FoilTerm n
---   FoilLam :: FoilPattern n l -> FoilTerm l -> FoilTerm n
-
--- data FoilPattern n l where
---   FoilPatternVar :: Foil.NameBinder n l -> FoilPattern n l
-
--- data FoilScopedTerm n where
---   FoilScopedTerm :: FoilTerm n -> FoilScopedTerm n
-
 mkFromFoil :: Name -> Name -> Name -> Name -> Q [Dec]
 mkFromFoil termT nameT scopeT patternT = do
   n <- newName "n"

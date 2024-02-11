@@ -11,9 +11,6 @@ CommandCheck.   Command ::= "check"   Term ":" Term ;
 CommandCompute. Command ::= "compute" Term ":" Term ;
 terminator Command ";" ;
 
---VarIdent. VarIdent ::= Ident ;
--- variable name VarIdent ;
-
 Lam.  Term ::= "λ" Pattern "." ScopedTerm ;
 Pi.   Term ::= "Π" "(" Pattern ":" Term ")" "→" ScopedTerm ;
 App.  Term1 ::= Term1 Term2 ;
@@ -21,7 +18,7 @@ Var.  Term2 ::= VarIdent ;
 coercions Term 2 ;
 
 AScopedTerm. ScopedTerm ::= Term ;
--- variable scope ScopedTerm ;
 
-PatternVar. Pattern ::= VarIdent ;
--- variable binder Pattern ;
+PatternVar.     Pattern ::= VarIdent ;
+PatternPair.    Pattern ::= VarIdent VarIdent ;
+PatternTriplet. Pattern ::= VarIdent VarIdent VarIdent ;

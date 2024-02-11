@@ -6,13 +6,13 @@
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Language.LambdaPi.Bound.Layout where
+module Language.LambdaPi.LambdaPi.Layout where
 
 import Prelude
 import Data.Maybe ( fromMaybe, listToMaybe, mapMaybe )
 import qualified Data.List as List
 
-import Language.LambdaPi.Bound.Lex
+import Language.LambdaPi.LambdaPi.Lex
   ( Posn(..), Tok(..), Token(..), TokSymbol(..)
   , prToken, tokenLineCol, tokenPos, tokenPosn
   )

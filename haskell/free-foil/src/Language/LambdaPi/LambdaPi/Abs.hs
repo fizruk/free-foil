@@ -4,9 +4,9 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
--- | The abstract syntax of language Bound.
+-- | The abstract syntax of language LambdaPi.
 
-module Language.LambdaPi.Bound.Abs where
+module Language.LambdaPi.LambdaPi.Abs where
 
 import Prelude (String)
 import qualified Prelude as C (Eq, Ord, Show, Read)
@@ -31,7 +31,10 @@ data Term
 data ScopedTerm = AScopedTerm Term
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Data, C.Typeable, C.Generic)
 
-data Pattern = PatternVar VarIdent
+data Pattern
+    = PatternVar VarIdent
+    | PatternPair VarIdent VarIdent
+    | PatternTriplet VarIdent VarIdent VarIdent
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Data, C.Typeable, C.Generic)
 
 newtype VarIdent = VarIdent String

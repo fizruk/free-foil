@@ -12,7 +12,7 @@
 {-# LANGUAGE InstanceSigs #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-} -- Убрать
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-} -- Убрать
-module Language.LambdaPi.Foil.BoundExample where
+module Language.LambdaPi.Foil.LambdaPiExample where
 
 import Data.String (IsString, String)
 
@@ -21,7 +21,7 @@ import Language.LambdaPi.Foil (Scope(..), Name (UnsafeName), NameBinder(UnsafeNa
                             , nameOf, ppName, Sinkable(..), extendRenaming)
 import Language.LambdaPi.Foil.TH
 import qualified Language.LambdaPi.Foil.TH as TH
-import Language.LambdaPi.Bound.Abs
+import Language.LambdaPi.LambdaPi.Abs
 import qualified Language.Haskell.TH as Foil
 import Unsafe.Coerce (unsafeCoerce)
 import Language.Haskell.TH (nameBase)
@@ -64,4 +64,4 @@ two = Lam (PatternVar "s") (AScopedTerm (Lam (PatternVar "z") (AScopedTerm (App 
 
 -- substed = FoilLam (FoilPatternVar (UnsafeNameBinder (UnsafeName "z"))) (FoilAScopedTerm (FoilApp (FoilVar (UnsafeName "zz")) (FoilApp (FoilVar (UnsafeName "zz")) (FoilVar (UnsafeName "z")))))
 
--- -- Language.LambdaPi.Foil.BoundExample.toFoilTerm Language.LambdaPi.Foil.BoundExample.func Language.LambdaPi.Foil.emptyScope Language.LambdaPi.Foil.BoundExample.two
+-- -- Language.LambdaPi.Foil.LambdaPiExample.toFoilTerm Language.LambdaPi.Foil.LambdaPiExample.func Language.LambdaPi.Foil.emptyScope Language.LambdaPi.Foil.LambdaPiExample.two
