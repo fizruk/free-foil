@@ -10,6 +10,7 @@ module Language.LambdaPi.Foil.TH.MkFoilData (mkFoilData) where
 import Language.Haskell.TH
 
 import qualified Language.LambdaPi.Foil as Foil
+import Language.Haskell.TH (TyVarBndr(PlainTV))
 
 -- Foil
 
@@ -20,6 +21,7 @@ import qualified Language.LambdaPi.Foil as Foil
 
 -- data FoilPattern n l where
 --   FoilPatternVar :: Foil.NameBinder n l -> FoilPattern n l
+--   FoilPatternPair :: forall l1. FoilPattern n l1 -> FoilPattern l1 l -> FoilPattern n l
 
 -- data FoilScopedTerm n where
 --   FoilScopedTerm :: FoilTerm n -> FoilScopedTerm n
@@ -35,7 +37,7 @@ mkFoilData termT nameT scopeT patternT = do
   let foilPatternConsNames = generateNames 1 (maximum (map getBindersNumber patternCons))
   let foilPatternPlainTvs = map (`PlainTV` ()) ([n] ++ foilPatternConsNames ++ [l])
 
-  let foilPatternCons = map (toPatternCon n l) patternCons
+  foilPatternCons <- mapM (toPatternCon n) patternCons
   let foilScopeCons = map (toScopeCon n) scopeCons
   let foilTermCons = map (\cons -> toTermCon n l cons foilPatternConsNames) termCons
 
@@ -43,24 +45,37 @@ mkFoilData termT nameT scopeT patternT = do
     [ DataD [] foilTermT [PlainTV n ()] Nothing foilTermCons []
     , StandaloneDerivD Nothing [] (AppT (ConT ''Show) (AppT (ConT foilTermT) (VarT n)))
     , DataD [] foilScopeT [PlainTV n ()] Nothing foilScopeCons [DerivClause Nothing [ConT ''Show]]
-    , DataD [] foilPatternT foilPatternPlainTvs Nothing foilPatternCons [DerivClause Nothing [ConT ''Show]]
+    , DataD [] foilPatternT [PlainTV n (), PlainTV l ()] Nothing foilPatternCons []
+    , StandaloneDerivD Nothing [] (AppT (ConT ''Show) (AppT (AppT (ConT foilPatternT) (VarT n)) (VarT l)))
     ]
   where
     foilTermT = mkName ("Foil" ++ nameBase termT)
     foilScopeT = mkName ("Foil" ++ nameBase scopeT)
     foilPatternT = mkName ("Foil" ++ nameBase patternT)
 
-    toPatternCon :: Name -> Name -> Con -> Con
-    toPatternCon n l (NormalC conName  params) =
-      NormalC foilConName (map toPatternParam paramsWithBinders)
+    toPatternCon :: Name -> Con -> Q Con
+    toPatternCon n (NormalC conName params) = do
+      (lastScopeName, foilParams) <- toPatternConParams n params
+      let foilConName = mkName ("Foil" ++ nameBase conName)
+      return (GadtC [foilConName] foilParams (AppT (AppT (ConT foilPatternT) (VarT n)) (VarT lastScopeName)))
       where
-        paramsWithBinders = zip3 params (n : foilNames) (foilNames ++ [l])
-        foilNames = generateNames 1 (getBinderNumber (map snd params) 0)
-        
-        foilConName = mkName ("Foil" ++ nameBase conName)
-        toPatternParam ((_bang, ConT tyName), localN, localL)
-          | tyName == nameT = (_bang, AppT (AppT (ConT ''Foil.NameBinder) (VarT localN)) (VarT localL))
-        toPatternParam (_bangType, _, _) = _bangType
+        toPatternConParams :: Name -> [BangType] -> Q (Name, [BangType])
+        toPatternConParams n [] = return (n, [])
+        toPatternConParams n (param@(bang, type_) : params) =
+          case type_ of
+            ConT tyName | tyName == nameT -> do
+              l <- newName "l"
+              let type' = AppT (AppT (ConT ''Foil.NameBinder) (VarT n)) (VarT l)
+              (l', params') <- toPatternConParams l params
+              return (l', (bang, type') : params')
+            ConT tyName | tyName == patternT -> do
+              l <- newName "l"
+              let type' = AppT (AppT (ConT foilPatternT) (VarT n)) (VarT l)
+              (l', params') <- toPatternConParams l params
+              return (l', (bang, type') : params')
+            _ -> do
+              (l, params') <- toPatternConParams n params
+              return (l, param : params')
 
     getBindersNumber :: Con -> Int
     getBindersNumber (NormalC _ params) = getBinderNumber (map snd params) 0
