@@ -90,7 +90,6 @@ Pattern :: { Language.LambdaPi.LambdaPi.Abs.Pattern }
 Pattern
   : VarIdent { Language.LambdaPi.LambdaPi.Abs.PatternVar $1 }
   | VarIdent VarIdent { Language.LambdaPi.LambdaPi.Abs.PatternPair $1 $2 }
-  | VarIdent VarIdent VarIdent { Language.LambdaPi.LambdaPi.Abs.PatternTriplet $1 $2 $3 }
 
 {
 

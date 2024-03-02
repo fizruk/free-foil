@@ -167,4 +167,3 @@ instance Print Language.LambdaPi.LambdaPi.Abs.Pattern where
   prt i = \case
     Language.LambdaPi.LambdaPi.Abs.PatternVar varident -> prPrec i 0 (concatD [prt 0 varident])
     Language.LambdaPi.LambdaPi.Abs.PatternPair varident1 varident2 -> prPrec i 0 (concatD [prt 0 varident1, prt 0 varident2])
-    Language.LambdaPi.LambdaPi.Abs.PatternTriplet varident1 varident2 varident3 -> prPrec i 0 (concatD [prt 0 varident1, prt 0 varident2, prt 0 varident3])

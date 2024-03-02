@@ -31,10 +31,7 @@ data Term
 data ScopedTerm = AScopedTerm Term
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Data, C.Typeable, C.Generic)
 
-data Pattern
-    = PatternVar VarIdent
-    | PatternPair VarIdent VarIdent
-    | PatternTriplet VarIdent VarIdent VarIdent
+data Pattern = PatternVar VarIdent | PatternPair VarIdent VarIdent
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Data, C.Typeable, C.Generic)
 
 newtype VarIdent = VarIdent String

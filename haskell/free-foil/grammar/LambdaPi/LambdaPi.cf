@@ -21,4 +21,4 @@ AScopedTerm. ScopedTerm ::= Term ;
 
 PatternVar.     Pattern ::= VarIdent ;
 PatternPair.    Pattern ::= VarIdent VarIdent ;
-PatternTriplet. Pattern ::= VarIdent VarIdent VarIdent ;
+
