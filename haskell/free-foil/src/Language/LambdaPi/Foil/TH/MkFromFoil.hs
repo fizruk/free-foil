@@ -85,7 +85,7 @@ mkFromFoil termT nameT scopeT patternT = do
         toPats _ [] = []
         toPats n ((ConT tyName):types)
           | tyName == nameT = ConP (mkName "UnsafeNameBinder") [] [VarP (mkName $ "binder" ++ show n)]:toPats (n+1) types -- change to WildP
-          | tyName == patternT = VarP (mkName "pat"):toPats (n+1) types
+          | tyName == patternT = VarP (mkName $ "pat" ++ show n):toPats (n+1) types
           | tyName == scopeT = VarP (mkName "scopedTerm"):toPats (n+1) types
           | tyName == termT = VarP (mkName $ "term" ++ show n):toPats (n+1) types
           | otherwise = VarP (mkName ("x" ++ show n)):toPats (n+1) types
@@ -110,7 +110,7 @@ mkFromFoil termT nameT scopeT patternT = do
         toPats _ [] = []
         toPats n ((ConT tyName):types)
           | tyName == nameT = VarP (mkName ("varName" ++ show n)):toPats (n+1) types -- change to WildP
-          | tyName == patternT = VarP (mkName "pat"):toPats (n+1) types
+          | tyName == patternT = VarP (mkName $ "pat" ++ show n):toPats (n+1) types
           | tyName == scopeT = VarP (mkName "scopedTerm"):toPats (n+1) types
           | tyName == termT = VarP (mkName $ "term" ++ show n):toPats (n+1) types
           | otherwise = VarP (mkName ("x" ++ show n)):toPats (n+1) types
@@ -135,7 +135,7 @@ mkFromFoil termT nameT scopeT patternT = do
         toPats _ [] = []
         toPats n ((ConT tyName):types)
           | tyName == nameT = VarP (mkName ("varName" ++ show n)):toPats (n+1) types
-          | tyName == patternT = VarP (mkName "pat"):toPats (n+1) types
+          | tyName == patternT = VarP (mkName $ "pat" ++ show n):toPats (n+1) types
           | tyName == scopeT = VarP (mkName "scopedTerm"):toPats (n+1) types
           | tyName == termT = VarP (mkName $ "term" ++ show n):toPats (n+1) types
           | otherwise = VarP (mkName ("x" ++ show n)):toPats (n+1) types
