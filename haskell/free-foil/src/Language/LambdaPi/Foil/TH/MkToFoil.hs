@@ -23,8 +23,6 @@ mkToFoil termT nameT scopeT patternT = do
 
   let toFoilTBody = NormalB (LamCaseE (map toMatchTerm termCons))
   -- let toFoilPatternBody = NormalB (LamCaseE (map toFoilPatternMatch patternCons))
-  let foilPatternConsNames = generateNames 1 (maximum (map (\(NormalC _ params) -> getBinderNumber (map snd params) 0) patternCons))
-  let foilPatternPlainTvs = map (`PlainTV` SpecifiedSpec) foilPatternConsNames
   let toFoilScopedBody = NormalB (LamCaseE (map toFoilScopedMatch scopeCons))
   let withPatternBody = NormalB (CaseE (VarE (mkName "pat")) (map withPatternMatch patternCons))
 
@@ -63,9 +61,9 @@ mkToFoil termT nameT scopeT patternT = do
     (AppT (AppT ArrowT
        (ConT patternT)) -- Pattern
     (AppT (AppT ArrowT
-      (ForallT (PlainTV l SpecifiedSpec : foilPatternPlainTvs) [AppT (ConT (mkName "Distinct")) (VarT l)]  -- forall l. Distinct l
+      (ForallT [PlainTV l SpecifiedSpec] [AppT (ConT (mkName "Distinct")) (VarT l)]  -- forall l. Distinct l
         (AppT (AppT ArrowT
-          (ParensT (foldl AppT (ConT foilPatternT) ([VarT n] ++ map VarT foilPatternConsNames ++ [VarT l])))) -- FoilPattern n l
+          (ParensT (foldl AppT (ConT foilPatternT) ([VarT n, VarT l])))) -- FoilPattern n l
         (AppT (AppT ArrowT
           (ParensT (AppT (AppT ArrowT (ConT nameT)) (AppT (ConT ''Foil.Name) (VarT l))))) -- (VarIdent -> Name l)
         (AppT (AppT ArrowT
@@ -140,20 +138,19 @@ mkToFoil termT nameT scopeT patternT = do
         toFoilPatternSignatureN _ [] =  []
         toFoilPatternSignatureN bindersNumber ((NormalC _ params):cs)
           | bindersNumber == getBinderNumber (map snd params) 0 =
-            SigD (mkName (nameBase toFoilPatternT ++ show bindersNumber)) (ForallT plainTVList []
+            [SigD (mkName (nameBase toFoilPatternT ++ show bindersNumber)) (ForallT plainTVList []
               (foldr AppT
                 (AppT (AppT ArrowT
                   (ConT patternT)) -- Pattern
-                  (foldl AppT (ConT foilPatternT) varTList)) -- FoilPatternTerm n
+                  (foldl AppT (ConT foilPatternT) [VarT (mkName "n"), VarT (mkName "l")])) -- FoilPattern n l
                 nameBindersList -- NameBinder n l
-              )) 
-              : toFoilPatternSignatureN bindersNumber cs
+              ))]
           | otherwise = toFoilPatternSignatureN bindersNumber cs
             where
               interNames = generateNames 1 bindersNumber
               maxInterNames = generateNames 1 maxBinderNumber
-              varTList = [VarT (mkName "n")] ++ map VarT maxInterNames ++ [VarT (mkName "l")]
-              plainTVList = [PlainTV (mkName "n") SpecifiedSpec] ++ map (`PlainTV` SpecifiedSpec) maxInterNames ++ [PlainTV (mkName "l") SpecifiedSpec]
+              -- varTList = [VarT (mkName "n")] ++ map VarT maxInterNames ++ [VarT (mkName "l")]
+              plainTVList = [PlainTV (mkName "n") SpecifiedSpec] ++ map (`PlainTV` SpecifiedSpec) interNames ++ [PlainTV (mkName "l") SpecifiedSpec]
               nameBindersList = 
                 if bindersNumber == 0 
                   then [] 
@@ -177,7 +174,7 @@ mkToFoil termT nameT scopeT patternT = do
         toPats _ [] = []
         toPats n ((ConT tyName):types)
           | tyName == nameT = VarP (mkName $ "varName" ++ show n):toPats (n+1) types
-          | tyName == patternT = VarP (mkName "pat"):toPats (n+1) types
+          | tyName == patternT = VarP (mkName $ "pat" ++ show n):toPats (n+1) types
           | tyName == scopeT = VarP (mkName "scopedTerm"):toPats (n+1) types
           | tyName == termT = VarP (mkName $ "term" ++ show n):toPats (n+1) types
           | otherwise = VarP (mkName ("x" ++ show n)):toPats (n+1) types
@@ -204,7 +201,7 @@ mkToFoil termT nameT scopeT patternT = do
         toPats _ [] = []
         toPats n ((ConT tyName):types)
           | tyName == nameT = VarP (mkName $ "varName" ++ show n):toPats (n+1) types
-          | tyName == patternT = VarP (mkName "pat"):toPats (n+1) types
+          | tyName == patternT = VarP (mkName $ "pat" ++ show n):toPats (n+1) types
           | tyName == scopeT = VarP (mkName "scopedTerm"):toPats (n+1) types
           | tyName == termT = VarP (mkName $ "term" ++ show n):toPats (n+1) types
           | otherwise = VarP (mkName ("x" ++ show n)):toPats (n+1) types
@@ -220,6 +217,7 @@ mkToFoil termT nameT scopeT patternT = do
             -- toExpr _ WildP = VarE (mkName "binder")
             toExpr (ConT tyName) (VarP patName) indx
               | tyName == nameT = VarE (mkName ("binder" ++ show indx))
+              | tyName == patternT = VarE (mkName ("binder" ++ show indx))
               | otherwise = VarE patName
 
             typesToBinderIndexes :: [Type] -> Int -> [Int]
@@ -234,7 +232,7 @@ mkToFoil termT nameT scopeT patternT = do
 
       where
         body
-         | countTerm conTypes > 0 = AppE (AppE (VarE 'Foil.withFresh) (VarE (mkName "scope"))) (withFreshPreLamPat 0 (countTerm conTypes - 1))
+         | countNames conTypes > 0 = AppE (AppE (VarE 'Foil.withFresh) (VarE (mkName "scope"))) (withFreshPreLamPat 0 (countNames conTypes - 1))
          | otherwise = LetE [decl] (AppE (AppE (AppE (VarE (mkName "cont")) (VarE (mkName "pat'"))) (VarE (mkName "toName"))) (VarE (mkName "scope")))
             where
               decl = ValD (VarP (mkName "pat'")) (NormalB (foldl AppE (ConE (mkName ("Foil" ++ nameBase conName))) ((\ (ConP _ _ conParams) -> map (\(VarP x) -> VarE x) conParams) matchPat))) []
@@ -261,7 +259,7 @@ mkToFoil termT nameT scopeT patternT = do
                             (NormalG (AppE (AppE (VarE (mkName "==")) (VarE (mkName "x"))) (VarE (mkName ("varName" ++ show n)))), AppE (VarE (mkName "nameOf")) (VarE (mkName ("binder" ++ show n)))),
                             (NormalG (VarE (mkName "otherwise")), AppE (VarE 'Foil.sink) (AppE (VarE (mkName ("toName" ++ (if n > 0 then show $ n-1 else "")))) (VarE (mkName "x"))))
                           ]) []],
-                      ValD (VarP (mkName "pat'")) (NormalB (foldl AppE (ConE (mkName ("Foil" ++ nameBase conName))) (bindersList 0 (countTerm conTypes)))) []
+                      ValD (VarP (mkName "pat'")) (NormalB (foldl AppE (ConE (mkName ("Foil" ++ nameBase conName))) (bindersList 0 (countNames conTypes)))) []
                     ]
                       (AppE (AppE (AppE (VarE (mkName "cont")) (VarE (mkName "pat'"))) (VarE (mkName "toName'"))) (VarE (mkName "scope'"))))
 
@@ -278,16 +276,16 @@ mkToFoil termT nameT scopeT patternT = do
         toPats _ [] = []
         toPats n ((ConT tyName):types)
           | tyName == nameT = VarP (mkName $ "varName" ++ show n):toPats (n+1) types
-          | tyName == patternT = VarP (mkName "pat"):toPats (n+1) types
+          | tyName == patternT = VarP (mkName $ "pat" ++ show n):toPats (n+1) types
           | tyName == scopeT = VarP (mkName "scopedTerm"):toPats (n+1) types
           | tyName == termT = VarP (mkName $ "term" ++ show n):toPats (n+1) types
           | otherwise = VarP (mkName ("x" ++ show n)):toPats (n+1) types
 
-        countTerm :: [Type] -> Int
-        countTerm [] = 0
-        countTerm ((ConT t):ts)
-          | t == nameT = 1 + countTerm ts
-          | otherwise = countTerm ts
+        countNames :: [Type] -> Int
+        countNames [] = 0
+        countNames ((ConT t):ts)
+          | t == nameT = 1 + countNames ts
+          | otherwise = countNames ts
 
     toMatchTerm :: Con -> Match
     toMatchTerm (NormalC conName params) =
@@ -301,7 +299,7 @@ mkToFoil termT nameT scopeT patternT = do
         toPats _ [] = []
         toPats n ((ConT tyName):types)
           | tyName == nameT = VarP (mkName $ "varName" ++ show n):toPats (n+1) types
-          | tyName == patternT = VarP (mkName "pat"):toPats (n+1) types
+          | tyName == patternT = VarP (mkName $ "pat" ++ show n):toPats (n+1) types
           | tyName == scopeT = VarP (mkName "scopedTerm"):toPats (n+1) types
           | tyName == termT = VarP (mkName $ "term" ++ show n):toPats (n+1) types
           | otherwise = VarP (mkName ("x" ++ show n)):toPats (n+1) types

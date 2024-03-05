@@ -24,9 +24,6 @@ mkFromFoil termT nameT scopeT patternT = do
   let fromFoilPatternBody = NormalB (LamCaseE (map fromMatchFoilPattern patternCons))
   let fromFoilScopedBody = NormalB (LamCaseE (map fromMatchFoilScoped scopeCons))
 
-  let fromFoilPatternVars = map VarT (generateNames 1 (maxBinderNumber patternCons))
-  let fromFoilPatternPlains = map (`PlainTV` SpecifiedSpec) (generateNames 1 (maxBinderNumber patternCons))
-
   return [
     SigD fromFoilTermT (ForallT [PlainTV n SpecifiedSpec] []
     (AppT (AppT ArrowT
@@ -35,9 +32,9 @@ mkFromFoil termT nameT scopeT patternT = do
     )
     , FunD fromFoilTermT [Clause [] fromFoilTBody []]
 
-    , SigD fromFoilPatternT (ForallT ([PlainTV n SpecifiedSpec] ++ fromFoilPatternPlains ++ [PlainTV l SpecifiedSpec]) []
+    , SigD fromFoilPatternT (ForallT ([PlainTV n SpecifiedSpec, PlainTV l SpecifiedSpec]) []
     (AppT (AppT ArrowT
-      (foldl AppT (ConT foilPatternT) ([VarT n] ++ fromFoilPatternVars ++ [VarT l]))) -- FoilPattern n t1..tn l
+      (foldl AppT (ConT foilPatternT) ([VarT n, VarT l]))) -- FoilPattern n t1..tn l
       (ConT patternT)) -- Pattern
     )
     , FunD fromFoilPatternT [Clause [] fromFoilPatternBody []]

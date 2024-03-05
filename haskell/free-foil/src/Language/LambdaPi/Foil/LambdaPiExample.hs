@@ -1,3 +1,4 @@
+-- {-# OPTIONS_GHC -ddump-splices #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE GADTs #-}
@@ -27,9 +28,9 @@ import Unsafe.Coerce (unsafeCoerce)
 import Language.Haskell.TH (nameBase)
 
 mkFoilData ''Term ''VarIdent ''ScopedTerm ''Pattern
-mkToFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
-mkFromFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
-mkInstancesFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
+-- mkToFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
+-- mkFromFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
+-- mkInstancesFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
 
 
 substitute :: FoilTerm o -> FoilTerm i -> FoilTerm o
