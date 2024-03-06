@@ -29,17 +29,18 @@ mkToFoil termT nameT scopeT patternT = do
   let toFoilPatternSignatures = toFoilPatternSignatureGenerator patternCons
   let splitedPatternCons = splitConsesByBinderNumber patternCons []
   let toFoilPatternFunctions = map 
-              (\(bindersNumber, cons) -> 
+              (\((bindersNumber, patsNumber), cons) -> 
                 let 
-                  toFoilPatternTLocal = mkName (nameBase toFoilPatternT ++ show bindersNumber)
+                  toFoilPatternTLocal = mkName (nameBase toFoilPatternT ++ show bindersNumber ++ show patsNumber)
                   varPBinders = map (\x -> VarP (mkName ("binder" ++ show x))) [1..bindersNumber]
+                  varPPats = map (\x -> VarP (mkName ("foilpat" ++ show x))) [1..patsNumber]
                   toFoilPatternBodyLocal = NormalB (LamCaseE (map toFoilPatternMatch cons))
-                in FunD toFoilPatternTLocal [Clause varPBinders toFoilPatternBodyLocal []]
+                in FunD toFoilPatternTLocal [Clause (varPBinders ++ varPPats) toFoilPatternBodyLocal []]
               ) 
             splitedPatternCons
 
   return (
-    toFoilPatternSignatures ++ 
+    -- toFoilPatternSignatures ++ 
     toFoilPatternFunctions ++
     [
     SigD toFoilScopedT (ForallT [PlainTV n SpecifiedSpec] [AppT (ConT (mkName "Distinct")) (VarT n)]
@@ -96,25 +97,33 @@ mkToFoil termT nameT scopeT patternT = do
     withPatternT = mkName "withPattern"
 
 
-    splitConsesByBinderNumber :: [Con] -> [(Int, [Con])] -> [(Int, [Con])]
+    splitConsesByBinderNumber :: [Con] -> [((Int, Int), [Con])] -> [((Int, Int), [Con])]
     splitConsesByBinderNumber [] current = current
     splitConsesByBinderNumber ((NormalC conName params):cs) current = 
       splitConsesByBinderNumber cs newCurrent
       where 
         newCurrent = putIntoSplitedList conBinderNumber (NormalC conName params) current
-        conBinderNumber = getBinderNumber (map snd params) 0
+        conBinderNumber = getBinderPatNumber (map snd params) (0, 0)
 
     
-    putIntoSplitedList :: Int -> Con -> [(Int, [Con])] -> [(Int, [Con])]
+    putIntoSplitedList :: (Int, Int) -> Con -> [((Int, Int), [Con])] -> [((Int, Int), [Con])]
     putIntoSplitedList n con [] = [(n, [con])]
-    putIntoSplitedList n con ((ni, conList):rest) 
-      | n == ni = (ni, con : conList):rest 
-      | otherwise = (ni, conList):putIntoSplitedList n con rest
+    putIntoSplitedList (nBinder, nPat) con (((niBinder, niPat), conList):rest) 
+      | nBinder == niBinder && nPat == niPat = ((niBinder, niPat), con : conList):rest 
+      | otherwise = ((niBinder, niPat), conList):putIntoSplitedList (nBinder, nPat) con rest
+
+    getBinderPatNumber :: [Type] -> (Int, Int) -> (Int, Int)
+    getBinderPatNumber [] counter = counter
+    getBinderPatNumber ((ConT tyName):types) (binderCounter, patCount)
+      | tyName == nameT = getBinderPatNumber types (binderCounter+1, patCount)
+      | tyName == patternT = getBinderPatNumber types (binderCounter, patCount+1)
+      | otherwise = getBinderPatNumber types (binderCounter, patCount)
 
     getBinderNumber :: [Type] -> Int -> Int
     getBinderNumber [] counter = counter
     getBinderNumber ((ConT tyName):types) counter
-      | tyName == nameT = getBinderNumber types (counter + 1)
+      | tyName == nameT = getBinderNumber types counter+1
+      | tyName == patternT = getBinderNumber types counter+1
       | otherwise = getBinderNumber types counter
     
     generateNames :: Int -> Int -> [Name]
@@ -204,7 +213,7 @@ mkToFoil termT nameT scopeT patternT = do
       Match matchPat (matchBody conTypes matchPat) []
 
       where
-        matchPat = ConP conName [] (toPats 0 conTypes)
+        matchPat = ConP conName [] (toPats 1 conTypes)
         conTypes = map snd params
 
         toPats :: Int -> [Type] -> [Pat]
@@ -227,7 +236,7 @@ mkToFoil termT nameT scopeT patternT = do
             -- toExpr _ WildP = VarE (mkName "binder")
             toExpr (ConT tyName) (VarP patName) indx
               | tyName == nameT = VarE (mkName ("binder" ++ show indx))
-              | tyName == patternT = VarE (mkName ("pat" ++ show indx))
+              | tyName == patternT = VarE (mkName ("foilpat" ++ show indx))
               | otherwise = VarE patName
 
             typesToBinderIndexes :: [Type] -> Int -> [Int]
