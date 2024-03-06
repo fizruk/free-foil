@@ -227,7 +227,7 @@ mkToFoil termT nameT scopeT patternT = do
             -- toExpr _ WildP = VarE (mkName "binder")
             toExpr (ConT tyName) (VarP patName) indx
               | tyName == nameT = VarE (mkName ("binder" ++ show indx))
-              | tyName == patternT = VarE (mkName ("binder" ++ show indx))
+              | tyName == patternT = VarE (mkName ("pat" ++ show indx))
               | otherwise = VarE patName
 
             typesToBinderIndexes :: [Type] -> Int -> [Int]

@@ -96,7 +96,9 @@ mkFromFoil termT nameT scopeT patternT = do
 
         toExpr :: Type -> Pat -> Exp
         toExpr _ (ConP _ _ [VarP varName]) = AppE (VarE 'coerce) (AppE (VarE 'Foil.ppName) (VarE varName)) -- Уязвимость: mkName (nameBase nameT) предполагает что имя конструктора совпадает с именем типа. Но нет возможности выбрать подходищай конструктор так как непонятно как паттернматчить аргумент конструктора с нужным
-        toExpr (ConT _) (VarP patName) = VarE patName
+        toExpr (ConT typeN) (VarP patName) 
+          | typeN == patternT = AppE (VarE fromFoilPatternT) (VarE patName)
+          | otherwise = VarE patName
 
     fromMatchFoilScoped :: Con -> Match
     fromMatchFoilScoped (NormalC conName params) =
