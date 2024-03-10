@@ -8,19 +8,7 @@
 module Language.LambdaPi.Foil.NewExample where
 
 import Language.LambdaPi.Foil
-import Data.Kind (Type)
 import Unsafe.Coerce (unsafeCoerce)
-
-
-class CoSinkable (pattern :: S -> S -> Type) where
-  coSinkabilityProof
-    :: (Name n -> Name n')
-    -> pattern n l
-    -> (forall l'. (Name l -> Name l') -> pattern n' l' -> r)
-    -> r
-
-instance CoSinkable NameBinder where
-  coSinkabilityProof _rename (UnsafeNameBinder name) cont = cont unsafeCoerce (UnsafeNameBinder name)
 
 data Pattern (n :: S) (l :: S) where
   PatternWildcard :: Pattern n n

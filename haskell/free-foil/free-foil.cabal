@@ -37,10 +37,20 @@ library
       LambdaPi.Simple.Interpret
       Language.LambdaPi.Foil
       Language.LambdaPi.Foil.Example
+      Language.LambdaPi.Foil.LambdaPiExample
       Language.LambdaPi.Foil.NewExample
       Language.LambdaPi.Foil.TH
+      Language.LambdaPi.Foil.TH.MkFoilData
+      Language.LambdaPi.Foil.TH.MkFromFoil
+      Language.LambdaPi.Foil.TH.MkInstancesFoil
+      Language.LambdaPi.Foil.TH.MkToFoil
       Language.LambdaPi.FreeFoil
       Language.LambdaPi.FreeScoped
+      Language.LambdaPi.LambdaPi.Abs
+      Language.LambdaPi.LambdaPi.Layout
+      Language.LambdaPi.LambdaPi.Lex
+      Language.LambdaPi.LambdaPi.Par
+      Language.LambdaPi.LambdaPi.Print
       Language.LambdaPi.Simple.Abs
       Language.LambdaPi.Simple.Layout
       Language.LambdaPi.Simple.Lex

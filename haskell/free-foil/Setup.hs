@@ -20,6 +20,7 @@ main = defaultMainWithHooks $ simpleUserHooks
   { hookedPrograms = [ bnfcProgram ]
   , postConf       = \args flags packageDesc localBuildInfo -> do
 #ifndef mingw32_HOST_OS
+      _ <- system "bnfc -d -p Language.LambdaPi --generic -o src/ grammar/LambdaPi/LambdaPi.cf"
       _ <- system "bnfc -d -p Language.LambdaPi --generic -o src/ grammar/LambdaPi/Simple.cf"
 #endif
       postConf simpleUserHooks args flags packageDesc localBuildInfo
