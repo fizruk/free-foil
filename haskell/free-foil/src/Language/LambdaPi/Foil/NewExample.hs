@@ -1,18 +1,18 @@
-{-# LANGUAGE TemplateHaskell #-}
+
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE InstanceSigs #-}
-module Language.LambdaPi.Foil.Example where
+module Language.LambdaPi.Foil.NewExample where
 
 import Language.LambdaPi.Foil
-import Language.LambdaPi.Foil.TH
+import Data.Kind (Type)
 import Unsafe.Coerce (unsafeCoerce)
 
 
-class CoSinkable (pattern :: S -> S -> *) where
+class CoSinkable (pattern :: S -> S -> Type) where
   coSinkabilityProof
     :: (Name n -> Name n')
     -> pattern n l
@@ -69,30 +69,36 @@ instance Sinkable Term where
          Pi pat' (sinkabilityProof rename argType) (sinkabilityProof rename' retType)
        Universe -> Universe
 
-
 withPattern
-  :: Distinct n => Distinct l
-  => Scope n
-  -> Substitution Term n l
-  -> Pattern n l
-  -> (forall k. Distinct k => Pattern n k -> Substitution Term n k -> Scope l -> r)
+  :: DExt s o
+  => Scope o
+  -> Pattern n i
+  -> Substitution Term n s
+  -> (forall o'. Distinct o' => Pattern o o' -> Substitution Term i o' -> Scope o' -> r)
   -> r
-withPattern scope subst pat cont =
+withPattern scope pat subst cont =
   case pat of
+    PatternWildcard -> cont PatternWildcard (sink subst) scope
+
     PatternVar var ->
-      withFresh scope $ \binder ->
-        let scope' = extendScope binder scope
-            subst' = addRename (sink subst) var (nameOf binder)
-            pat' = PatternVar binder
+      withRefreshed scope (nameOf var) $ \ var' ->
+        let pat' = PatternVar var'
+            subst' = addRename (sink subst) var (sink (nameOf var'))
+            scope' = extendScope var' scope
         in cont pat' subst' scope'
 
-    PatternPair pat1 pat2 ->
-      withPattern scope subst pat1 $ \pat1' subst' scope' ->
-        withPattern scope' subst' pat2 $ \pat2' subst'' scope'' ->
-          let pat' = PatternPair pat1' pat2'
-          in cont pat' subst'' scope''
+    PatternPair p1 p2 ->
+      withPattern scope p1 subst $ \p1' subst' scope' ->
+        withPattern scope' p2 subst' $ \p2' subst'' scope'' ->
+          cont (PatternPair p1' p2') subst'' scope''
 
-    PatternWildcard -> error "no idea what to do here"
+    -- PatternPair pat1 pat2 ->
+    --   withPattern scope subst pat1 $ \pat1' subst' scope' ->
+    --     withPattern scope' subst' pat2 $ \pat2' subst'' scope'' ->
+    --       let pat' = PatternPair pat1' pat2'
+    --       in cont pat' subst'' scope''
+
+    -- PatternWildcard -> error "no idea what to do here"
 
 substTerm
   :: Distinct o => Scope o -> Substitution Term i o -> Term i -> Term o
@@ -100,12 +106,11 @@ substTerm scope subst = \case
   Var x -> lookupSubst subst x
   Pair l r -> Pair (substTerm scope subst l) (substTerm scope subst r)
   App f x -> App (substTerm scope subst f) (substTerm scope subst x)
-  Lam pat body -> withPattern scope subst pat (\pattern' subst' scope' ->
-    let body' = substitute scope' subst' body
-    in Lam pattern' body')
-  Pi pat typ body -> withPattern scope subst pat (\pattern' subst' scope' ->
-    let body' = substitute scope' subst' body
-    in Pi pattern' typ body')
+  Lam pat body -> withPattern scope pat subst $ \pattern' subst' scope' ->
+    let body' = substTerm scope' subst' body
+    in Lam pattern' body'
+  Pi pat typ body -> withPattern scope pat subst $ \pattern' subst' scope' ->
+    let body' = substTerm scope' subst' body
+        typ' = substTerm scope subst typ
+    in Pi pattern' typ'  body'
   Universe -> Universe
-
-
