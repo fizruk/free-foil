@@ -61,6 +61,9 @@ library:
         - Language.LambdaPi.LambdaPi.Test
         - Language.LambdaPi.LambdaPi.ErrM
         - Language.LambdaPi.LambdaPi.Skel
+        - Language.LambdaPi.Bound.Test
+        - Language.LambdaPi.Bound.ErrM
+        - Language.LambdaPi.Bound.Skel
 
 executables:
   lambda-pi:

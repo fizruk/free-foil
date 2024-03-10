@@ -38,6 +38,7 @@ library
       Language.LambdaPi.Foil
       Language.LambdaPi.Foil.Example
       Language.LambdaPi.Foil.LambdaPiExample
+      Language.LambdaPi.Foil.NewExample
       Language.LambdaPi.Foil.TH
       Language.LambdaPi.Foil.TH.MkFoilData
       Language.LambdaPi.Foil.TH.MkFromFoil
