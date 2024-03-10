@@ -19,7 +19,7 @@ import Data.String (IsString)
 
 import Language.LambdaPi.Foil (Scope(..), Name (UnsafeName), NameBinder(UnsafeNameBinder)
                             , extendScope, withFresh, sink, Distinct
-                            , nameOf, ppName, Sinkable(..), extendRenaming)
+                            , nameOf, ppName, Sinkable(..), CoSinkable(..), extendRenaming)
 import Language.LambdaPi.Foil.TH
 import qualified Language.LambdaPi.Foil.TH as TH
 import qualified Language.Haskell.TH as Foil

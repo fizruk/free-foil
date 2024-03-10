@@ -26,12 +26,16 @@ data Term
     | Pi Pattern Term ScopedTerm
     | App Term Term
     | Var VarIdent
+    | Pair Term Term
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Data, C.Typeable, C.Generic)
 
 data ScopedTerm = AScopedTerm Term
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Data, C.Typeable, C.Generic)
 
-data Pattern = PatternVar VarIdent | PatternPair VarIdent VarIdent
+data Pattern
+    = PatternWildcard
+    | PatternVar VarIdent
+    | PatternPair VarIdent VarIdent
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Data, C.Typeable, C.Generic)
 
 newtype VarIdent = VarIdent String

@@ -15,10 +15,11 @@ Lam.  Term ::= "λ" Pattern "." ScopedTerm ;
 Pi.   Term ::= "Π" "(" Pattern ":" Term ")" "→" ScopedTerm ;
 App.  Term1 ::= Term1 Term2 ;
 Var.  Term2 ::= VarIdent ;
+Pair. Term ::= "(" Term "," Term ")" ;
 coercions Term 2 ;
 
 AScopedTerm. ScopedTerm ::= Term ;
 
-PatternVar.     Pattern ::= VarIdent ;
-PatternPair.    Pattern ::= VarIdent VarIdent ;
-
+PatternWildcard.  Pattern ::= "_" ;
+PatternVar.       Pattern ::= VarIdent ;
+PatternPair.      Pattern ::= "(" VarIdent "," VarIdent ")" ;

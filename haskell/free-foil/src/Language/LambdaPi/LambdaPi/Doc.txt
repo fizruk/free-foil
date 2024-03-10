@@ -25,7 +25,7 @@ The reserved words used in LambdaPi are the following:
 
 The symbols used in LambdaPi are the following:
   | : | ; | . | (
-  | ) | → |  |
+  | ) | → | , | _
 
 ===Comments===
 Single-line comments begin with --.Multiple-line comments are  enclosed with {- and -}.
@@ -43,14 +43,16 @@ All other symbols are terminals.
   |  |  **|**  | //Command// ``;`` //[Command]//
   | //Term// | -> | ``λ`` //Pattern// ``.`` //ScopedTerm//
   |  |  **|**  | ``Π`` ``(`` //Pattern// ``:`` //Term// ``)`` ``→`` //ScopedTerm//
+  |  |  **|**  | ``(`` //Term// ``,`` //Term// ``)``
   |  |  **|**  | //Term1//
   | //Term1// | -> | //Term1// //Term2//
   |  |  **|**  | //Term2//
   | //Term2// | -> | //VarIdent//
   |  |  **|**  | ``(`` //Term// ``)``
   | //ScopedTerm// | -> | //Term//
-  | //Pattern// | -> | //VarIdent//
-  |  |  **|**  | //VarIdent// //VarIdent//
+  | //Pattern// | -> | ``_``
+  |  |  **|**  | //VarIdent//
+  |  |  **|**  | ``(`` //VarIdent// ``,`` //VarIdent// ``)``
 
 
 

@@ -22,6 +22,7 @@ import Language.LambdaPi.Simple.Layout (resolveLayout)
 import Language.LambdaPi.Simple.Par (pProgram)
 import Language.LambdaPi.Simple.Print (printTree)
 import Unsafe.Coerce
+import Data.Kind (Type)
 import System.Exit (exitFailure)
 
 type Id = String
@@ -162,6 +163,18 @@ extendRenaming :: (Name n -> Name n') -> NameBinder n l
   -> (forall l'. (Name l -> Name l') -> NameBinder n' l' -> r ) -> r
 extendRenaming _ (UnsafeNameBinder name) cont =
   cont unsafeCoerce (UnsafeNameBinder name)
+
+-- CoSinkable (for patterns)
+
+class CoSinkable (pattern :: S -> S -> Type) where
+  coSinkabilityProof
+    :: (Name n -> Name n')
+    -> pattern n l
+    -> (forall l'. (Name l -> Name l') -> pattern n' l' -> r)
+    -> r
+
+instance CoSinkable NameBinder where
+  coSinkabilityProof _rename (UnsafeNameBinder name) cont = cont unsafeCoerce (UnsafeNameBinder name)
 
 -- Substitution
 data Substitution (e :: S -> *) (i :: S) (o :: S) =

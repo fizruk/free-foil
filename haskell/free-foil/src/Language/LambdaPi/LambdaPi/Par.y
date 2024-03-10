@@ -39,14 +39,16 @@ import Language.LambdaPi.LambdaPi.Lex
 %token
   '('        { PT _ (TS _ 1)        }
   ')'        { PT _ (TS _ 2)        }
-  '.'        { PT _ (TS _ 3)        }
-  ':'        { PT _ (TS _ 4)        }
-  ';'        { PT _ (TS _ 5)        }
-  'check'    { PT _ (TS _ 6)        }
-  'compute'  { PT _ (TS _ 7)        }
-  'Π'        { PT _ (TS _ 8)        }
-  'λ'        { PT _ (TS _ 9)        }
-  '→'        { PT _ (TS _ 10)       }
+  ','        { PT _ (TS _ 3)        }
+  '.'        { PT _ (TS _ 4)        }
+  ':'        { PT _ (TS _ 5)        }
+  ';'        { PT _ (TS _ 6)        }
+  '_'        { PT _ (TS _ 7)        }
+  'check'    { PT _ (TS _ 8)        }
+  'compute'  { PT _ (TS _ 9)        }
+  'Π'        { PT _ (TS _ 10)       }
+  'λ'        { PT _ (TS _ 11)       }
+  '→'        { PT _ (TS _ 12)       }
   L_VarIdent { PT _ (T_VarIdent $$) }
 
 %%
@@ -71,6 +73,7 @@ Term :: { Language.LambdaPi.LambdaPi.Abs.Term }
 Term
   : 'λ' Pattern '.' ScopedTerm { Language.LambdaPi.LambdaPi.Abs.Lam $2 $4 }
   | 'Π' '(' Pattern ':' Term ')' '→' ScopedTerm { Language.LambdaPi.LambdaPi.Abs.Pi $3 $5 $8 }
+  | '(' Term ',' Term ')' { Language.LambdaPi.LambdaPi.Abs.Pair $2 $4 }
   | Term1 { $1 }
 
 Term1 :: { Language.LambdaPi.LambdaPi.Abs.Term }
@@ -88,8 +91,9 @@ ScopedTerm : Term { Language.LambdaPi.LambdaPi.Abs.AScopedTerm $1 }
 
 Pattern :: { Language.LambdaPi.LambdaPi.Abs.Pattern }
 Pattern
-  : VarIdent { Language.LambdaPi.LambdaPi.Abs.PatternVar $1 }
-  | VarIdent VarIdent { Language.LambdaPi.LambdaPi.Abs.PatternPair $1 $2 }
+  : '_' { Language.LambdaPi.LambdaPi.Abs.PatternWildcard }
+  | VarIdent { Language.LambdaPi.LambdaPi.Abs.PatternVar $1 }
+  | '(' VarIdent ',' VarIdent ')' { Language.LambdaPi.LambdaPi.Abs.PatternPair $2 $4 }
 
 {
 

@@ -158,6 +158,7 @@ instance Print Language.LambdaPi.LambdaPi.Abs.Term where
     Language.LambdaPi.LambdaPi.Abs.Pi pattern_ term scopedterm -> prPrec i 0 (concatD [doc (showString "\928"), doc (showString "("), prt 0 pattern_, doc (showString ":"), prt 0 term, doc (showString ")"), doc (showString "\8594"), prt 0 scopedterm])
     Language.LambdaPi.LambdaPi.Abs.App term1 term2 -> prPrec i 1 (concatD [prt 1 term1, prt 2 term2])
     Language.LambdaPi.LambdaPi.Abs.Var varident -> prPrec i 2 (concatD [prt 0 varident])
+    Language.LambdaPi.LambdaPi.Abs.Pair term1 term2 -> prPrec i 0 (concatD [doc (showString "("), prt 0 term1, doc (showString ","), prt 0 term2, doc (showString ")")])
 
 instance Print Language.LambdaPi.LambdaPi.Abs.ScopedTerm where
   prt i = \case
@@ -165,5 +166,6 @@ instance Print Language.LambdaPi.LambdaPi.Abs.ScopedTerm where
 
 instance Print Language.LambdaPi.LambdaPi.Abs.Pattern where
   prt i = \case
+    Language.LambdaPi.LambdaPi.Abs.PatternWildcard -> prPrec i 0 (concatD [doc (showString "_")])
     Language.LambdaPi.LambdaPi.Abs.PatternVar varident -> prPrec i 0 (concatD [prt 0 varident])
-    Language.LambdaPi.LambdaPi.Abs.PatternPair varident1 varident2 -> prPrec i 0 (concatD [prt 0 varident1, prt 0 varident2])
+    Language.LambdaPi.LambdaPi.Abs.PatternPair varident1 varident2 -> prPrec i 0 (concatD [doc (showString "("), prt 0 varident1, doc (showString ","), prt 0 varident2, doc (showString ")")])

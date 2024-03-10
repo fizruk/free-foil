@@ -28,8 +28,8 @@ mkInstancesFoil termT nameT scopeT patternT = do
   return [
       InstanceD Nothing [] (AppT (ConT (mkName "Sinkable")) (ConT foilScopeT))
       [FunD (mkName "sinkabilityProof") (map clauseScopedTerm foilScopeCons)]
-    -- , InstanceD Nothing [] (AppT (ConT (mkName "Sinkable")) (AppT (ConT foilPatternT) (VarT n)))
-    --   [FunD (mkName "sinkabilityProof") (map clausePattern foilPatternCons)]
+    , InstanceD Nothing [] (AppT (ConT (mkName "CoSinkable")) (ConT foilPatternT))
+       [FunD (mkName "coSinkabilityProof") (map clausePattern foilPatternCons)]
     , InstanceD Nothing [] (AppT (ConT (mkName "Sinkable")) (ConT foilTermT))
       [FunD (mkName "sinkabilityProof") (map clauseTerm foilTermCons)]
     , FunD extendRenamingPatternT [Clause [WildP, VarP (mkName "pattern"), VarP (mkName "cont")] extendRenamingPatternBody []]
@@ -68,29 +68,53 @@ mkInstancesFoil termT nameT scopeT patternT = do
 
 
     clausePattern :: Con -> Clause
-    clausePattern (NormalC conName params) =
-      let
-        conPats = toPats 0 conTypes
-        conTypes = map snd params
-      in Clause [VarP (mkName "f"), ConP conName [] conPats] (matchBody conTypes conName conPats) []
-
+    clausePattern (NormalC conName paramTypes) =
+      Clause [VarP rename, ConP conName [] (map VarP paramNames), VarP cont] (NormalB body) []
       where
+        paramNames = map (\i -> mkName ("p" ++ show i)) [1 .. length paramTypes]
+        rename = mkName "rename"
+        cont = mkName "cont"
 
-        toPats :: Int -> [Type] -> [Pat]
-        toPats _ [] = []
-        toPats n ((ConT simple):types) = VarP (mkName ("x" ++ show n)):toPats (n+1) types
-        toPats n ((AppT (AppT (ConT var) (VarT _)) (VarT _)):types)
-          | var == ''Foil.NameBinder = ConP 'Foil.UnsafeNameBinder [] [VarP (mkName ("var" ++ show n))]:toPats (n+1) types
-          | otherwise = VarP (mkName ("x" ++ show n)):toPats (n+1) types
+        body = go 1 rename [] $
+          zip paramNames paramTypes
+          where
+            go :: Int -> Name -> [Exp] -> [(Name, BangType)] -> Exp
+            go _ rename' params' []
+              = AppE (AppE (VarE cont) (VarE rename')) (foldl AppE (ConE conName) params')
+            go i rename' params' ((param, paramType) : moreParamTypes)
+              | (_, AppT (AppT (ConT patternType) _) _) <- paramType
+              , patternType == ''Foil.NameBinder || patternType == foilPatternT
+                = AppE (AppE (AppE (VarE 'Foil.coSinkabilityProof) (VarE rename')) (VarE param))
+                  (LamE [VarP rename'', VarP param'] $
+                    go (i + 1) rename'' (params' ++ [VarE param']) moreParamTypes)
+              | otherwise = go (i + 1) rename' (params' ++ [VarE param]) moreParamTypes
+                  where
+                    rename'' = mkName ("rename" ++ show i)
+                    param' = mkName ("p" ++ show i ++ "'")
 
-        matchBody :: [Type] -> Name -> [Pat] -> Body
-        matchBody matchTypes name _conPats = NormalB
-          (foldl AppE (ConE name) (zipWith toExpr matchTypes _conPats))
+      -- let
+      --   conPats = toPats 0 conTypes
+      --   conTypes = map snd params
+      -- in Clause [VarP (mkName "rename"), ConP conName [] conPats, VarP (mkName "cont")] (matchBody conTypes conName conPats) []
 
-        toExpr :: Type -> Pat -> Exp
-        toExpr ((AppT (AppT (ConT var) (VarT _)) (VarT _))) (ConP unsafeBinder [] [VarP singleVar])
-          | var == ''Foil.NameBinder = AppE (ConE 'Foil.UnsafeNameBinder) (AppE (VarE (mkName "f")) (VarE singleVar))
-        toExpr _ (VarP patName) = VarE patName
+      -- where
+
+      --   toPats :: Int -> [Type] -> [Pat]
+      --   toPats _ [] = []
+      --   toPats n ((ConT simple):types) = VarP (mkName ("x" ++ show n)):toPats (n+1) types
+      --   toPats n ((AppT (AppT (ConT var) (VarT _)) (VarT _)):types)
+      --     | var == ''Foil.NameBinder || var == foilPatternT =
+      --         VarP (mkName ("var" ++ show n)) : toPats (n+1) types
+      --     | otherwise = VarP (mkName ("x" ++ show n)):toPats (n+1) types
+
+      --   matchBody :: [Type] -> Name -> [Pat] -> Body
+      --   matchBody matchTypes name _conPats = NormalB
+      --     (foldl AppE (ConE name) (zipWith toExpr matchTypes _conPats))
+
+      --   toExpr :: Type -> Pat -> Exp
+      --   toExpr ((AppT (AppT (ConT var) (VarT _)) (VarT _))) (ConP unsafeBinder [] [VarP singleVar])
+      --     | var == ''Foil.NameBinder = AppE (ConE 'Foil.UnsafeNameBinder) (AppE (VarE (mkName "f")) (VarE singleVar))
+      --   toExpr _ (VarP patName) = VarE patName
 
     clauseTerm :: Con -> Clause
     -- clauseTerm (NormalC conNameTerm paramsTerm) =
@@ -170,7 +194,8 @@ mkInstancesFoil termT nameT scopeT patternT = do
       where
         foilConName = mkName ("Foil" ++ nameBase conName)
         toPatternParam (_bang, ConT tyName)
-          | tyName == nameT = (_bang, AppT (AppT (ConT ''Foil.NameBinder) (VarT n)) (VarT l))
+          | tyName == nameT = (_bang, AppT (AppT (ConT ''Foil.NameBinder) (VarT n)) (VarT l)) -- FIXME: type parameters are incorrect here (but it does not matter for this module yet)
+          | tyName == patternT = (_bang, AppT (AppT (ConT foilPatternT) (VarT n)) (VarT l))   -- FIXME: type parameters are incorrect here (but it does not matter for this module yet)
         toPatternParam _bangType = _bangType
 
     toScopeCon :: Name -> Con -> Con
