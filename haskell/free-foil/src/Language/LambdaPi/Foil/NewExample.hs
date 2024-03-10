@@ -92,14 +92,6 @@ withPattern scope pat subst cont =
         withPattern scope' p2 subst' $ \p2' subst'' scope'' ->
           cont (PatternPair p1' p2') subst'' scope''
 
-    -- PatternPair pat1 pat2 ->
-    --   withPattern scope subst pat1 $ \pat1' subst' scope' ->
-    --     withPattern scope' subst' pat2 $ \pat2' subst'' scope'' ->
-    --       let pat' = PatternPair pat1' pat2'
-    --       in cont pat' subst'' scope''
-
-    -- PatternWildcard -> error "no idea what to do here"
-
 substTerm
   :: Distinct o => Scope o -> Substitution Term i o -> Term i -> Term o
 substTerm scope subst = \case
