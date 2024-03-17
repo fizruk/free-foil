@@ -43,21 +43,21 @@ mkFoilData termT nameT scopeT patternT = do
       return (GadtC [foilConName] foilParams (AppT (AppT (ConT foilPatternT) (VarT n)) (VarT lastScopeName)))
       where
         toPatternConParams :: Name -> [BangType] -> Q (Name, [BangType])
-        toPatternConParams n [] = return (n, [])
-        toPatternConParams n (param@(bang, type_) : params) =
+        toPatternConParams n_ [] = return (n_, [])
+        toPatternConParams n_ (param@(bang_, type_) : params_) =
           case type_ of
             ConT tyName | tyName == nameT -> do
               l <- newName "l"
-              let type' = AppT (AppT (ConT ''Foil.NameBinder) (VarT n)) (VarT l)
-              (l', params') <- toPatternConParams l params
-              return (l', (bang, type') : params')
+              let type' = AppT (AppT (ConT ''Foil.NameBinder) (VarT n_)) (VarT l)
+              (l', params') <- toPatternConParams l params_
+              return (l', (bang_, type') : params')
             ConT tyName | tyName == patternT -> do
               l <- newName "l"
-              let type' = AppT (AppT (ConT foilPatternT) (VarT n)) (VarT l)
-              (l', params') <- toPatternConParams l params
-              return (l', (bang, type') : params')
+              let type' = AppT (AppT (ConT foilPatternT) (VarT n_)) (VarT l)
+              (l', params') <- toPatternConParams l params_
+              return (l', (bang_, type') : params')
             _ -> do
-              (l, params') <- toPatternConParams n params
+              (l, params') <- toPatternConParams n params_
               return (l, param : params')
 
     toScopeCon :: Name -> Con -> Con

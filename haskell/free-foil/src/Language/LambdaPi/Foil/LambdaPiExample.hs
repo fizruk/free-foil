@@ -15,17 +15,12 @@
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-} -- Убрать
 module Language.LambdaPi.Foil.LambdaPiExample where
 
-import Data.String (IsString, String)
-
 import Language.LambdaPi.Foil (Scope(..), Name (UnsafeName), NameBinder(UnsafeNameBinder)
-                            , extendScope, withFresh, sink, Distinct
-                            , nameOf, ppName, Sinkable(..), CoSinkable(..), extendRenaming)
+                            , Distinct
+                            , nameOf, ppName, Sinkable(..), CoSinkable(..))
 import Language.LambdaPi.Foil.TH
-import qualified Language.LambdaPi.Foil.TH as TH
 import Language.LambdaPi.LambdaPi.Abs
-import qualified Language.Haskell.TH as Foil
 import Unsafe.Coerce (unsafeCoerce)
-import Language.Haskell.TH (nameBase)
 
 mkFoilData ''Term ''VarIdent ''ScopedTerm ''Pattern
 mkToFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
@@ -35,8 +30,8 @@ mkInstancesFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
 
 substitute :: FoilTerm o -> FoilTerm i -> FoilTerm o
 substitute substTerm = \case
-  FoilVar name -> substTerm
-  FoilApp term1 term2 -> substTerm
+  FoilVar _ -> substTerm
+  FoilApp _ _ -> substTerm
   FoilLam (FoilPatternVar pat) (FoilAScopedTerm term) -> substituteHelper substTerm (nameOf pat) term
     where
       substituteHelper :: FoilTerm o -> Name i -> FoilTerm i -> FoilTerm o

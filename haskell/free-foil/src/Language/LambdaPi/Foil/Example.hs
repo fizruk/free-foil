@@ -18,11 +18,9 @@ module Language.LambdaPi.Foil.Example where
 import Data.String (IsString)
 
 import Language.LambdaPi.Foil (Scope(..), Name (UnsafeName), NameBinder(UnsafeNameBinder)
-                            , extendScope, withFresh, sink, Distinct
-                            , nameOf, ppName, Sinkable(..), CoSinkable(..), extendRenaming)
+                            , Distinct
+                            , Sinkable(..), CoSinkable(..))
 import Language.LambdaPi.Foil.TH
-import qualified Language.LambdaPi.Foil.TH as TH
-import qualified Language.Haskell.TH as Foil
 import Unsafe.Coerce (unsafeCoerce)
 
 

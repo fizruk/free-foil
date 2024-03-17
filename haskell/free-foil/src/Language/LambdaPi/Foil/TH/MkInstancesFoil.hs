@@ -2,6 +2,7 @@
 {-# LANGUAGE TemplateHaskellQuotes #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE LambdaCase #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
@@ -31,6 +32,7 @@ mkInstancesFoil termT nameT scopeT patternT = do
        [FunD (mkName "coSinkabilityProof") (map clausePattern foilPatternCons)]
     , InstanceD Nothing [] (AppT (ConT (mkName "Sinkable")) (ConT foilTermT))
       [FunD (mkName "sinkabilityProof") (map clauseTerm foilTermCons)]
+    , SigD extendRenamingPatternT extendRenamingPatternSignType
     , FunD extendRenamingPatternT [Clause [WildP, VarP (mkName "pattern"), VarP (mkName "cont")] extendRenamingPatternBody []]
     ]
 
@@ -90,30 +92,6 @@ mkInstancesFoil termT nameT scopeT patternT = do
                   where
                     rename'' = mkName ("rename" ++ show i)
                     param' = mkName ("p" ++ show i ++ "'")
-
-      -- let
-      --   conPats = toPats 0 conTypes
-      --   conTypes = map snd params
-      -- in Clause [VarP (mkName "rename"), ConP conName [] conPats, VarP (mkName "cont")] (matchBody conTypes conName conPats) []
-
-      -- where
-
-      --   toPats :: Int -> [Type] -> [Pat]
-      --   toPats _ [] = []
-      --   toPats n ((ConT simple):types) = VarP (mkName ("x" ++ show n)):toPats (n+1) types
-      --   toPats n ((AppT (AppT (ConT var) (VarT _)) (VarT _)):types)
-      --     | var == ''Foil.NameBinder || var == foilPatternT =
-      --         VarP (mkName ("var" ++ show n)) : toPats (n+1) types
-      --     | otherwise = VarP (mkName ("x" ++ show n)):toPats (n+1) types
-
-      --   matchBody :: [Type] -> Name -> [Pat] -> Body
-      --   matchBody matchTypes name _conPats = NormalB
-      --     (foldl AppE (ConE name) (zipWith toExpr matchTypes _conPats))
-
-      --   toExpr :: Type -> Pat -> Exp
-      --   toExpr ((AppT (AppT (ConT var) (VarT _)) (VarT _))) (ConP unsafeBinder [] [VarP singleVar])
-      --     | var == ''Foil.NameBinder = AppE (ConE 'Foil.UnsafeNameBinder) (AppE (VarE (mkName "f")) (VarE singleVar))
-      --   toExpr _ (VarP patName) = VarE patName
 
     clauseTerm :: Con -> Clause
     -- clauseTerm (NormalC conNameTerm paramsTerm) =
@@ -184,6 +162,30 @@ mkInstancesFoil termT nameT scopeT patternT = do
                       | _conName == foilTermT = AppE (AppE (VarE (mkName "sinkabilityProof")) (VarE (mkName "f"))) (VarE varName)
                       | _conName == ''Foil.Name = AppE (VarE (mkName "f")) (VarE varName)
                       | otherwise = VarE varName
+
+    extendRenamingPatternSignType = ForallT (map (`PlainTV` SpecifiedSpec) [n, n', l, patternName, r]) [] -- AppT (ConT (mkName "CoSinkable")) (VarT patternName) 
+      (AppT (AppT ArrowT
+          (AppT (AppT ArrowT (AppT (ConT ''Foil.Name) (VarT n))) (AppT (ConT ''Foil.Name) (VarT n')))) -- (Name n -> Name n')
+        (AppT (AppT ArrowT
+          (AppT (AppT (VarT patternName) (VarT n)) (VarT l))) -- pattern n l
+        (AppT (AppT ArrowT
+          (ForallT [PlainTV l' SpecifiedSpec] [] 
+            (AppT (AppT ArrowT
+                (AppT (AppT ArrowT (AppT (ConT ''Foil.Name) (VarT l))) (AppT (ConT ''Foil.Name) (VarT l')))) -- (Name n -> Name n')
+              (AppT (AppT ArrowT
+                (AppT (AppT (VarT patternName) (VarT n')) (VarT l'))) -- pattern n l
+                (VarT r)  -- (forall l'. (Name l -> Name l') -> pattern n' l' -> r)
+              )
+            ))) -- (forall l'. (Name l -> Name l') -> pattern n' l' -> r)
+            (VarT r))) -- r
+      )
+      where 
+        n = mkName "n"
+        n' = mkName "n'"
+        l = mkName "l"
+        l' = mkName "l'"
+        patternName = mkName "pattern"
+        r = mkName "r"
 
     extendRenamingPatternBody = NormalB (AppE (AppE (VarE (mkName "cont")) (VarE (mkName "unsafeCoerce"))) (AppE (VarE (mkName "unsafeCoerce")) (VarE (mkName "pattern")) ))
 
