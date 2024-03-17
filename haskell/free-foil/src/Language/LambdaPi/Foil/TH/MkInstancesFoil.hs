@@ -11,7 +11,6 @@ import Language.Haskell.TH
 
 import qualified Language.LambdaPi.Foil as Foil
 import Data.Maybe (fromJust)
-import Data.Coerce (coerce)
 
 
 mkInstancesFoil :: Name -> Name -> Name -> Name -> Q [Dec]

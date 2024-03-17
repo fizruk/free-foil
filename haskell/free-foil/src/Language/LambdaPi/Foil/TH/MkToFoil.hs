@@ -22,25 +22,62 @@ mkToFoil termT nameT scopeT patternT = do
   TyConI (DataD _ctx _name _tvars _kind termCons _deriv) <- reify termT
 
   let toFoilTBody = NormalB (LamCaseE (map toMatchTerm termCons))
-  -- let toFoilPatternBody = NormalB (LamCaseE (map toFoilPatternMatch patternCons))
   let toFoilScopedBody = NormalB (LamCaseE (map toFoilScopedMatch scopeCons))
   let withPatternBody = NormalB (CaseE (VarE (mkName "pat")) (map withPatternMatch patternCons))
 
-  let toFoilPatternSignatures = toFoilPatternSignatureGenerator patternCons
-  let splitedPatternCons = splitConsesByBinderNumber patternCons []
-  let toFoilPatternFunctions = map 
-              (\((bindersNumber, patsNumber), cons) -> 
+  let splitedPatternCons = getConsTypes patternCons []
+  let toFoilPatternSignatures = map 
+              (\(types, _) -> 
                 let 
-                  toFoilPatternTLocal = mkName (nameBase toFoilPatternT ++ show bindersNumber ++ show patsNumber)
-                  varPBinders = map (\x -> VarP (mkName ("binder" ++ show x))) [1..bindersNumber]
-                  varPPats = map (\x -> VarP (mkName ("foilpat" ++ show x))) [1..patsNumber]
+                  typesNames = foldl (\str (ConT _typeName) -> str ++ getToFoilPatternSchemaLetter _typeName
+                                              ) "" types
+                  toFoilPatternTLocal = mkName (nameBase toFoilPatternT ++ typesNames)
+                  argumentTypesReversed = zipWith3 (\ (ConT _typeName) _n _l -> 
+                                              if _typeName == nameT then AppT ArrowT (AppT (AppT (ConT ''Foil.NameBinder) (VarT _n)) (VarT _l))
+                                              else if _typeName == patternT then AppT ArrowT (AppT (AppT (ConT foilPatternT) (VarT _n)) (VarT _l))
+                                              else WildCardT) 
+                                            types (mkName "n" : interNames) (interNames ++ [mkName "l"])
+                  argumentTypes = filter (/= WildCardT) argumentTypesReversed
+                  interNames = generateNames 1 (length types)
+                  plainTVList = [PlainTV (mkName "n") SpecifiedSpec] ++ map (`PlainTV` SpecifiedSpec) interNames ++ [PlainTV (mkName "l") SpecifiedSpec]
+
+                in if null argumentTypes
+                  then 
+                    SigD toFoilPatternTLocal (ForallT [PlainTV (mkName "n") SpecifiedSpec] []
+                      (AppT (AppT ArrowT
+                          (ConT patternT)) -- Pattern
+                          (foldl AppT (ConT foilPatternT) [VarT (mkName "n"), VarT (mkName "n")]) -- FoilPattern n l
+                      ))
+                  else 
+                    SigD toFoilPatternTLocal (ForallT plainTVList []
+                      (foldr AppT
+                        (AppT (AppT ArrowT
+                          (ConT patternT)) -- Pattern
+                          (foldl AppT (ConT foilPatternT) [VarT (mkName "n"), VarT (mkName "l")])) -- FoilPattern n l
+                        argumentTypes -- NameBinder n l/FoilPattern n l
+                      ))
+              ) 
+            splitedPatternCons
+  let toFoilPatternFunctions = map 
+              (\(types, cons) -> 
+                let 
+                  typesNames = foldl (\str (ConT _typeName) ->
+                                              if _typeName == nameT then str ++ "B" 
+                                              else if _typeName == patternT then str ++ "P"
+                                              else str ++  "X") "" types
+                  toFoilPatternTLocal = mkName (nameBase toFoilPatternT ++ typesNames)
+                  (argumentNamesReversed, (_,_)) = foldl (\(args, (indxB, indxP)) (ConT _typeName) -> 
+                                              if _typeName == nameT then (mkName ("binder" ++ show indxB):args, (indxB+1, indxP))
+                                              else if _typeName == patternT then (mkName ("foilpat" ++ show indxP):args, (indxB, indxP+1))
+                                              else (args, (indxB, indxP))) ([], (1::Integer,1::Integer)) types
+                  argumentPats = map VarP (reverse argumentNamesReversed)
                   toFoilPatternBodyLocal = NormalB (LamCaseE (map toFoilPatternMatch cons))
-                in FunD toFoilPatternTLocal [Clause (varPBinders ++ varPPats) toFoilPatternBodyLocal []]
+                in FunD toFoilPatternTLocal [Clause argumentPats toFoilPatternBodyLocal []]
               ) 
             splitedPatternCons
 
   return (
-    -- toFoilPatternSignatures ++ 
+    toFoilPatternSignatures ++ 
     toFoilPatternFunctions ++
     [
     SigD toFoilScopedT (ForallT [PlainTV n SpecifiedSpec] [AppT (ConT (mkName "Distinct")) (VarT n)]
@@ -64,7 +101,7 @@ mkToFoil termT nameT scopeT patternT = do
     (AppT (AppT ArrowT
       (ForallT [PlainTV l SpecifiedSpec] [AppT (ConT (mkName "Distinct")) (VarT l)]  -- forall l. Distinct l
         (AppT (AppT ArrowT
-          (ParensT (foldl AppT (ConT foilPatternT) ([VarT n, VarT l])))) -- FoilPattern n l
+          (ParensT (foldl AppT (ConT foilPatternT) [VarT n, VarT l]))) -- FoilPattern n l
         (AppT (AppT ArrowT
           (ParensT (AppT (AppT ArrowT (ConT nameT)) (AppT (ConT ''Foil.Name) (VarT l))))) -- (VarIdent -> Name l)
         (AppT (AppT ArrowT
@@ -97,88 +134,31 @@ mkToFoil termT nameT scopeT patternT = do
     withPatternT = mkName "withPattern"
 
 
-    splitConsesByBinderNumber :: [Con] -> [((Int, Int), [Con])] -> [((Int, Int), [Con])]
-    splitConsesByBinderNumber [] current = current
-    splitConsesByBinderNumber ((NormalC conName params):cs) current = 
-      splitConsesByBinderNumber cs newCurrent
+    getToFoilPatternSchemaLetter :: Name -> String
+    getToFoilPatternSchemaLetter _typeName 
+        | _typeName == nameT = "B" 
+        | _typeName == patternT = "P"
+        | otherwise = "X"
+
+    getConsTypes :: [Con] -> [([Type], [Con])] -> [([Type], [Con])]
+    getConsTypes [] current = current
+    getConsTypes ((NormalC conName params):cs) current = 
+      getConsTypes cs newCurrent
       where 
         newCurrent = putIntoSplitedList conBinderNumber (NormalC conName params) current
-        conBinderNumber = getBinderPatNumber (map snd params) (0, 0)
+        conBinderNumber = map snd params
 
     
-    putIntoSplitedList :: (Int, Int) -> Con -> [((Int, Int), [Con])] -> [((Int, Int), [Con])]
-    putIntoSplitedList n con [] = [(n, [con])]
-    putIntoSplitedList (nBinder, nPat) con (((niBinder, niPat), conList):rest) 
-      | nBinder == niBinder && nPat == niPat = ((niBinder, niPat), con : conList):rest 
-      | otherwise = ((niBinder, niPat), conList):putIntoSplitedList (nBinder, nPat) con rest
-
-    getBinderPatNumber :: [Type] -> (Int, Int) -> (Int, Int)
-    getBinderPatNumber [] counter = counter
-    getBinderPatNumber ((ConT tyName):types) (binderCounter, patCount)
-      | tyName == nameT = getBinderPatNumber types (binderCounter+1, patCount)
-      | tyName == patternT = getBinderPatNumber types (binderCounter, patCount+1)
-      | otherwise = getBinderPatNumber types (binderCounter, patCount)
-
-    getBinderNumber :: [Type] -> Int -> Int
-    getBinderNumber [] counter = counter
-    getBinderNumber ((ConT tyName):types) counter
-      | tyName == nameT = getBinderNumber types counter+1
-      | tyName == patternT = getBinderNumber types counter+1
-      | otherwise = getBinderNumber types counter
+    putIntoSplitedList :: [Type] -> Con -> [([Type], [Con])] -> [([Type], [Con])]
+    putIntoSplitedList types con [] = [(types, [con])]
+    putIntoSplitedList types con ((typesI, conList):rest) 
+      | types == typesI = (typesI, con : conList):rest 
+      | otherwise = (typesI, conList):putIntoSplitedList types con rest
     
     generateNames :: Int -> Int -> [Name]
     generateNames from to
       | from >= to = []
       | otherwise = mkName ("t" ++ show from) : generateNames (from + 1) to
-
-    toFoilPatternSignatureGenerator :: [Con] -> [Dec]
-    toFoilPatternSignatureGenerator cons =
-       concatMap (`toFoilPatternSignatureN` cons) [0..maxBinderNumber]
-
-      where
-        maxBinderNumber :: Int
-        maxBinderNumber = maximum (map
-            (\case
-                (NormalC _ params) -> (getBinderNumber (map snd params) 0)
-                _ -> 0
-            ) cons)
-
-        toFoilPatternSignatureN :: Int -> [Con] -> [Dec]
-        toFoilPatternSignatureN _ [] =  []
-        toFoilPatternSignatureN bindersNumber ((NormalC _ params):cs)
-          | bindersNumber == getBinderNumber (map snd params) 0 =
-            if bindersNumber == 0 
-              then 
-                [SigD (mkName (nameBase toFoilPatternT ++ show bindersNumber)) (ForallT plainTVList []
-                  (foldr AppT
-                    (AppT (AppT ArrowT
-                      (ConT patternT)) -- Pattern
-                      (foldl AppT (ConT foilPatternT) [VarT (mkName "n"), VarT (mkName "n")])) -- FoilPattern n n
-                    nameBindersList -- NameBinder n l
-                  ))]
-              else 
-                [SigD (mkName (nameBase toFoilPatternT ++ show bindersNumber)) (ForallT plainTVList []
-                  (foldr AppT
-                    (AppT (AppT ArrowT
-                      (ConT patternT)) -- Pattern
-                      (foldl AppT (ConT foilPatternT) [VarT (mkName "n"), VarT (mkName "l")])) -- FoilPattern n l
-                    nameBindersList -- NameBinder n l
-                  ))]
-          | otherwise = toFoilPatternSignatureN bindersNumber cs
-            where
-              interNames = generateNames 1 bindersNumber
-              maxInterNames = generateNames 1 maxBinderNumber
-              -- varTList = [VarT (mkName "n")] ++ map VarT maxInterNames ++ [VarT (mkName "l")]
-              plainTVList = [PlainTV (mkName "n") SpecifiedSpec] ++ map (`PlainTV` SpecifiedSpec) interNames ++ [PlainTV (mkName "l") SpecifiedSpec]
-              nameBindersList = 
-                if bindersNumber == 0 
-                  then [] 
-                  else zipWith (curry nameBinderGenerator) (mkName "n" : interNames)
-                                                            (interNames ++ [mkName "l"])
-
-              nameBinderGenerator :: (Name, Name) -> Type
-              nameBinderGenerator (_n, _l) = AppT ArrowT
-                (AppT (AppT (ConT ''Foil.NameBinder) (VarT _n)) (VarT _l))
 
 
     toFoilScopedMatch :: Con -> Match
@@ -228,83 +208,100 @@ mkToFoil termT nameT scopeT patternT = do
         matchBody :: [Type] -> Pat -> Body
         matchBody matchTypes (ConP name _ matchParams) = NormalB
           (foldl AppE (ConE (mkName ("Foil" ++ nameBase name)))
-            (zipWith3 toExpr matchTypes matchParams binderIndexes))
+            (zipWith3 toExpr matchTypes matchParams argumentIndexes))
 
           where
-            binderIndexes = typesToBinderIndexes matchTypes 1
+            argumentIndexes = typesToIndexes matchTypes (1,1,1)
+            
             toExpr :: Type -> Pat -> Int -> Exp
-            -- toExpr _ WildP = VarE (mkName "binder")
             toExpr (ConT tyName) (VarP patName) indx
               | tyName == nameT = VarE (mkName ("binder" ++ show indx))
               | tyName == patternT = VarE (mkName ("foilpat" ++ show indx))
               | otherwise = VarE patName
 
-            typesToBinderIndexes :: [Type] -> Int -> [Int]
-            typesToBinderIndexes [] _ = []
-            typesToBinderIndexes ((ConT tyName):ts) n
-              | tyName == nameT = n : typesToBinderIndexes ts (n+1)
-              | otherwise = n : typesToBinderIndexes ts n
+            typesToIndexes :: [Type] -> (Int,Int,Int) -> [Int]
+            typesToIndexes [] _ = []
+            typesToIndexes ((ConT tyName):ts) (bindI, pattI, restI)
+              | tyName == nameT = bindI : typesToIndexes ts (bindI+1, pattI,restI)
+              | tyName == patternT = pattI : typesToIndexes ts (bindI, pattI+1,restI)
+              | otherwise = restI : typesToIndexes ts (bindI, pattI, restI+1)
 
     withPatternMatch :: Con -> Match
     withPatternMatch (NormalC conName params) =
       Match matchPat (matchBody conTypes matchPat) []
-
       where
+        matchPat = ConP conName [] (toPats 0 conTypes)
+        conTypes = map snd params
+        foilConstrName = mkName ("Foil" ++ nameBase conName)
+
         matchBody :: [Type] -> Pat -> Body
-        matchBody matchTypes (ConP name _ matchParams) = 
-          NormalB (updateNameBinders 0 matchTypes matchParams letPat)
+        matchBody matchTypes (ConP _ _ matchParams) = 
+          NormalB (updateNameBinders 0 matchTypes matchParams)
           where 
             letPat = LetE [
-              ValD (VarP (mkName "pat'")) (NormalB (foldl AppE (ConE (mkName ("Foil" ++ nameBase conName))) (foilConNames 0 matchTypes matchParams))) []
+              ValD (VarP (mkName "pat'")) (NormalB (foldl AppE (ConE foilConstrName) (foilConNames 0 matchTypes matchParams))) []
               ] applyConWithPat
+
             applyConWithPat 
               | countNames conTypes == 0 = foldl AppE (VarE (mkName "cont")) [VarE (mkName "pat'"), VarE (mkName "toName"), VarE (mkName "scope")]
               | otherwise = foldl AppE (VarE (mkName "cont")) [VarE (mkName "pat'"), VarE (mkName "toName'"), VarE (mkName "scope'")]
             
             foilConNames :: Int -> [Type] -> [Pat] -> [Exp]
-            foilConNames index [] [] = []
+            foilConNames _ [] [] = []
             foilConNames index ((ConT tyName):types) ((VarP varName):pats)
-              | tyName == patternT = (VarE $ mkName (nameBase varName ++ "'")) : foilConNames (index+1) types pats
-              | tyName == nameT = (VarE (mkName ("binder" ++ show index))) : foilConNames (index+1) types pats
-              | otherwise = (VarE varName) : foilConNames (index+1) types pats
+              | tyName == patternT = VarE (mkName (nameBase varName ++ "'")) : foilConNames (index+1) types pats
+              | tyName == nameT = VarE (mkName ("binder" ++ show index)) : foilConNames (index+1) types pats
+              | otherwise = VarE varName : foilConNames (index+1) types pats
 
-            updateNameBinders :: Int -> [Type] -> [Pat] -> Exp -> Exp
-            updateNameBinders index [] [] letPat = letPat
-            updateNameBinders index ((ConT tyName):[]) ((VarP varName):[]) letPat
-              | tyName == nameT = AppE (AppE (VarE 'Foil.withFresh) (VarE (mkName ("scope" ++ (if index > 0 then show $ index-1 else "")))))
-                (LamE [VarP (mkName ("binder" ++ show index))]
+            updateNameBinders :: Int -> [Type] -> [Pat] -> Exp
+            updateNameBinders _ [] [] = letPat
+            updateNameBinders index [ConT tyName] [VarP varName]
+              | tyName == nameT = AppE (AppE (VarE 'Foil.withFresh) (VarE prevScopeName))
+                (LamE [VarP newBinderName]
                     (LetE [
-                      ValD (VarP (mkName "scope'")) (NormalB (foldl AppE (VarE 'Foil.extendScope) [VarE (mkName ("binder" ++ show index)), VarE (mkName ("scope" ++ (if index > 0 then show $ index-1 else "")))])) [],
-                      FunD (mkName "toName'")
-                        [Clause [VarP (mkName "x")]
+                      ValD (VarP newScopeName) (NormalB (foldl AppE (VarE 'Foil.extendScope) [VarE newBinderName, VarE prevScopeName])) [],
+                      FunD newToNameName
+                        [Clause [VarP xName]
                           (GuardedB [
-                            (NormalG (AppE (AppE (VarE (mkName "==")) (VarE (mkName "x"))) (VarE (mkName ("varName" ++ show index)))), AppE (VarE (mkName "nameOf")) (VarE (mkName ("binder" ++ show index)))),
-                            (NormalG (VarE (mkName "otherwise")), AppE (VarE 'Foil.sink) (AppE (VarE (mkName ("toName" ++ (if index > 0 then show $ index-1 else "")))) (VarE (mkName "x"))))
-                          ]) []]] (updateNameBinders (index+1) [] [] letPat)))
-              | tyName == patternT = foldl AppE (VarE withPatternT) [VarE (mkName ("toName" ++ (if index > 0 then show $ index-1 else ""))), VarE (mkName ("scope" ++ (if index > 0 then show $ index-1 else ""))), VarE varName, 
-                  (LamE [VarP (mkName (nameBase varName ++ "'")), VarP (mkName "toName'"), VarP (mkName "scope'")] (updateNameBinders (index+1) [] [] letPat))
+                            (NormalG (AppE (AppE (VarE (mkName "==")) (VarE xName)) (VarE (mkName ("varName" ++ show index)))), AppE (VarE (mkName "nameOf")) (VarE newBinderName)),
+                            (NormalG (VarE (mkName "otherwise")), AppE (VarE 'Foil.sink) (AppE (VarE prevToNameName) (VarE xName)))
+                          ]) []]] (updateNameBinders (index+1) [] [])))
+              | tyName == patternT = foldl AppE (VarE withPatternT) [VarE prevToNameName, VarE prevScopeName, VarE varName, 
+                  LamE [VarP (mkName (nameBase varName ++ "'")), VarP newToNameName, VarP newScopeName] (updateNameBinders (index+1) [] [])
                 ]
-              | otherwise = updateNameBinders (index+1) [] [] letPat
-            updateNameBinders index ((ConT tyName):types) ((VarP varName):pats) letPat
-              | tyName == nameT = AppE (AppE (VarE 'Foil.withFresh) (VarE (mkName ("scope" ++ (if index > 0 then show $ index-1 else "")))))
-                (LamE [VarP (mkName ("binder" ++ show index))]
-                  (LetE [
-                      ValD (VarP (mkName ("scope" ++ show index))) (NormalB (foldl AppE (VarE 'Foil.extendScope) [VarE (mkName ("binder" ++ show index)), VarE (mkName ("scope" ++ (if index > 0 then show $ index-1 else "")))])) [],
-                      FunD (mkName ("toName" ++ show index))
-                        [Clause [VarP (mkName "x")]
+              | otherwise = updateNameBinders (index+1) [] []
+              where
+                newBinderName = mkName ("binder" ++ show index)
+                newScopeName = mkName "scope'"
+                prevScopeName = mkName ("scope" ++ (if index > 0 then show $ index-1 else ""))
+                newToNameName = mkName "toName'"
+                prevToNameName = mkName ("toName" ++ (if index > 0 then show $ index-1 else ""))
+                xName = mkName "x"
+
+            updateNameBinders index ((ConT tyName):types) ((VarP varName):pats)
+              | tyName == nameT = AppE (AppE (VarE 'Foil.withFresh) (VarE prevScopeName))
+                (LamE [VarP newBinderName]
+                    (LetE [
+                      ValD (VarP newScopeName) (NormalB (foldl AppE (VarE 'Foil.extendScope) [VarE newBinderName, VarE prevScopeName])) [],
+                      FunD newToNameName
+                        [Clause [VarP xName]
                           (GuardedB [
-                            (NormalG (AppE (AppE (VarE (mkName "==")) (VarE (mkName "x"))) (VarE (mkName ("varName" ++ show index)))), AppE (VarE (mkName "nameOf")) (VarE (mkName ("binder" ++ show index)))),
-                            (NormalG (VarE (mkName "otherwise")), AppE (VarE 'Foil.sink) (AppE (VarE (mkName ("toName" ++ (if index > 0 then show $ index-1 else "")))) (VarE (mkName "x"))))
+                            (NormalG (AppE (AppE (VarE (mkName "==")) (VarE xName)) (VarE (mkName ("varName" ++ show index)))), AppE (VarE (mkName "nameOf")) (VarE newBinderName)),
+                            (NormalG (VarE (mkName "otherwise")), AppE (VarE 'Foil.sink) (AppE (VarE prevToNameName) (VarE xName)))
                           ]) []]
-                    ] (updateNameBinders (index+1) types pats letPat)))
-              | tyName == patternT = foldl AppE (VarE withPatternT) [VarE (mkName ("toName" ++ (if index > 0 then show $ index-1 else ""))), VarE (mkName ("scope" ++ (if index > 0 then show $ index-1 else ""))), VarE varName, 
-                  (LamE [VarP (mkName (nameBase varName ++ "'")), VarP (mkName ("toName" ++ show index)), VarP (mkName ("scope" ++ show index))] (updateNameBinders (index+1) types pats letPat))
+                    ] (updateNameBinders (index+1) types pats)))
+              | tyName == patternT = foldl AppE (VarE withPatternT) [VarE prevToNameName, VarE prevScopeName, VarE varName, 
+                  LamE [VarP (mkName (nameBase varName ++ "'")), VarP newToNameName, VarP newScopeName] (updateNameBinders (index+1) types pats)
                 ]
-              | otherwise = updateNameBinders (index+1) types pats letPat
+              | otherwise = updateNameBinders (index+1) types pats
+              where
+                newBinderName = mkName ("binder" ++ show index)
+                newScopeName = mkName ("scope" ++ show index)
+                prevScopeName = mkName ("scope" ++ (if index > 0 then show $ index-1 else ""))
+                newToNameName = mkName ("toName" ++ show index)
+                prevToNameName = mkName ("toName" ++ (if index > 0 then show $ index-1 else ""))
+                xName = mkName "x"
 
-
-        matchPat = ConP conName [] (toPats 0 conTypes)
-        conTypes = map snd params
 
         toPats :: Int -> [Type] -> [Pat]
         toPats _ [] = []
@@ -345,25 +342,8 @@ mkToFoil termT nameT scopeT patternT = do
 
           where
             constr = if checkPatScope matchTypes False
-              then toExprScopeExt
+              then foldl AppE (VarE withPatternT) [VarE (mkName "toName"), VarE (mkName "scope"), VarE (fromJust (findPatternName matchTypes matchParams)), lamCase]
               else foldl AppE (ConE $ mkName ("Foil" ++ nameBase name)) (zipWith toExprWithoutScope matchTypes matchParams)
-
-
-            checkPatScope :: [Type] -> Bool -> Bool
-            checkPatScope [] _ = False
-            checkPatScope ((ConT tyName):rest) patFound
-              | tyName == patternT = checkPatScope rest True
-              | tyName == scopeT && patFound = True
-              | otherwise = checkPatScope rest patFound
-
-
-            toExprWithoutScope :: Type -> Pat -> Exp
-            toExprWithoutScope (ConT tyName) (VarP patName)
-              | tyName == nameT = AppE (VarE $ mkName "toName") (VarE patName)
-              | tyName == termT = AppE (AppE (AppE (VarE toFoilTermT) (VarE (mkName "toName"))) (VarE (mkName "scope"))) (VarE patName)
-              | otherwise = VarE patName
-
-            toExprScopeExt = foldl AppE (VarE withPatternT) [VarE (mkName "toName"), VarE (mkName "scope"), VarE (fromJust (findPatternName matchTypes matchParams)), lamCase]
               where
                 lamCase = LamE [VarP pat', VarP (mkName "toName'"), VarP (mkName "scope'")]
                   (foldl AppE (ConE (mkName ("Foil" ++ nameBase name))) (zipWith _toExpr matchTypes matchParams))
@@ -383,3 +363,17 @@ mkToFoil termT nameT scopeT patternT = do
                   | tyName == patternT = VarE (mkName (nameBase patName ++ "'"))
                   | tyName == scopeT = foldl AppE (VarE toFoilScopedT) [VarE (mkName "toName'"), VarE (mkName "scope'"), VarE patName]
                   | otherwise = VarE patName
+
+            checkPatScope :: [Type] -> Bool -> Bool
+            checkPatScope [] _ = False
+            checkPatScope ((ConT tyName):rest) patFound
+              | tyName == patternT = checkPatScope rest True
+              | tyName == scopeT && patFound = True
+              | otherwise = checkPatScope rest patFound
+
+
+            toExprWithoutScope :: Type -> Pat -> Exp
+            toExprWithoutScope (ConT tyName) (VarP patName)
+              | tyName == nameT = AppE (VarE $ mkName "toName") (VarE patName)
+              | tyName == termT = AppE (AppE (AppE (VarE toFoilTermT) (VarE (mkName "toName"))) (VarE (mkName "scope"))) (VarE patName)
+              | otherwise = VarE patName

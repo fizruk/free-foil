@@ -36,6 +36,7 @@ data Term
 data Pattern
   = PatternVar VarIdent
   | PatternPair Pattern VarIdent Pattern
+  | PatternPair2 VarIdent Pattern Pattern
   | PatternLit !Int
   deriving (Show)
 

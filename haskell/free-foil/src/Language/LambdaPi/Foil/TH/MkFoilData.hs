@@ -10,9 +10,6 @@ module Language.LambdaPi.Foil.TH.MkFoilData (mkFoilData) where
 import Language.Haskell.TH
 
 import qualified Language.LambdaPi.Foil as Foil
-import Language.Haskell.TH (TyVarBndr(PlainTV))
-
--- FoilPatternPair :: forall l1. FoilPattern n l1 -> FoilPattern l1 l -> FoilPattern n l
 
 
 mkFoilData :: Name -> Name -> Name -> Name -> Q [Dec]
@@ -25,7 +22,7 @@ mkFoilData termT nameT scopeT patternT = do
 
   foilPatternCons <- mapM (toPatternCon n) patternCons
   let foilScopeCons = map (toScopeCon n) scopeCons
-  let foilTermCons = map (\cons -> toTermCon n l cons) termCons
+  let foilTermCons = map (toTermCon n l) termCons
 
   return
     [ DataD [] foilTermT [PlainTV n ()] Nothing foilTermCons []
@@ -76,7 +73,7 @@ mkFoilData termT nameT scopeT patternT = do
     toTermCon n l (NormalC conName params) =
       GadtC [foilConName] (map toTermParam params) (AppT (ConT foilTermT) (VarT n))
       where
-        foilNames = [n] ++ [l]
+        foilNames = [n, l]
         foilConName = mkName ("Foil" ++ nameBase conName)
         toTermParam (_bang, ConT tyName)
           | tyName == patternT = (_bang, foldl AppT (ConT foilPatternT) (map VarT foilNames))
