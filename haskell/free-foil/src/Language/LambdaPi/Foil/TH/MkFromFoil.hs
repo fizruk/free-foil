@@ -25,17 +25,17 @@ mkFromFoil termT nameT scopeT patternT = do
   let fromFoilScopedBody = NormalB (LamCaseE (map fromMatchFoilScoped scopeCons))
 
   return [
-    fromFunctionSign [n]                -- forall n .
+    SigD fromFoilTermT $ fromFunctionSign [n]                -- forall n .
       (AppT (ConT foilTermT) (VarT n))  -- -> FoilTerm n 
       (ConT termT)                      -- -> Term
     , FunD fromFoilTermT [Clause [] fromFoilTBody []]
 
-    , fromFunctionSign [n,l]                            -- forall n l.
+    , SigD fromFoilPatternT $ fromFunctionSign [n,l]                            -- forall n l.
       (foldl AppT (ConT foilPatternT) [VarT n, VarT l]) -- -> FoilPattern n l
       (ConT patternT)                                   -- -> Pattern
     , FunD fromFoilPatternT [Clause [] fromFoilPatternBody []]
 
-    , fromFunctionSign [n]              -- forall n .
+    , SigD fromFoilScopedTermT $ fromFunctionSign [n]              -- forall n .
       (AppT (ConT foilScopeT) (VarT n)) -- -> FoilScopedTerm n 
       (ConT scopeT)                     -- -> ScopedTerm
     , FunD fromFoilScopedTermT [Clause [] fromFoilScopedBody []]
@@ -49,10 +49,10 @@ mkFromFoil termT nameT scopeT patternT = do
     fromFoilPatternT = mkName ("fromFoil" ++ nameBase patternT)
     fromFoilScopedTermT = mkName ("fromFoil" ++ nameBase scopeT)
 
-    fromFunctionSign :: [Name] -> Type -> Type -> Dec
+    fromFunctionSign :: [Name] -> Type -> Type -> Type
     fromFunctionSign forallNames from to = 
-      SigD fromFoilTermT (ForallT (map (`PlainTV` SpecifiedSpec) forallNames) []
-        (AppT (AppT ArrowT from) to))
+      ForallT (map (`PlainTV` SpecifiedSpec) forallNames) []
+        (AppT (AppT ArrowT from) to)
 
     fromMatchFoilTerm :: Con -> Match
     fromMatchFoilTerm (NormalC conName params) =
