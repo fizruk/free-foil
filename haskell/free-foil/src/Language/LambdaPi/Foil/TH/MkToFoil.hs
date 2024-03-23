@@ -26,101 +26,20 @@ mkToFoil termT nameT scopeT patternT = do
   let withPatternBody = NormalB (CaseE (VarE (mkName "pat")) (map withPatternMatch patternCons))
 
   let splitedPatternCons = getConsTypes patternCons []
-  let toFoilPatternSignatures = map 
-              (\(types, _) -> 
-                let 
-                  typesNames = foldl (\str (ConT _typeName) -> str ++ getToFoilPatternSchemaLetter _typeName
-                                              ) "" types
-                  toFoilPatternTLocal = mkName (nameBase toFoilPatternT ++ typesNames)
-                  argumentTypesReversed = zipWith3 (\ (ConT _typeName) _n _l -> 
-                                              if _typeName == nameT then AppT ArrowT (AppT (AppT (ConT ''Foil.NameBinder) (VarT _n)) (VarT _l))
-                                              else if _typeName == patternT then AppT ArrowT (AppT (AppT (ConT foilPatternT) (VarT _n)) (VarT _l))
-                                              else WildCardT) 
-                                            types (mkName "n" : interNames) (interNames ++ [mkName "l"])
-                  argumentTypes = filter (/= WildCardT) argumentTypesReversed
-                  interNames = generateNames 1 (length types)
-                  plainTVList = [PlainTV (mkName "n") SpecifiedSpec] ++ map (`PlainTV` SpecifiedSpec) interNames ++ [PlainTV (mkName "l") SpecifiedSpec]
-
-                in if null argumentTypes
-                  then 
-                    SigD toFoilPatternTLocal (ForallT [PlainTV (mkName "n") SpecifiedSpec] []
-                      (AppT (AppT ArrowT
-                          (ConT patternT)) -- Pattern
-                          (foldl AppT (ConT foilPatternT) [VarT (mkName "n"), VarT (mkName "n")]) -- FoilPattern n l
-                      ))
-                  else 
-                    SigD toFoilPatternTLocal (ForallT plainTVList []
-                      (foldr AppT
-                        (AppT (AppT ArrowT
-                          (ConT patternT)) -- Pattern
-                          (foldl AppT (ConT foilPatternT) [VarT (mkName "n"), VarT (mkName "l")])) -- FoilPattern n l
-                        argumentTypes -- NameBinder n l/FoilPattern n l
-                      ))
-              ) 
-            splitedPatternCons
-  let toFoilPatternFunctions = map 
-              (\(types, cons) -> 
-                let 
-                  typesNames = foldl (\str (ConT _typeName) ->
-                                              if _typeName == nameT then str ++ "B" 
-                                              else if _typeName == patternT then str ++ "P"
-                                              else str ++  "X") "" types
-                  toFoilPatternTLocal = mkName (nameBase toFoilPatternT ++ typesNames)
-                  (argumentNamesReversed, (_,_)) = foldl (\(args, (indxB, indxP)) (ConT _typeName) -> 
-                                              if _typeName == nameT then (mkName ("binder" ++ show indxB):args, (indxB+1, indxP))
-                                              else if _typeName == patternT then (mkName ("foilpat" ++ show indxP):args, (indxB, indxP+1))
-                                              else (args, (indxB, indxP))) ([], (1::Integer,1::Integer)) types
-                  argumentPats = map VarP (reverse argumentNamesReversed)
-                  toFoilPatternBodyLocal = NormalB (LamCaseE (map toFoilPatternMatch cons))
-                in FunD toFoilPatternTLocal [Clause argumentPats toFoilPatternBodyLocal []]
-              ) 
-            splitedPatternCons
+  let toFoilPatternSignatures = map (toFoilPatternSigD n l . fst) splitedPatternCons
+  let toFoilPatternFunctions = map toFoilPatternFunction splitedPatternCons
 
   return (
     toFoilPatternSignatures ++ 
     toFoilPatternFunctions ++
     [
-    SigD toFoilScopedT (ForallT [PlainTV n SpecifiedSpec] [AppT (ConT (mkName "Distinct")) (VarT n)]
-    (AppT (AppT ArrowT
-      (AppT (AppT ArrowT (ConT nameT)) (AppT (ConT ''Foil.Name) (VarT n)))) -- (VarIdent -> Name n)
-    (AppT (AppT ArrowT
-      (ParensT (AppT (ConT (mkName "Scope")) (VarT n)))) -- Scope n
-    (AppT (AppT ArrowT
-       (ConT scopeT)) -- ScopedTerm
-      (ParensT (AppT (ConT foilScopeT) (VarT n)))) -- FoilScopedTerm n
-    )))
+    SigD toFoilScopedT (toFoilScopedSigType n)
     , FunD toFoilScopedT [Clause [VarP (mkName "toName"), VarP (mkName "scope")] toFoilScopedBody []]
 
-    , SigD withPatternT (ForallT [PlainTV n SpecifiedSpec, PlainTV (mkName "r") SpecifiedSpec] [AppT (ConT (mkName "Distinct")) (VarT n)]
-    (AppT (AppT ArrowT
-      (AppT (AppT ArrowT (ConT nameT)) (AppT (ConT ''Foil.Name) (VarT n)))) --(VarIdent -> Name n) 
-    (AppT (AppT ArrowT
-      (ParensT (AppT (ConT (mkName "Scope")) (VarT n)))) -- Scope n
-    (AppT (AppT ArrowT
-       (ConT patternT)) -- Pattern
-    (AppT (AppT ArrowT
-      (ForallT [PlainTV l SpecifiedSpec] [AppT (ConT (mkName "Distinct")) (VarT l)]  -- forall l. Distinct l
-        (AppT (AppT ArrowT
-          (ParensT (foldl AppT (ConT foilPatternT) [VarT n, VarT l]))) -- FoilPattern n l
-        (AppT (AppT ArrowT
-          (ParensT (AppT (AppT ArrowT (ConT nameT)) (AppT (ConT ''Foil.Name) (VarT l))))) -- (VarIdent -> Name l)
-        (AppT (AppT ArrowT
-          (AppT (ConT (mkName "Scope")) (VarT l))) -- Scope l
-          (VarT (mkName "r"))))))) -- r
-      (VarT (mkName "r"))
-    )))))
+    , SigD withPatternT (withPatternSigType n l)
     , FunD withPatternT [Clause [VarP withPatternToNameArg, VarP withPatternScopeArg, VarP withPatternPatArg, VarP withPatternContArg] withPatternBody []]
 
-
-    , SigD toFoilTermT (ForallT [PlainTV n SpecifiedSpec] [AppT (ConT (mkName "Distinct")) (VarT n)]
-    (AppT (AppT ArrowT
-      (AppT (AppT ArrowT (ConT nameT)) (AppT (ConT ''Foil.Name) (VarT n)))) -- (VarIdent -> Name n)
-    (AppT (AppT ArrowT
-      (ParensT (AppT (ConT (mkName "Scope")) (VarT n)))) -- Scope n
-    (AppT (AppT ArrowT
-       (ConT termT)) -- Term
-      (ParensT (AppT (ConT foilTermT) (VarT n)))) -- FoilTerm n
-    )))
+    , SigD toFoilTermT (toFoilTermSigType n)
     , FunD toFoilTermT [Clause [VarP (mkName "toName"), VarP (mkName "scope")] toFoilTBody []]
     ])
   where
@@ -139,12 +58,6 @@ mkToFoil termT nameT scopeT patternT = do
     withPatternContArg = mkName "cont"
 
 
-    getToFoilPatternSchemaLetter :: Name -> String
-    getToFoilPatternSchemaLetter _typeName 
-        | _typeName == nameT = "B" 
-        | _typeName == patternT = "P"
-        | otherwise = "X"
-
     getConsTypes :: [Con] -> [([Type], [Con])] -> [([Type], [Con])]
     getConsTypes [] current = current
     getConsTypes ((NormalC conName params):cs) current = 
@@ -153,18 +66,118 @@ mkToFoil termT nameT scopeT patternT = do
         newCurrent = putIntoSplitedList conBinderNumber (NormalC conName params) current
         conBinderNumber = map snd params
 
-    
-    putIntoSplitedList :: [Type] -> Con -> [([Type], [Con])] -> [([Type], [Con])]
-    putIntoSplitedList types con [] = [(types, [con])]
-    putIntoSplitedList types con ((typesI, conList):rest) 
-      | types == typesI = (typesI, con : conList):rest 
-      | otherwise = (typesI, conList):putIntoSplitedList types con rest
-    
-    generateNames :: Int -> Int -> [Name]
-    generateNames from to
-      | from >= to = []
-      | otherwise = mkName ("t" ++ show from) : generateNames (from + 1) to
+        putIntoSplitedList :: [Type] -> Con -> [([Type], [Con])] -> [([Type], [Con])]
+        putIntoSplitedList types con [] = [(types, [con])]
+        putIntoSplitedList types con ((typesI, conList):rest) 
+          | types == typesI = (typesI, con : conList):rest 
+          | otherwise = (typesI, conList):putIntoSplitedList types con rest
 
+    withPatternSigType :: Name -> Name -> Type
+    withPatternSigType n l = 
+      ForallT [PlainTV n SpecifiedSpec, PlainTV rName SpecifiedSpec] [AppT (ConT (mkName "Distinct")) (VarT n)]
+        (AppT (AppT ArrowT varIdentToNameN) --(VarIdent -> Name n) 
+        (AppT (AppT ArrowT scopeN) -- Scope n
+        (AppT (AppT ArrowT (ConT patternT)) -- Pattern
+        (AppT (AppT ArrowT contType) (VarT rName)
+        ))))
+        where 
+          rName = mkName "r"
+          varIdentToNameN = AppT (AppT ArrowT (ConT nameT)) (AppT (ConT ''Foil.Name) (VarT n))
+          scopeN = AppT (ConT (mkName "Scope")) (VarT n)
+          contType = 
+            ForallT [PlainTV l SpecifiedSpec] [AppT (ConT (mkName "Distinct")) (VarT l)]  -- forall l. Distinct l
+              (AppT (AppT ArrowT foilPatternNL) -- FoilPattern n l
+              (AppT (AppT ArrowT varIdentToNameL) -- (VarIdent -> Name l)
+              (AppT (AppT ArrowT scopeL) (VarT rName)))) -- Scope l -> r
+              where 
+                foilPatternNL = foldl AppT (ConT foilPatternT) [VarT n, VarT l]
+                varIdentToNameL = AppT (AppT ArrowT (ConT nameT)) (AppT (ConT ''Foil.Name) (VarT l))
+                scopeL = AppT (ConT (mkName "Scope")) (VarT l)
+
+    toFoilTermSigType :: Name -> Type
+    toFoilTermSigType n = 
+      ForallT [PlainTV n SpecifiedSpec] [AppT (ConT (mkName "Distinct")) (VarT n)]
+        (AppT (AppT ArrowT varIdentToName) -- (VarIdent -> Name n)
+        (AppT (AppT ArrowT scopeN) -- Scope n
+        (AppT (AppT ArrowT (ConT termT)) foilTermN) -- Term -> FoilTerm n
+        ))
+      where 
+        varIdentToName = AppT (AppT ArrowT (ConT nameT)) (AppT (ConT ''Foil.Name) (VarT n))
+        scopeN = AppT (ConT (mkName "Scope")) (VarT n)
+        foilTermN = AppT (ConT foilTermT) (VarT n)
+
+
+    toFoilScopedSigType :: Name -> Type
+    toFoilScopedSigType n = 
+      ForallT [PlainTV n SpecifiedSpec] [AppT (ConT (mkName "Distinct")) (VarT n)]
+        (AppT (AppT ArrowT varIdentToName) -- (VarIdent -> Name n)
+        (AppT (AppT ArrowT scopeN) -- Scope n
+        (AppT (AppT ArrowT (ConT scopeT)) foilScopedTermN) -- ScopedTerm -> FoilScopedTerm n
+        ))
+      where 
+        varIdentToName = AppT (AppT ArrowT (ConT nameT)) (AppT (ConT ''Foil.Name) (VarT n))
+        scopeN = AppT (ConT (mkName "Scope")) (VarT n)
+        foilScopedTermN = AppT (ConT foilScopeT) (VarT n)
+
+    toFoilPatternFunction :: ([Type], [Con]) -> Dec
+    toFoilPatternFunction (types, cons) =
+      FunD toFoilPatternTLocal [Clause argumentPats toFoilPatternBodyLocal []]
+        where 
+          toFoilPatternTLocal = mkName (nameBase toFoilPatternT ++ typesNames)
+          toFoilPatternBodyLocal = NormalB (LamCaseE (map toFoilPatternMatch cons))
+          argumentPats = map VarP (toArgumentNames (1,1) types)
+
+          typesNames = foldl (\str (ConT _typeName) -> str ++ getToFoilPatternSchemaLetter _typeName) "" types
+
+          toArgumentNames :: (Integer, Integer) -> [Type] -> [Name]
+          toArgumentNames (_, _) [] = []
+          toArgumentNames (indxB, indxP) ((ConT _typeName):_types)
+            | _typeName == nameT = mkName ("binder" ++ show indxB):toArgumentNames (indxB+1, indxP) _types
+            | _typeName == patternT = mkName ("foilpat" ++ show indxP):toArgumentNames (indxB, indxP+1) _types
+            | otherwise = toArgumentNames (indxB, indxP) _types
+    
+    toFoilPatternSigD :: Name -> Name -> [Type] -> Dec
+    toFoilPatternSigD n l types = 
+      SigD toFoilPatternTLocal (ForallT plainTVList []
+        (foldr AppT
+          (AppT (AppT ArrowT (ConT patternT)) returgingFoilPattern)  -- Pattern -> FoilPattern n l
+          binderTypes -- NameBinder n l / FoilPattern n l
+        ))
+      where 
+        returgingFoilPattern 
+          | null binderTypes = foldl AppT (ConT foilPatternT) [VarT n, VarT n]
+          | otherwise = foldl AppT (ConT foilPatternT) [VarT n, VarT l]
+        plainTVList 
+          | null binderTypes = [PlainTV n SpecifiedSpec]
+          | otherwise = [PlainTV n SpecifiedSpec] ++ map (`PlainTV` SpecifiedSpec) interNames ++ [PlainTV l SpecifiedSpec]
+        toFoilPatternTLocal = mkName (nameBase toFoilPatternT ++ typesNames)
+        binderTypes = toArgumentTypes types (n : interNames) (interNames ++ [l])
+        
+        typesNames = foldl (\str (ConT _typeName) -> str ++ getToFoilPatternSchemaLetter _typeName) "" types
+        interNames = generateTNames 1 (length types)
+
+        toArgumentTypes :: [Type] -> [Name] -> [Name] -> [Type] 
+        toArgumentTypes [] _ _ = []
+        toArgumentTypes ((ConT _typeName):types_) (_n:restN) (_l:restL) 
+          | _typeName == nameT = returningType ''Foil.NameBinder : toArgumentTypes types_ restN restL
+          | _typeName == patternT = returningType foilPatternT : toArgumentTypes types_ restN restL
+          | otherwise = toArgumentTypes types_ (_n:restN) (_l:restL)
+          where
+            returningType :: Name -> Type
+            returningType _name = 
+                AppT ArrowT (AppT (AppT (ConT _name) (VarT _n)) (VarT _l))
+        
+        generateTNames :: Int -> Int -> [Name]
+        generateTNames from to
+          | from >= to = []
+          | otherwise = mkName ("t" ++ show from) : generateTNames (from + 1) to
+
+    
+    getToFoilPatternSchemaLetter :: Name -> String
+    getToFoilPatternSchemaLetter _typeName 
+        | _typeName == nameT = "B" 
+        | _typeName == patternT = "P"
+        | otherwise = "X"
 
     toFoilScopedMatch :: Con -> Match
     toFoilScopedMatch (NormalC conName params) =

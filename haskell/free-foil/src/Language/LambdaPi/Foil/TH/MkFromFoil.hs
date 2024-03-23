@@ -25,25 +25,19 @@ mkFromFoil termT nameT scopeT patternT = do
   let fromFoilScopedBody = NormalB (LamCaseE (map fromMatchFoilScoped scopeCons))
 
   return [
-    SigD fromFoilTermT (ForallT [PlainTV n SpecifiedSpec] []
-    (AppT (AppT ArrowT
-      (AppT (ConT foilTermT) (VarT n))) -- FoilTerm n 
-      (ConT termT)) -- Term
-    )
+    fromFunctionSign [n]                -- forall n .
+      (AppT (ConT foilTermT) (VarT n))  -- -> FoilTerm n 
+      (ConT termT)                      -- -> Term
     , FunD fromFoilTermT [Clause [] fromFoilTBody []]
 
-    , SigD fromFoilPatternT (ForallT [PlainTV n SpecifiedSpec, PlainTV l SpecifiedSpec] []
-    (AppT (AppT ArrowT
-      (foldl AppT (ConT foilPatternT) [VarT n, VarT l])) -- FoilPattern n t1..tn l
-      (ConT patternT)) -- Pattern
-    )
+    , fromFunctionSign [n,l]                            -- forall n l.
+      (foldl AppT (ConT foilPatternT) [VarT n, VarT l]) -- -> FoilPattern n l
+      (ConT patternT)                                   -- -> Pattern
     , FunD fromFoilPatternT [Clause [] fromFoilPatternBody []]
 
-    , SigD fromFoilScopedTermT (ForallT [PlainTV n SpecifiedSpec] []
-    (AppT (AppT ArrowT
-      (AppT (ConT foilScopeT) (VarT n))) -- FoilScopedTerm n 
-      (ConT scopeT)) -- ScopedTerm
-    )
+    , fromFunctionSign [n]              -- forall n .
+      (AppT (ConT foilScopeT) (VarT n)) -- -> FoilScopedTerm n 
+      (ConT scopeT)                     -- -> ScopedTerm
     , FunD fromFoilScopedTermT [Clause [] fromFoilScopedBody []]
     ]
   where
@@ -55,58 +49,10 @@ mkFromFoil termT nameT scopeT patternT = do
     fromFoilPatternT = mkName ("fromFoil" ++ nameBase patternT)
     fromFoilScopedTermT = mkName ("fromFoil" ++ nameBase scopeT)
 
-    fromMatchFoilPattern :: Con -> Match
-    fromMatchFoilPattern (NormalC conName params) =
-      let
-        matchPat = ConP (mkName ("Foil" ++ nameBase conName)) [] (toPats 0 conTypes)
-        conTypes = map snd params
-      in Match matchPat (matchBody conTypes matchPat conName) []
-
-      where
-        toPats :: Int -> [Type] -> [Pat]
-        toPats _ [] = []
-        toPats n ((ConT tyName):types)
-          | tyName == nameT = ConP (mkName "UnsafeNameBinder") [] [VarP (mkName $ "binder" ++ show n)]:toPats (n+1) types -- change to WildP
-          | tyName == patternT = VarP (mkName $ "pat" ++ show n):toPats (n+1) types
-          | tyName == scopeT = VarP (mkName "scopedTerm"):toPats (n+1) types
-          | tyName == termT = VarP (mkName $ "term" ++ show n):toPats (n+1) types
-          | otherwise = VarP (mkName ("x" ++ show n)):toPats (n+1) types
-
-        matchBody :: [Type] -> Pat -> Name -> Body
-        matchBody matchTypes (ConP _ _ matchParams) name = NormalB
-          (foldl AppE (ConE name) (zipWith toExpr matchTypes matchParams))
-
-        toExpr :: Type -> Pat -> Exp
-        toExpr _ (ConP _ _ [VarP varName]) = AppE (VarE 'coerce) (AppE (VarE 'Foil.ppName) (VarE varName)) -- Уязвимость: mkName (nameBase nameT) предполагает что имя конструктора совпадает с именем типа. Но нет возможности выбрать подходищай конструктор так как непонятно как паттернматчить аргумент конструктора с нужным
-        toExpr (ConT typeN) (VarP patName) 
-          | typeN == patternT = AppE (VarE fromFoilPatternT) (VarE patName)
-          | otherwise = VarE patName
-
-    fromMatchFoilScoped :: Con -> Match
-    fromMatchFoilScoped (NormalC conName params) =
-      let
-        matchPat = ConP (mkName ("Foil" ++ nameBase conName)) [] (toPats 0 conTypes)
-        conTypes = map snd params
-      in Match matchPat (matchBody conTypes matchPat conName) []
-
-      where
-        toPats :: Int -> [Type] -> [Pat]
-        toPats _ [] = []
-        toPats n ((ConT tyName):types)
-          | tyName == nameT = VarP (mkName ("varName" ++ show n)):toPats (n+1) types -- change to WildP
-          | tyName == patternT = VarP (mkName $ "pat" ++ show n):toPats (n+1) types
-          | tyName == scopeT = VarP (mkName "scopedTerm"):toPats (n+1) types
-          | tyName == termT = VarP (mkName $ "term" ++ show n):toPats (n+1) types
-          | otherwise = VarP (mkName ("x" ++ show n)):toPats (n+1) types
-
-        matchBody :: [Type] -> Pat -> Name -> Body
-        matchBody matchTypes (ConP _ _ matchParams) name = NormalB
-          (foldl AppE (ConE name) (zipWith toExpr matchTypes matchParams))
-
-        toExpr :: Type -> Pat -> Exp
-        toExpr (ConT tyName) (VarP patName)
-          | tyName == termT = AppE (VarE fromFoilTermT) (VarE patName)
-          | otherwise = VarE patName
+    fromFunctionSign :: [Name] -> Type -> Type -> Dec
+    fromFunctionSign forallNames from to = 
+      SigD fromFoilTermT (ForallT (map (`PlainTV` SpecifiedSpec) forallNames) []
+        (AppT (AppT ArrowT from) to))
 
     fromMatchFoilTerm :: Con -> Match
     fromMatchFoilTerm (NormalC conName params) =
@@ -133,5 +79,58 @@ mkFromFoil termT nameT scopeT patternT = do
           | tyName == nameT = AppE (VarE 'coerce) (AppE (VarE 'Foil.ppName) (VarE patName))
           | tyName == patternT = AppE (VarE fromFoilPatternT) (VarE patName)
           | tyName == scopeT = AppE (VarE fromFoilScopedTermT) (VarE patName)
+          | tyName == termT = AppE (VarE fromFoilTermT) (VarE patName)
+          | otherwise = VarE patName
+
+    fromMatchFoilPattern :: Con -> Match
+    fromMatchFoilPattern (NormalC conName params) =
+      let
+        matchPat = ConP (mkName ("Foil" ++ nameBase conName)) [] (toPats 0 conTypes)
+        conTypes = map snd params
+      in Match matchPat (matchBody conTypes matchPat conName) []
+
+      where
+        toPats :: Int -> [Type] -> [Pat]
+        toPats _ [] = []
+        toPats n ((ConT tyName):types)
+          | tyName == nameT = ConP (mkName "UnsafeNameBinder") [] [VarP (mkName $ "binder" ++ show n)]:toPats (n+1) types
+          | tyName == patternT = VarP (mkName $ "pat" ++ show n):toPats (n+1) types
+          | tyName == scopeT = VarP (mkName "scopedTerm"):toPats (n+1) types
+          | tyName == termT = VarP (mkName $ "term" ++ show n):toPats (n+1) types
+          | otherwise = VarP (mkName ("x" ++ show n)):toPats (n+1) types
+
+        matchBody :: [Type] -> Pat -> Name -> Body
+        matchBody matchTypes (ConP _ _ matchParams) name = NormalB
+          (foldl AppE (ConE name) (zipWith toExpr matchTypes matchParams))
+
+        toExpr :: Type -> Pat -> Exp
+        toExpr _ (ConP _ _ [VarP varName]) = AppE (VarE 'coerce) (AppE (VarE 'Foil.ppName) (VarE varName)) 
+        toExpr (ConT typeN) (VarP patName) 
+          | typeN == patternT = AppE (VarE fromFoilPatternT) (VarE patName)
+          | otherwise = VarE patName
+
+    fromMatchFoilScoped :: Con -> Match
+    fromMatchFoilScoped (NormalC conName params) =
+      let
+        matchPat = ConP (mkName ("Foil" ++ nameBase conName)) [] (toPats 0 conTypes)
+        conTypes = map snd params
+      in Match matchPat (matchBody conTypes matchPat conName) []
+
+      where
+        toPats :: Int -> [Type] -> [Pat]
+        toPats _ [] = []
+        toPats n ((ConT tyName):types)
+          | tyName == nameT = WildP:toPats (n+1) types  -- in the case fo using: VarP (mkName ("varName" ++ show n))
+          | tyName == patternT = VarP (mkName $ "pat" ++ show n):toPats (n+1) types
+          | tyName == scopeT = VarP (mkName "scopedTerm"):toPats (n+1) types
+          | tyName == termT = VarP (mkName $ "term" ++ show n):toPats (n+1) types
+          | otherwise = VarP (mkName ("x" ++ show n)):toPats (n+1) types
+
+        matchBody :: [Type] -> Pat -> Name -> Body
+        matchBody matchTypes (ConP _ _ matchParams) name = NormalB
+          (foldl AppE (ConE name) (zipWith toExpr matchTypes matchParams))
+
+        toExpr :: Type -> Pat -> Exp
+        toExpr (ConT tyName) (VarP patName)
           | tyName == termT = AppE (VarE fromFoilTermT) (VarE patName)
           | otherwise = VarE patName

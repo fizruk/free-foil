@@ -33,7 +33,7 @@ mkInstancesFoil termT nameT scopeT patternT = do
     , InstanceD Nothing [] (AppT (ConT (mkName "Sinkable")) (ConT foilTermT))
       [FunD (mkName "sinkabilityProof") (map clauseTerm foilTermCons)]
     , SigD extendRenamingPatternT extendRenamingPatternSignType
-    , FunD extendRenamingPatternT [Clause [WildP, VarP (mkName "pattern"), VarP (mkName "cont")] extendRenamingPatternBody []]
+    , FunD extendRenamingPatternT [Clause [WildP, VarP extendRenamingPatternName, VarP extendRenamingContName] extendRenamingPatternBody []]
     ]
 
   where
@@ -41,6 +41,8 @@ mkInstancesFoil termT nameT scopeT patternT = do
     foilScopeT = mkName ("Foil" ++ nameBase scopeT)
     foilPatternT = mkName ("Foil" ++ nameBase patternT)
     extendRenamingPatternT = mkName ("extendRenaming" ++ nameBase patternT)
+    extendRenamingPatternName = mkName "pattern"
+    extendRenamingContName = (mkName "cont")
 
     clauseScopedTerm :: Con -> Clause
     clauseScopedTerm (NormalC conName params) =
@@ -96,11 +98,16 @@ mkInstancesFoil termT nameT scopeT patternT = do
     clauseTerm :: Con -> Clause
     -- clauseTerm (NormalC conNameTerm paramsTerm) =
     clauseTerm (GadtC [conNameTerm] paramsTerm _) =
-      Clause [VarP (mkName "f"), ConP conNameTerm [] conPats]
+      Clause [VarP renameFunctionName, ConP conNameTerm [] conPats]
         (matchBody conTypes conNameTerm conPats)
       []
 
       where
+        renameFunctionName = mkName "rename"
+        newRenameFunctionName = mkName "rename'"
+        newPatternName = mkName "pattern'"
+        sinkabilityProofName = mkName "sinkabilityProof"
+
         conPats = toPats 0 conTypes
         conTypes = map snd paramsTerm
 
@@ -128,7 +135,7 @@ mkInstancesFoil termT nameT scopeT patternT = do
             checkPatScope :: [Type] -> Bool -> Bool
             checkPatScope [] _ = False
             checkPatScope (AppT (AppT (ConT fPT) (VarT _)) (VarT _):rest) patFound
-              | fPT == foilPatternT = checkPatScope rest True
+              | fPT == foilPatternT = True
               | otherwise = checkPatScope rest patFound
             checkPatScope (AppT (ConT _conName) (VarT _):rest) patFound
               | _conName == foilScopeT && patFound = True
@@ -137,14 +144,14 @@ mkInstancesFoil termT nameT scopeT patternT = do
 
             toExpr :: Type -> Pat -> Exp
             toExpr ((AppT (ConT _conName) (VarT _))) (VarP varName)
-              | _conName == ''Foil.Name = AppE (VarE (mkName "f")) (VarE varName)
-              | _conName == foilTermT = AppE (AppE (VarE (mkName "sinkabilityProof")) (VarE (mkName "f"))) (VarE varName)
+              | _conName == ''Foil.Name = AppE (VarE renameFunctionName) (VarE varName)
+              | _conName == foilTermT = AppE (AppE (VarE sinkabilityProofName) (VarE renameFunctionName)) (VarE varName)
               | otherwise = VarE varName
             toExpr _ (VarP patName) = VarE patName
 
             sinkProofPatScope =
-              AppE (AppE (AppE (VarE extendRenamingPatternT) (VarE (mkName "f"))) (VarE (fromJust (findPatternName matchTypes _conPats))))
-                (LamE [VarP (mkName "f'"), VarP (mkName "pattern'")]
+              AppE (AppE (AppE (VarE extendRenamingPatternT) (VarE renameFunctionName)) (VarE (fromJust (findPatternName matchTypes _conPats))))
+                (LamE [VarP newRenameFunctionName, VarP newPatternName]
                   (foldl AppE (ConE name) (zipWith toExprSink matchTypes _conPats)))
                   where
                     findPatternName :: [Type] -> [Pat] -> Maybe Name
@@ -155,30 +162,19 @@ mkInstancesFoil termT nameT scopeT patternT = do
 
                     toExprSink :: Type -> Pat -> Exp
                     toExprSink (AppT (AppT (ConT _conName) (VarT _)) (VarT _)) (VarP varName)
-                      | _conName == foilPatternT = VarE (mkName "pattern'")
+                      | _conName == foilPatternT = VarE newPatternName
                       | otherwise = VarE varName
                     toExprSink ((AppT (ConT _conName) (VarT _))) (VarP varName)
-                      | _conName == foilScopeT = AppE (AppE (VarE (mkName "sinkabilityProof")) (VarE (mkName "f'"))) (VarE varName)
-                      | _conName == foilTermT = AppE (AppE (VarE (mkName "sinkabilityProof")) (VarE (mkName "f"))) (VarE varName)
-                      | _conName == ''Foil.Name = AppE (VarE (mkName "f")) (VarE varName)
+                      | _conName == foilScopeT = AppE (AppE (VarE sinkabilityProofName) (VarE newRenameFunctionName)) (VarE varName)
+                      | _conName == foilTermT = AppE (AppE (VarE sinkabilityProofName) (VarE renameFunctionName)) (VarE varName)
+                      | _conName == ''Foil.Name = AppE (VarE renameFunctionName) (VarE varName)
                       | otherwise = VarE varName
 
     extendRenamingPatternSignType = ForallT (map (`PlainTV` SpecifiedSpec) [n, n', l, patternName, r]) [] -- AppT (ConT (mkName "CoSinkable")) (VarT patternName) 
-      (AppT (AppT ArrowT
-          (AppT (AppT ArrowT (AppT (ConT ''Foil.Name) (VarT n))) (AppT (ConT ''Foil.Name) (VarT n')))) -- (Name n -> Name n')
-        (AppT (AppT ArrowT
-          (AppT (AppT (VarT patternName) (VarT n)) (VarT l))) -- pattern n l
-        (AppT (AppT ArrowT
-          (ForallT [PlainTV l' SpecifiedSpec] [] 
-            (AppT (AppT ArrowT
-                (AppT (AppT ArrowT (AppT (ConT ''Foil.Name) (VarT l))) (AppT (ConT ''Foil.Name) (VarT l')))) -- (Name n -> Name n')
-              (AppT (AppT ArrowT
-                (AppT (AppT (VarT patternName) (VarT n')) (VarT l'))) -- pattern n l
-                (VarT r)  -- (forall l'. (Name l -> Name l') -> pattern n' l' -> r)
-              )
-            ))) -- (forall l'. (Name l -> Name l') -> pattern n' l' -> r)
-            (VarT r))) -- r
-      )
+      (AppT (AppT ArrowT renameTypeN) -- (Name n -> Name n')
+        (AppT (AppT ArrowT patternNL) -- pattern n l
+          (AppT (AppT ArrowT contType) -- (forall l'. (Name l -> Name l') -> pattern n' l' -> r)
+          (VarT r)))) -- r
       where 
         n = mkName "n"
         n' = mkName "n'"
@@ -186,8 +182,22 @@ mkInstancesFoil termT nameT scopeT patternT = do
         l' = mkName "l'"
         patternName = mkName "pattern"
         r = mkName "r"
+        nameN = AppT (ConT ''Foil.Name) (VarT n)
+        nameN' = AppT (ConT ''Foil.Name) (VarT n')
+        nameL = AppT (ConT ''Foil.Name) (VarT l)
+        nameL' = AppT (ConT ''Foil.Name) (VarT l')
+        renameTypeL = AppT (AppT ArrowT nameL) nameL'
+        renameTypeN = AppT (AppT ArrowT nameN) nameN'
+        patternN'L' = AppT (AppT (VarT patternName) (VarT n')) (VarT l')
 
-    extendRenamingPatternBody = NormalB (AppE (AppE (VarE (mkName "cont")) (VarE (mkName "unsafeCoerce"))) (AppE (VarE (mkName "unsafeCoerce")) (VarE (mkName "pattern")) ))
+        patternNL = AppT (AppT (VarT patternName) (VarT n)) (VarT l)
+        contType = ForallT [PlainTV l' SpecifiedSpec] [] -- forall l'.
+            (AppT (AppT ArrowT renameTypeL) -- (Name l -> Name l')
+              (AppT (AppT ArrowT patternN'L') -- pattern n' l'
+                (VarT r))) -- r
+              
+
+    extendRenamingPatternBody = NormalB (AppE (AppE (VarE extendRenamingContName) (VarE (mkName "unsafeCoerce"))) (AppE (VarE (mkName "unsafeCoerce")) (VarE extendRenamingPatternName)))
 
     toPatternCon :: Name -> Name -> Con -> Con
     toPatternCon n l (NormalC conName  params) =
