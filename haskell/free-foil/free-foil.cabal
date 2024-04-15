@@ -44,6 +44,7 @@ library
       Language.LambdaPi.Foil.TH.MkFromFoil
       Language.LambdaPi.Foil.TH.MkInstancesFoil
       Language.LambdaPi.Foil.TH.MkToFoil
+      Language.LambdaPi.Foil.TH.MkToFoilPattern
       Language.LambdaPi.FreeFoil
       Language.LambdaPi.FreeScoped
       Language.LambdaPi.LambdaPi.Abs
