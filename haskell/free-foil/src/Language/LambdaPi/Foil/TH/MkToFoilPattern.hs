@@ -10,6 +10,7 @@ import Language.Haskell.TH
 
 import qualified Language.LambdaPi.Foil as Foil
 import Language.Haskell.TH.Syntax (leftName, rightName)
+import qualified Data.Either
 
 
 mkToFoilPattern :: Name -> Name -> Name -> Name -> Q [Dec]
@@ -19,7 +20,7 @@ mkToFoilPattern _ nameT _ patternT = do
   TyConI (DataD _ctx _name _tvars _kind patternCons _deriv) <- reify patternT
 
   newBinderSeqCons <- newBinderSeqCon n l
-  let toFoilPatternClauses = map toFoilPatternClause (filter isScopeChanged patternCons)
+  let toFoilPatternClauses = map toFoilPatternClause patternCons
 
   return
     [ TySynD foilPatternArg [PlainTV n (), PlainTV l ()] (foilPatternArgCon n l)
@@ -33,16 +34,6 @@ mkToFoilPattern _ nameT _ patternT = do
     foilPatternArg = mkName ("Foil" ++ nameBase patternT ++ "Arg")
     newBinderSeq = mkName "NewBinderSeq"
     aNewBinderSeq = mkName "ANewBinderSeq"
-
-    isScopeChanged :: Con -> Bool
-    isScopeChanged (NormalC _ params) =
-      any (filterTypes . snd) params
-      where
-        filterTypes :: Type -> Bool
-        filterTypes (ConT tyName)
-          | tyName == nameT = True
-          | tyName == patternT = True
-          | otherwise = False
 
     foilPatternArgCon :: Name -> Name -> Type
     foilPatternArgCon n l =
@@ -84,7 +75,8 @@ mkToFoilPattern _ nameT _ patternT = do
       (AppT (AppT ArrowT
         (foldl AppT (ConT newBinderSeq) [VarT n, VarT l]))
         (AppT (AppT ArrowT (ConT patternT))
-        (foldl AppT (ConT foilPatternT) [VarT n, VarT l])))
+        (AppT (AppT (ConT ''Data.Either.Either) (foldl AppT (ConT foilPatternT) [VarT n, VarT n])) 
+                                                (foldl AppT (ConT foilPatternT) [VarT n, VarT l]))))
 
     toFoilPatternClause :: Con -> Clause
     toFoilPatternClause (NormalC conName params) =
@@ -105,32 +97,60 @@ mkToFoilPattern _ nameT _ patternT = do
           | tyName == patternT = WildP:toPats n types
           | otherwise = VarP (mkName ("x" ++ show n)):toPats (n+1) types
 
+        isScopeChanged :: [Type] -> Bool
+        isScopeChanged _types =
+          any filterTypes _types
+          where
+            filterTypes :: Type -> Bool
+            filterTypes (ConT tyName)
+              | tyName == nameT = True
+              | tyName == patternT = True
+              | otherwise = False
+
         conBody :: [Exp] -> Body
-        conBody args = NormalB (foldl AppE (ConE (mkName ("Foil" ++ nameBase conName))) args)
+        conBody args
+          | isScopeChanged conTypes = NormalB (AppE (ConE 'Data.Either.Right) (foldl AppE (ConE (mkName ("Foil" ++ nameBase conName))) args))
+          | otherwise = NormalB (AppE (ConE 'Data.Either.Left) (foldl AppE (ConE (mkName ("Foil" ++ nameBase conName))) args))
 
         initCase = VarE firstName
 
         body
           | null conTypes = conBody []
           | otherwise =
-            let
-              newFPAName = mkName ("case" ++ show (length conTypes))
-              newPat (ConT _typeName)
-                | _typeName == nameT = ConP leftName [] [VarP newFPAName]
-                | otherwise = ConP rightName [] [VarP newFPAName]
+            let _typeName = case head conTypes of (ConT _name) -> _name
+                _pat = head conPats
+                restTypes = tail conTypes
+                restPats = tail conPats
+            in 
+              if _typeName == nameT || _typeName == patternT
+                then
+                  let
+                    newFPAName = mkName ("case" ++ show (length conTypes))
+                    newPat
+                      | _typeName == nameT = ConP leftName [] [VarP newFPAName]
+                      | otherwise = ConP rightName [] [VarP newFPAName]
 
-            in NormalB (CaseE (VarE firstName) [Match (newPat (head conTypes)) (toFoilPatternBody initCase [VarE newFPAName] (zip (tail conTypes) (tail conPats))) []])
+                  in NormalB (CaseE (VarE firstName) [Match newPat 
+                    (toFoilPatternBody initCase [VarE newFPAName] (zip restTypes restPats)) []])
+                else
+                  case _pat of
+                    VarP patName -> toFoilPatternBody initCase [VarE patName] (zip restTypes restPats)
 
         toFoilPatternBody :: Exp -> [Exp] -> [(Type, Pat)] -> Body
         toFoilPatternBody _ args [] = conBody args
         toFoilPatternBody prevCaseExp args [(ConT _typeName,_pat)] =
-          let
-            newCaseExp = AppE (VarE lastName) prevCaseExp
-            newFPAName = mkName "case1"
-            newPat
-                  | _typeName == nameT = ConP leftName [] [VarP newFPAName]
-                  | otherwise = ConP rightName [] [VarP newFPAName]
-          in NormalB (CaseE newCaseExp [Match newPat (conBody (args ++ [VarE newFPAName])) []])
+          if _typeName == nameT || _typeName == patternT
+            then
+              let
+                newCaseExp = AppE (VarE lastName) prevCaseExp
+                newFPAName = mkName "case1"
+                newPat
+                      | _typeName == nameT = ConP leftName [] [VarP newFPAName]
+                      | otherwise = ConP rightName [] [VarP newFPAName]
+              in NormalB (CaseE newCaseExp [Match newPat (conBody (args ++ [VarE newFPAName])) []])
+            else
+              case _pat of
+                VarP patName -> conBody (args ++ [VarE patName])
         toFoilPatternBody prevCaseExp args ((ConT _typeName,_pat):rest) =
            if _typeName == nameT || _typeName == patternT
             then

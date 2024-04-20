@@ -5,6 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE DataKinds #-}
 module Language.LambdaPi.Foil.NewExample where
 
 import Language.LambdaPi.Foil
