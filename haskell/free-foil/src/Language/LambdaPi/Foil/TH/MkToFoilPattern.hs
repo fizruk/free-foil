@@ -11,6 +11,7 @@ import Language.Haskell.TH
 import qualified Language.LambdaPi.Foil as Foil
 import Language.Haskell.TH.Syntax (leftName, rightName)
 import qualified Data.Either
+import Data.Foldable (Foldable(foldl'))
 
 
 mkToFoilPattern :: Name -> Name -> Name -> Name -> Q [Dec]
@@ -18,15 +19,13 @@ mkToFoilPattern _ nameT _ patternT = do
   n <- newName "n"
   l <- newName "l"
   TyConI (DataD _ctx _name _tvars _kind patternCons _deriv) <- reify patternT
-
   newBinderSeqCons <- newBinderSeqCon n l
-  let toFoilPatternClauses = map toFoilPatternClause patternCons
 
   return
     [ TySynD foilPatternArg [PlainTV n (), PlainTV l ()] (foilPatternArgCon n l)
     , DataD [] newBinderSeq [PlainTV n (), PlainTV l ()] Nothing [newBinderSeqCons] []
     , SigD toFoilPattern (toFoilPatternSigType n l)
-    , FunD toFoilPattern toFoilPatternClauses
+    , FunD toFoilPattern (map toFoilPatternClause patternCons)
     ]
   where
     toFoilPattern = mkName ("toFoil" ++ nameBase patternT)
@@ -37,10 +36,10 @@ mkToFoilPattern _ nameT _ patternT = do
 
     foilPatternArgCon :: Name -> Name -> Type
     foilPatternArgCon n l =
-      AppT (AppT (ConT $ mkName "Either") nameBinder) foilPattern
+      AppT (AppT (ConT ''Data.Either.Either) nameBinder) foilPattern
       where
-        nameBinder = AppT (AppT (ConT ''Foil.NameBinder) (VarT n)) (VarT l)
-        foilPattern = AppT (AppT (ConT foilPatternT) (VarT n)) (VarT l)
+        nameBinder = foldl' AppT (ConT ''Foil.NameBinder) [VarT n, VarT l]
+        foilPattern = foldl' AppT (ConT foilPatternT) [VarT n, VarT l]
 
     newBinderSeqCon :: Name -> Name -> Q Con
     newBinderSeqCon n l = do
@@ -59,24 +58,22 @@ mkToFoilPattern _ nameT _ patternT = do
 
           firstType :: Name -> Type
           firstType tn = ForallT [PlainTV tn SpecifiedSpec] []
-                          (foldl AppT (ConT foilPatternArg) [VarT n, VarT tn])
+                          (foldl' AppT (ConT foilPatternArg) [VarT n, VarT tn])
           nextType ti tj tk = ForallT (map (`PlainTV` SpecifiedSpec) [ti, tj, tk]) []
-                                (AppT (AppT ArrowT
-                                  (foldl AppT (ConT foilPatternArg) [VarT ti, VarT tj]))
-                                  (foldl AppT (ConT foilPatternArg) [VarT tj, VarT tk]))
+                                (AppT (AppT ArrowT (foldl' AppT (ConT foilPatternArg) [VarT ti, VarT tj]))
+                                                    (foldl' AppT (ConT foilPatternArg) [VarT tj, VarT tk]))
           lastType ti tj = ForallT (map (`PlainTV` SpecifiedSpec) [ti, tj]) []
-                                (AppT (AppT ArrowT
-                                  (foldl AppT (ConT foilPatternArg) [VarT ti, VarT tj]))
-                                  (foldl AppT (ConT foilPatternArg) [VarT tj, VarT l]))
+                                (AppT (AppT ArrowT (foldl' AppT (ConT foilPatternArg) [VarT ti, VarT tj]))
+                                                    (foldl' AppT (ConT foilPatternArg) [VarT tj, VarT l]))
 
     toFoilPatternSigType :: Name -> Name -> Type
     toFoilPatternSigType n l =
       ForallT [PlainTV n SpecifiedSpec, PlainTV l SpecifiedSpec] []
-      (AppT (AppT ArrowT
-        (foldl AppT (ConT newBinderSeq) [VarT n, VarT l]))
-        (AppT (AppT ArrowT (ConT patternT))
-        (AppT (AppT (ConT ''Data.Either.Either) (foldl AppT (ConT foilPatternT) [VarT n, VarT n])) 
-                                                (foldl AppT (ConT foilPatternT) [VarT n, VarT l]))))
+        (AppT (AppT ArrowT
+          (foldl' AppT (ConT newBinderSeq) [VarT n, VarT l]))
+          (AppT (AppT ArrowT (ConT patternT))
+          (AppT (AppT (ConT ''Data.Either.Either) (foldl' AppT (ConT foilPatternT) [VarT n, VarT n])) 
+                                                  (foldl' AppT (ConT foilPatternT) [VarT n, VarT l]))))
 
     toFoilPatternClause :: Con -> Clause
     toFoilPatternClause (NormalC conName params) =
@@ -109,8 +106,8 @@ mkToFoilPattern _ nameT _ patternT = do
 
         conBody :: [Exp] -> Body
         conBody args
-          | isScopeChanged conTypes = NormalB (AppE (ConE 'Data.Either.Right) (foldl AppE (ConE (mkName ("Foil" ++ nameBase conName))) args))
-          | otherwise = NormalB (AppE (ConE 'Data.Either.Left) (foldl AppE (ConE (mkName ("Foil" ++ nameBase conName))) args))
+          | isScopeChanged conTypes = NormalB (AppE (ConE 'Data.Either.Right) (foldl' AppE (ConE (mkName ("Foil" ++ nameBase conName))) args))
+          | otherwise = NormalB (AppE (ConE 'Data.Either.Left) (foldl' AppE (ConE (mkName ("Foil" ++ nameBase conName))) args))
 
         initCase = VarE firstName
 
