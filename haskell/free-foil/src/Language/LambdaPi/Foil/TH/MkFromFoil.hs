@@ -51,8 +51,8 @@ mkFromFoil termT nameT scopeT patternT = do
 
     fromFunctionSign :: [Name] -> Type -> Type -> Type
     fromFunctionSign forallNames from to = 
-      ForallT (map (`PlainTV` SpecifiedSpec) forallNames) []
-        (AppT (AppT ArrowT from) to)
+      let plainTVList = (map (`PlainTV` SpecifiedSpec) forallNames)
+      in ForallT plainTVList [] (AppT (AppT ArrowT from) to)
 
     fromMatchFoilTerm :: Con -> Match
     fromMatchFoilTerm (NormalC conName params) =
@@ -71,8 +71,8 @@ mkFromFoil termT nameT scopeT patternT = do
           | otherwise = VarP (mkName ("x" ++ show n)):toPats (n+1) types
 
         matchBody :: [Type] -> Pat -> Name -> Body
-        matchBody matchTypes (ConP _ _ matchParams) name = NormalB
-          (foldl AppE (ConE name) (zipWith toExpr matchTypes matchParams))
+        matchBody matchTypes (ConP _ _ matchParams) name = 
+          NormalB (foldl AppE (ConE name) (zipWith toExpr matchTypes matchParams))
 
         toExpr :: Type -> Pat -> Exp
         toExpr (ConT tyName) (VarP patName)

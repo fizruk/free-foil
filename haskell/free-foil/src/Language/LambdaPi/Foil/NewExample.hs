@@ -1,4 +1,4 @@
-
+{-# OPTIONS_GHC -ddump-splices #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE KindSignatures #-}

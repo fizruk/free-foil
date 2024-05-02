@@ -26,6 +26,7 @@ import Unsafe.Coerce (unsafeCoerce)
 
 data Term
   = Var VarIdent
+  | PairTerm Term Term
   | Lit !Int
   | App Term Term
   | Lam Pattern ScopedTerm
@@ -33,7 +34,6 @@ data Term
 
 data Pattern
   = PatternVar VarIdent
-  | PatternPair Pattern Pattern
   | PatternLit !Int
   deriving (Show)
 
@@ -46,7 +46,6 @@ data ScopedTerm = ScopedTerm Term
 mkFoilData ''Term ''VarIdent ''ScopedTerm ''Pattern
 mkToFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
 mkFromFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
-mkToFoilPattern ''Term ''VarIdent ''ScopedTerm ''Pattern
 mkInstancesFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
 
 -- toFoilTerm :: Distinct n => (VarIdent -> Name n) -> Scope n -> Term -> FoilTerm n
@@ -158,55 +157,39 @@ mkInstancesFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
 --   sinkabilityProof f (FoilScopedTerm t) = FoilScopedTerm (sinkabilityProof f t)
 
 
--- substitute :: Distinct o => FoilTerm o -> FoilTerm i -> FoilTerm o
--- substitute substTerm = \case
---   FoilVar name -> substTerm
---   FoilLit n -> substTerm
---   FoilApp term1 term2 -> substTerm
---   FoilLam (FoilPatternLit pat) (FoilScopedTerm term) -> substTerm
---   FoilLam (FoilPatternPair pat1 pat2) (FoilScopedTerm term) -> FoilLam (FoilPatternPair pat1 pat2) (FoilScopedTerm term)
---   FoilLam (FoilPatternVar pat) (FoilScopedTerm term) -> substituteHelper substTerm (nameOf pat) term
+substitute :: FoilTerm o -> FoilTerm i -> FoilTerm o
+substitute substTerm = \case
+  FoilVar name -> substTerm
+  FoilPairTerm name1 name2 -> substTerm
+  FoilLit n -> substTerm
+  FoilApp term1 term2 -> substTerm
+  FoilLam (FoilPatternLit pat) (FoilScopedTerm term) -> substTerm
+  FoilLam (FoilPatternVar pat) (FoilScopedTerm term) -> substituteHelper substTerm (nameOf pat) term
 
 
--- substituteHelper :: FoilTerm o -> Name i -> FoilTerm i -> FoilTerm o
--- substituteHelper substTerm substName = \case
---   FoilVar name
---     | ppName name == ppName substName -> substTerm
---     | otherwise -> FoilVar (UnsafeName (ppName name))
---   FoilLit n -> FoilLit n
---   FoilApp term1 term2 -> FoilApp (substituteHelper substTerm substName term1) (substituteHelper substTerm substName term2)
---   FoilLam (FoilPatternLit pat) (FoilScopedTerm term) -> FoilLam (FoilPatternLit pat) (FoilScopedTerm (substituteHelper substTerm (UnsafeName (ppName substName)) term))
---   FoilLam (FoilPatternPair pat1 pat2) (FoilScopedTerm term) -> FoilLam (FoilPatternPair pat1 pat2) (FoilScopedTerm term)
---   FoilLam (FoilPatternVar pat) (FoilScopedTerm term)
---     | ppName (nameOf pat) == ppName substName -> substituteHelper substTerm (UnsafeName (ppName substName)) term
---     | otherwise -> FoilLam (FoilPatternVar newPat) (FoilScopedTerm (substituteHelper substTerm (UnsafeName (ppName substName)) term))
---       where
---         newPat = UnsafeNameBinder (UnsafeName (ppName (nameOf pat)))
+substituteHelper :: FoilTerm o -> Name i -> FoilTerm i -> FoilTerm o
+substituteHelper substTerm substName = \case
+  FoilVar name
+    | ppName name == ppName substName -> substTerm
+    | otherwise -> FoilVar (UnsafeName (ppName name))
+  FoilPairTerm term1 term2 -> FoilPairTerm (substituteHelper substTerm substName term1) (substituteHelper substTerm substName term2)
+  FoilLit n -> FoilLit n
+  FoilApp term1 term2 -> FoilApp (substituteHelper substTerm substName term1) (substituteHelper substTerm substName term2)
+  FoilLam (FoilPatternLit pat) (FoilScopedTerm term) -> 
+    FoilLam (FoilPatternLit pat) (FoilScopedTerm (substituteHelper substTerm (UnsafeName (ppName substName)) term))
+  FoilLam (FoilPatternVar pat) (FoilScopedTerm term)
+    | ppName (nameOf pat) == ppName substName -> 
+      FoilLam (FoilPatternVar newPat) (FoilScopedTerm (substituteHelper substTerm (UnsafeName "") term))
+    | otherwise -> 
+      FoilLam (FoilPatternVar newPat) (FoilScopedTerm (substituteHelper substTerm (UnsafeName (ppName substName)) term))
+      where
+        newPat = UnsafeNameBinder (UnsafeName (ppName (nameOf pat)))
 
+simpleTerm :: Term
+simpleTerm = Lam (PatternVar "s") (ScopedTerm (Lam (PatternVar "z") (ScopedTerm (App (Var "s") (App (Var "s") (Var "z"))))))
 
--- type FoilPatternArg n l = Either (NameBinder n l) (FoilPattern n l)
--- data NameBinderSeq n l =  ANameBinderSeq {first :: forall tn . FoilPatternArg n tn,
---                                           next :: forall ti tj tk . FoilPatternArg ti tj -> FoilPatternArg tj tk,
---                                           last :: forall ti tj . FoilPatternArg ti tj -> FoilPatternArg tj l}
-
--- toFoilPattern :: forall n l . NewBinderSeq n l -> Pattern -> FoilPattern n l
--- toFoilPattern (ANewBinderSeq first _ _) (PatternVar _) = 
---   case first of 
---     Left leftFirst -> FoilPatternVar leftFirst
--- toFoilPattern (ANewBinderSeq first _ last) (PatternPair _ _ ) = 
---   case first of 
---     Right rightFirst -> 
---       case last first of 
---         Right rightSecond -> FoilPatternPair rightFirst rightSecond
-
-toFoilPattern0 :: forall n . Pattern -> FoilPattern n n
-toFoilPattern0 (PatternLit n) = FoilPatternLit n
-
-two :: Term
-two = Lam (PatternVar "s") (ScopedTerm (Lam (PatternVar "z") (ScopedTerm (App (Var "s") (App (Var "s") (Var "z"))))))
-
-foilTwo :: FoilTerm n
-foilTwo = FoilLam
+foilLam :: FoilTerm n
+foilLam = FoilLam
             (FoilPatternVar (UnsafeNameBinder (UnsafeName "s")))
             (FoilScopedTerm (FoilLam
                               (FoilPatternVar (UnsafeNameBinder (UnsafeName "s")))
@@ -216,11 +199,11 @@ foilTwo = FoilLam
                                                       (FoilVar (UnsafeName "s"))
                                                       (FoilVar (UnsafeName "s")))))))
 
-foilThree :: Name n
-foilThree = UnsafeName "s" :: Name n
+foilName :: Name n
+foilName = UnsafeName "s" :: Name n
 
-foilFour :: FoilTerm n
-foilFour = FoilVar (UnsafeName "zz" :: Name n)
+foilTerm :: FoilTerm n
+foilTerm = FoilVar (UnsafeName "zz" :: Name n)
 
 func :: VarIdent -> Name n
 func (VarIdent s) = UnsafeName s :: Name n

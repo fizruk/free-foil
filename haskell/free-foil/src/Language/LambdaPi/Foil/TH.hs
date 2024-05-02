@@ -9,15 +9,13 @@ module Language.LambdaPi.Foil.TH (
   module Language.LambdaPi.Foil.TH.MkFoilData,
   module Language.LambdaPi.Foil.TH.MkToFoil,
   module Language.LambdaPi.Foil.TH.MkFromFoil,
-  module Language.LambdaPi.Foil.TH.MkInstancesFoil,
-  module Language.LambdaPi.Foil.TH.MkToFoilPattern
+  module Language.LambdaPi.Foil.TH.MkInstancesFoil
 ) where
 
 import Language.LambdaPi.Foil.TH.MkFoilData
 import Language.LambdaPi.Foil.TH.MkFromFoil
 import Language.LambdaPi.Foil.TH.MkToFoil
 import Language.LambdaPi.Foil.TH.MkInstancesFoil
-import Language.LambdaPi.Foil.TH.MkToFoilPattern
 
 -- Foil
 

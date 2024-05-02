@@ -96,7 +96,6 @@ mkInstancesFoil termT nameT scopeT patternT = do
                     param' = mkName ("p" ++ show i ++ "'")
 
     clauseTerm :: Con -> Clause
-    -- clauseTerm (NormalC conNameTerm paramsTerm) =
     clauseTerm (GadtC [conNameTerm] paramsTerm _) =
       Clause [VarP renameFunctionName, ConP conNameTerm [] conPats]
         (matchBody conTypes conNameTerm conPats)
@@ -170,11 +169,12 @@ mkInstancesFoil termT nameT scopeT patternT = do
                       | _conName == ''Foil.Name = AppE (VarE renameFunctionName) (VarE varName)
                       | otherwise = VarE varName
 
-    extendRenamingPatternSignType = ForallT (map (`PlainTV` SpecifiedSpec) [n, n', l, patternName, r]) [] -- AppT (ConT (mkName "CoSinkable")) (VarT patternName) 
-      (AppT (AppT ArrowT renameTypeN) -- (Name n -> Name n')
-        (AppT (AppT ArrowT patternNL) -- pattern n l
-          (AppT (AppT ArrowT contType) -- (forall l'. (Name l -> Name l') -> pattern n' l' -> r)
-          (VarT r)))) -- r
+    extendRenamingPatternSignType = 
+      ForallT (map (`PlainTV` SpecifiedSpec) [n, n', l, patternName, r]) [] -- AppT (ConT (mkName "CoSinkable")) (VarT patternName) 
+        (AppT (AppT ArrowT renameTypeN) -- (Name n -> Name n')
+        (AppT (AppT ArrowT patternNL)   -- pattern n l
+        (AppT (AppT ArrowT contType)    -- (forall l'. (Name l -> Name l') -> pattern n' l' -> r)
+        (VarT r))))                     -- r
       where 
         n = mkName "n"
         n' = mkName "n'"
@@ -191,10 +191,11 @@ mkInstancesFoil termT nameT scopeT patternT = do
         patternN'L' = AppT (AppT (VarT patternName) (VarT n')) (VarT l')
 
         patternNL = AppT (AppT (VarT patternName) (VarT n)) (VarT l)
-        contType = ForallT [PlainTV l' SpecifiedSpec] [] -- forall l'.
-            (AppT (AppT ArrowT renameTypeL) -- (Name l -> Name l')
-              (AppT (AppT ArrowT patternN'L') -- pattern n' l'
-                (VarT r))) -- r
+        contType = 
+          ForallT [PlainTV l' SpecifiedSpec] [] -- forall l'.
+            (AppT (AppT ArrowT renameTypeL)     -- (Name l -> Name l')
+            (AppT (AppT ArrowT patternN'L')     -- pattern n' l'
+            (VarT r)))                          -- r
               
 
     extendRenamingPatternBody = NormalB (AppE (AppE (VarE extendRenamingContName) (VarE (mkName "unsafeCoerce"))) (AppE (VarE (mkName "unsafeCoerce")) (VarE extendRenamingPatternName)))
