@@ -41,7 +41,6 @@ mkToFoil termT nameT scopeT patternT = do
     foilPatternT = mkName ("Foil" ++ nameBase patternT)
 
     toFoilTermT = mkName ("toFoil" ++ nameBase termT)
-    toFoilPatternT = mkName ("toFoil" ++ nameBase patternT)
     toFoilScopedT = mkName ("toFoil" ++ nameBase scopeT)
     withPatternT = mkName "withPattern"
 

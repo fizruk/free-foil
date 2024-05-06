@@ -11,8 +11,8 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE LiberalTypeSynonyms #-}
 {-# LANGUAGE InstanceSigs #-}
-{-# OPTIONS_GHC -Wno-name-shadowing #-} -- Убрать
-{-# OPTIONS_GHC -Wno-incomplete-patterns #-} -- Убрать
+-- {-# OPTIONS_GHC -Wno-name-shadowing #-} -- Убрать
+-- {-# OPTIONS_GHC -Wno-incomplete-patterns #-} -- Убрать
 module Language.LambdaPi.Foil.LambdaPiExample where
 
 import Language.LambdaPi.Foil (Scope(..), Name (UnsafeName), NameBinder(UnsafeNameBinder)
@@ -36,7 +36,7 @@ substitute substTerm = \case
   FoilApp {} -> substTerm
   FoilPi {} -> substTerm
   FoilLam FoilPatternWildcard (FoilAScopedTerm term) ->  stopSubstitute term
-  -- FoilLam (FoilPatternPair pat1 pat2) (FoilAScopedTerm term) -> _
+  FoilLam (FoilPatternPair pat1 pat2) (FoilAScopedTerm term) -> substTerm
   FoilLam (FoilPatternVar pat) (FoilAScopedTerm term) -> substituteHelper substTerm (nameOf pat) term
     where
       substituteHelper :: FoilTerm o -> Name i -> FoilTerm i -> FoilTerm o
@@ -51,9 +51,11 @@ substitute substTerm = \case
           | otherwise -> FoilPi (FoilPatternVar newPat) (substituteHelper substTerm (UnsafeName (ppName substName)) term) (FoilAScopedTerm (substituteHelper substTerm (UnsafeName (ppName substName)) scopeTerm))
             where
               newPat = UnsafeNameBinder (UnsafeName (ppName (nameOf pat)))
-        -- FoilPi FoilPatternWildcard term (FoilAScopedTerm scopeTerm) -> _
+        FoilPi FoilPatternWildcard term (FoilAScopedTerm scopeTerm) -> 
+          FoilPi FoilPatternWildcard (substituteHelper substTerm substName term) (FoilAScopedTerm (substituteHelper substTerm substName scopeTerm))
         -- FoilPi (FoilPatternPair pat1 pat2) term (FoilAScopedTerm scopeTerm) -> _
-        -- FoilLam FoilPatternWildcard (FoilAScopedTerm term) ->  _
+        FoilLam FoilPatternWildcard (FoilAScopedTerm term) ->  
+          FoilLam FoilPatternWildcard (FoilAScopedTerm (substituteHelper substTerm substName scopeTerm))
         -- FoilLam (FoilPatternPair pat1 pat2) (FoilAScopedTerm term) -> _
         FoilLam (FoilPatternVar pat) (FoilAScopedTerm term)
           | ppName (nameOf pat) == ppName substName -> FoilLam (FoilPatternVar newPat) (FoilAScopedTerm (stopSubstitute term)) -- substituteHelper substTerm (UnsafeName (ppName substName)) term
@@ -84,14 +86,22 @@ stopSubstitute = \case
       newPat2 = UnsafeNameBinder (UnsafeName (ppName (nameOf pat2)))
   FoilLam FoilPatternWildcard (FoilAScopedTerm term) -> FoilLam FoilPatternWildcard (FoilAScopedTerm (stopSubstitute term)) 
 
-two :: Term
-two = Lam (PatternVar "s") (AScopedTerm (Lam (PatternVar "z") (AScopedTerm (App (Var "s") (App (Var "s") (Var "z"))))))
+foilLam :: FoilTerm n
+foilLam = FoilLam 
+            (FoilPatternVar (UnsafeNameBinder (UnsafeName "s"))) 
+            (FoilAScopedTerm (FoilLam 
+                                (FoilPatternVar (UnsafeNameBinder (UnsafeName "s"))) 
+                                (FoilAScopedTerm (FoilApp 
+                                                    (FoilVar (UnsafeName "s")) 
+                                                    (FoilApp 
+                                                      (FoilVar (UnsafeName "s")) 
+                                                      (FoilVar (UnsafeName "s")))))))
 
--- twoFoil :: FoilTerm n
--- twoFoil = FoilLam (FoilPatternVar (UnsafeNameBinder (UnsafeName "s"))) (FoilAScopedTerm (FoilLam (FoilPatternVar (UnsafeNameBinder (UnsafeName "z"))) (FoilAScopedTerm (FoilApp (FoilVar (UnsafeName "s")) (FoilApp (FoilVar (UnsafeName "s")) (FoilVar (UnsafeName "z")))))))
+foilTerm :: FoilTerm n
+foilTerm = FoilVar (UnsafeName "aa" :: Name n)
 
--- foilFour :: FoilTerm n
--- foilFour = FoilVar (UnsafeName "zz" :: Name n)
+-- two :: Term
+-- two = Lam (PatternVar "s") (AScopedTerm (Lam (PatternVar "z") (AScopedTerm (App (Var "s") (App (Var "s") (Var "z"))))))
 
 -- func :: VarIdent -> Name n
 -- func (VarIdent s) = UnsafeName s :: Name n

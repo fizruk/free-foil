@@ -157,13 +157,17 @@ mkInstancesFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
 --   sinkabilityProof f (FoilScopedTerm t) = FoilScopedTerm (sinkabilityProof f t)
 
 
+-- eval :: FoilTerm a -> FoilTerm b
+-- eval (FoilApp term1 term2) = substitute term2 term1
+-- eval term = term
+
 substitute :: FoilTerm o -> FoilTerm i -> FoilTerm o
 substitute substTerm = \case
   FoilVar name -> substTerm
   FoilPairTerm name1 name2 -> substTerm
   FoilLit n -> substTerm
   FoilApp term1 term2 -> substTerm
-  FoilLam (FoilPatternLit pat) (FoilScopedTerm term) -> substTerm
+  FoilLam (FoilPatternLit i) (FoilScopedTerm term) -> substTerm
   FoilLam (FoilPatternVar pat) (FoilScopedTerm term) -> substituteHelper substTerm (nameOf pat) term
 
 

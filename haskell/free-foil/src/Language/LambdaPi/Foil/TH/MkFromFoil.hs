@@ -20,22 +20,22 @@ mkFromFoil termT nameT scopeT patternT = do
   TyConI (DataD _ctx _name _tvars _kind scopeCons _deriv) <- reify scopeT
   TyConI (DataD _ctx _name _tvars _kind termCons _deriv) <- reify termT
 
-  let fromFoilTBody = NormalB (LamCaseE (map fromMatchFoilTerm termCons))
-  let fromFoilPatternBody = NormalB (LamCaseE (map fromMatchFoilPattern patternCons))
-  let fromFoilScopedBody = NormalB (LamCaseE (map fromMatchFoilScoped scopeCons))
+  let fromFoilTBody = NormalB (LamCaseE (map fromFoilTermMatch termCons))
+  let fromFoilPatternBody = NormalB (LamCaseE (map fromFoilPatternMatch patternCons))
+  let fromFoilScopedBody = NormalB (LamCaseE (map fromFoilScopedMatch scopeCons))
 
   return [
-    SigD fromFoilTermT $ fromFunctionSign [n]                -- forall n .
+    SigD fromFoilTermT $ forallSign [n]                -- forall n .
       (AppT (ConT foilTermT) (VarT n))  -- -> FoilTerm n 
       (ConT termT)                      -- -> Term
     , FunD fromFoilTermT [Clause [] fromFoilTBody []]
 
-    , SigD fromFoilPatternT $ fromFunctionSign [n,l]                            -- forall n l.
+    , SigD fromFoilPatternT $ forallSign [n,l]                            -- forall n l.
       (foldl AppT (ConT foilPatternT) [VarT n, VarT l]) -- -> FoilPattern n l
       (ConT patternT)                                   -- -> Pattern
     , FunD fromFoilPatternT [Clause [] fromFoilPatternBody []]
 
-    , SigD fromFoilScopedTermT $ fromFunctionSign [n]              -- forall n .
+    , SigD fromFoilScopedTermT $ forallSign [n]              -- forall n .
       (AppT (ConT foilScopeT) (VarT n)) -- -> FoilScopedTerm n 
       (ConT scopeT)                     -- -> ScopedTerm
     , FunD fromFoilScopedTermT [Clause [] fromFoilScopedBody []]
@@ -49,13 +49,13 @@ mkFromFoil termT nameT scopeT patternT = do
     fromFoilPatternT = mkName ("fromFoil" ++ nameBase patternT)
     fromFoilScopedTermT = mkName ("fromFoil" ++ nameBase scopeT)
 
-    fromFunctionSign :: [Name] -> Type -> Type -> Type
-    fromFunctionSign forallNames from to = 
-      let plainTVList = (map (`PlainTV` SpecifiedSpec) forallNames)
+    forallSign :: [Name] -> Type -> Type -> Type
+    forallSign typeVariables from to = 
+      let plainTVList = map (`PlainTV` SpecifiedSpec) typeVariables
       in ForallT plainTVList [] (AppT (AppT ArrowT from) to)
 
-    fromMatchFoilTerm :: Con -> Match
-    fromMatchFoilTerm (NormalC conName params) =
+    fromFoilTermMatch :: Con -> Match
+    fromFoilTermMatch (NormalC conName params) =
       let matchPat = ConP (mkName ("Foil" ++ nameBase conName)) [] (toPats 0 conTypes)
           conTypes = map snd params
       in Match matchPat (matchBody conTypes matchPat conName) []
@@ -82,8 +82,8 @@ mkFromFoil termT nameT scopeT patternT = do
           | tyName == termT = AppE (VarE fromFoilTermT) (VarE patName)
           | otherwise = VarE patName
 
-    fromMatchFoilPattern :: Con -> Match
-    fromMatchFoilPattern (NormalC conName params) =
+    fromFoilPatternMatch :: Con -> Match
+    fromFoilPatternMatch (NormalC conName params) =
       let
         matchPat = ConP (mkName ("Foil" ++ nameBase conName)) [] (toPats 0 conTypes)
         conTypes = map snd params
@@ -109,8 +109,8 @@ mkFromFoil termT nameT scopeT patternT = do
           | typeN == patternT = AppE (VarE fromFoilPatternT) (VarE patName)
           | otherwise = VarE patName
 
-    fromMatchFoilScoped :: Con -> Match
-    fromMatchFoilScoped (NormalC conName params) =
+    fromFoilScopedMatch :: Con -> Match
+    fromFoilScopedMatch (NormalC conName params) =
       let
         matchPat = ConP (mkName ("Foil" ++ nameBase conName)) [] (toPats 0 conTypes)
         conTypes = map snd params
@@ -120,7 +120,7 @@ mkFromFoil termT nameT scopeT patternT = do
         toPats :: Int -> [Type] -> [Pat]
         toPats _ [] = []
         toPats n ((ConT tyName):types)
-          | tyName == nameT = WildP:toPats (n+1) types  -- in the case fo using: VarP (mkName ("varName" ++ show n))
+          | tyName == nameT = WildP:toPats (n+1) types  -- in the case of using: VarP (mkName ("varName" ++ show n))
           | tyName == patternT = VarP (mkName $ "pat" ++ show n):toPats (n+1) types
           | tyName == scopeT = VarP (mkName "scopedTerm"):toPats (n+1) types
           | tyName == termT = VarP (mkName $ "term" ++ show n):toPats (n+1) types

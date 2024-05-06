@@ -42,15 +42,17 @@ mkInstancesFoil termT nameT scopeT patternT = do
     foilPatternT = mkName ("Foil" ++ nameBase patternT)
     extendRenamingPatternT = mkName ("extendRenaming" ++ nameBase patternT)
     extendRenamingPatternName = mkName "pattern"
-    extendRenamingContName = (mkName "cont")
+    extendRenamingContName = mkName "cont"
 
     clauseScopedTerm :: Con -> Clause
     clauseScopedTerm (NormalC conName params) =
       let conPats = toPats 0 conTypes
           conTypes = map snd params
       in
-        Clause [VarP (mkName "f"), ConP conName [] conPats] (matchBody conTypes conName conPats) []
+        Clause [VarP renameFunctionName, ConP conName [] conPats] (matchBody conTypes conName conPats) []
         where
+          renameFunctionName = mkName "rename"
+
           toPats :: Int -> [Type] -> [Pat]
           toPats _ [] = []
           toPats n ((AppT (ConT tyName) _):types)
@@ -65,8 +67,8 @@ mkInstancesFoil termT nameT scopeT patternT = do
 
           toExpr :: Type -> Pat -> Exp
           toExpr ((AppT (ConT tyName) _)) (VarP patName)
-            | tyName == ''Foil.Name = AppE (VarE (mkName "f")) (VarE patName)
-            | tyName == foilTermT = AppE (AppE (VarE (mkName "sinkabilityProof")) (VarE (mkName "f"))) (VarE patName)
+            | tyName == ''Foil.Name = AppE (VarE renameFunctionName) (VarE patName)
+            | tyName == foilTermT = AppE (AppE (VarE (mkName "sinkabilityProof")) (VarE renameFunctionName)) (VarE patName)
             | otherwise = VarE patName
 
 
