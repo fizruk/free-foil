@@ -16,12 +16,13 @@
 module Language.LambdaPi.Foil.LambdaPiExample where
 
 import Language.LambdaPi.Foil (Scope(..), Name (UnsafeName), NameBinder(UnsafeNameBinder)
-                            , Distinct, Substitution, extendScope, addRename
-                            , sink, lookupSubst, withRefreshed
+                            , Distinct, Substitution(..), extendScope, addRename
+                            , sink, lookupSubst, withRefreshed, emptyScope
                             , nameOf, Sinkable(..), CoSinkable(..))
 import Language.LambdaPi.Foil.TH
 import Language.LambdaPi.LambdaPi.Abs
 import Unsafe.Coerce (unsafeCoerce)
+import qualified Data.Map as Map
 
 mkFoilData ''Term ''VarIdent ''ScopedTerm ''Pattern
 mkToFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
@@ -33,13 +34,13 @@ substitute :: Distinct o => Scope o -> Substitution FoilTerm i o -> FoilTerm i -
 substitute scope subst = \case
     FoilVar name -> lookupSubst subst name
     FoilApp f x -> FoilApp (substitute scope subst f) (substitute scope subst x)
-    FoilLam pattern (FoilAScopedTerm body) -> case pattern of 
-      FoilPatternWildcard -> let 
+    FoilLam pattern (FoilAScopedTerm body) -> case pattern of
+      FoilPatternWildcard -> let
         body' = substitute scope subst body in FoilLam FoilPatternWildcard (FoilAScopedTerm body')
       FoilPatternVar binder -> withRefreshed scope (nameOf binder) (\binder' ->
         let subst' = addRename (sink subst) binder (nameOf binder')
             scope' = extendScope binder' scope
-            body' = substitute scope' subst' body 
+            body' = substitute scope' subst' body
           in FoilLam (FoilPatternVar binder') (FoilAScopedTerm body')
         )
       FoilPatternPair binder1 binder2 -> withRefreshed scope (nameOf binder1) (\binder1' ->
@@ -51,15 +52,15 @@ substitute scope subst = \case
                 in FoilLam (FoilPatternPair binder1' binder2') (FoilAScopedTerm body'')
               )
         )
-    FoilPi pattern term (FoilAScopedTerm body) -> case pattern of 
-      FoilPatternWildcard -> let 
-        body' = substitute scope subst body 
+    FoilPi pattern term (FoilAScopedTerm body) -> case pattern of
+      FoilPatternWildcard -> let
+        body' = substitute scope subst body
         term' = substitute scope subst term in FoilPi FoilPatternWildcard term' (FoilAScopedTerm body')
       FoilPatternVar binder -> withRefreshed scope (nameOf binder) (\binder' ->
         let subst' = addRename (sink subst) binder (nameOf binder')
             scope' = extendScope binder' scope
-            body' = substitute scope' subst' body 
-            term' = substitute scope subst term 
+            body' = substitute scope' subst' body
+            term' = substitute scope subst term
           in FoilPi (FoilPatternVar binder') term' (FoilAScopedTerm body')
         )
       FoilPatternPair binder1 binder2 -> withRefreshed scope (nameOf binder1) (\binder1' ->
@@ -74,20 +75,25 @@ substitute scope subst = \case
         )
     FoilPair a b -> FoilPair (substitute scope subst a) (substitute scope subst b)
 
-
 foilLam :: FoilTerm n
-foilLam = FoilLam 
-            (FoilPatternVar (UnsafeNameBinder (UnsafeName "s"))) 
-            (FoilAScopedTerm (FoilLam 
-                                (FoilPatternVar (UnsafeNameBinder (UnsafeName "s"))) 
-                                (FoilAScopedTerm (FoilApp 
-                                                    (FoilVar (UnsafeName "s")) 
-                                                    (FoilApp 
-                                                      (FoilVar (UnsafeName "s")) 
+foilLam = FoilLam
+            (FoilPatternVar (UnsafeNameBinder (UnsafeName "s")))
+            (FoilAScopedTerm (FoilLam
+                                (FoilPatternVar (UnsafeNameBinder (UnsafeName "s")))
+                                (FoilAScopedTerm (FoilApp
+                                                    (FoilVar (UnsafeName "s"))
+                                                    (FoilApp
+                                                      (FoilVar (UnsafeName "s"))
                                                       (FoilVar (UnsafeName "s")))))))
+
+scope1 :: Scope o
+scope1 = case emptyScope of UnsafeScope list -> UnsafeScope ("s":list)
 
 foilTerm :: FoilTerm n
 foilTerm = FoilVar (UnsafeName "aa" :: Name n)
+
+substitution :: Substitution FoilTerm i o
+substitution = UnsafeSubstitution FoilVar (Map.insert "s" foilTerm Map.empty)
 
 -- two :: Term
 -- two = Lam (PatternVar "s") (AScopedTerm (Lam (PatternVar "z") (AScopedTerm (App (Var "s") (App (Var "s") (Var "z"))))))
