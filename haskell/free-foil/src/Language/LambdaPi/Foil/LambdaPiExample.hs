@@ -87,7 +87,7 @@ foilLam = FoilLam
                                                       (FoilVar (UnsafeName "s")))))))
 
 scope1 :: Scope o
-scope1 = case emptyScope of UnsafeScope list -> UnsafeScope ("s":list)
+scope1 = UnsafeScope ["s"]
 
 foilTerm :: FoilTerm n
 foilTerm = FoilVar (UnsafeName "aa" :: Name n)
