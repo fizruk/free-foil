@@ -1,5 +1,6 @@
 {-# OPTIONS_GHC -ddump-splices #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
@@ -17,7 +18,7 @@ module Language.LambdaPi.Foil.LambdaPiExample where
 
 import Language.LambdaPi.Foil (Scope(..), Name (UnsafeName), NameBinder(UnsafeNameBinder)
                             , Distinct, Substitution(..), extendScope, addRename
-                            , sink, lookupSubst, withRefreshed, emptyScope
+                            , sink, lookupSubst, withRefreshed, S(..), Distinct(..)
                             , nameOf, Sinkable(..), CoSinkable(..))
 import Language.LambdaPi.Foil.TH
 import Language.LambdaPi.LambdaPi.Abs
@@ -86,7 +87,7 @@ foilLam = FoilLam
                                                       (FoilVar (UnsafeName "s"))
                                                       (FoilVar (UnsafeName "s")))))))
 
-scope1 :: Scope o
+scope1 :: Scope VoidS
 scope1 = UnsafeScope ["s"]
 
 foilTerm :: FoilTerm n
