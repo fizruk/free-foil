@@ -19,7 +19,7 @@ module Language.LambdaPi.Foil.LambdaPiExample where
 import Language.LambdaPi.Foil (Scope(..), Name (UnsafeName), NameBinder(UnsafeNameBinder)
                             , Distinct, Substitution(..), extendScope, addRename
                             , sink, lookupSubst, withRefreshed, S(..), Distinct(..)
-                            , nameOf, Sinkable(..), CoSinkable(..))
+                            , ppName, nameOf, Sinkable(..), CoSinkable(..))
 import Language.LambdaPi.Foil.TH
 import Language.LambdaPi.LambdaPi.Abs
 import Unsafe.Coerce (unsafeCoerce)
@@ -30,6 +30,67 @@ mkToFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
 mkFromFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
 mkInstancesFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
 
+eval :: Distinct n => Scope n -> FoilTerm n -> FoilTerm n
+eval scope = \case 
+  FoilLam FoilPatternWildcard (FoilAScopedTerm body) -> eval scope body
+  FoilLam (FoilPatternVar binder) (FoilAScopedTerm body) -> 
+      let scope' = extendScope binder scope
+        in FoilLam (FoilPatternVar binder) (FoilAScopedTerm (eval scope' body))
+  FoilLam (FoilPatternPair binder1 binder2) (FoilAScopedTerm body) ->
+      let scope'' = extendScope binder2 (extendScope binder1 scope)
+        in FoilLam (FoilPatternPair binder1 binder2) (FoilAScopedTerm (eval scope'' body))
+  FoilPi FoilPatternWildcard term (FoilAScopedTerm body) -> eval scope body
+  FoilPi pattern@(FoilPatternVar binder) term (FoilAScopedTerm body) -> 
+    let scope' = extendScope binder scope
+        termReduced = eval scope term 
+        bodyReduced = eval scope' body 
+      in reduce scope (FoilPi pattern termReduced (FoilAScopedTerm bodyReduced))
+  FoilPi pattern@(FoilPatternPair binder1 binder2) term (FoilAScopedTerm body) -> 
+    let scope'' = extendScope binder2 (extendScope binder1 scope)
+        termReduced = eval scope term
+        bodyReduced = eval scope'' body 
+      in reduce scope (FoilPi pattern termReduced (FoilAScopedTerm bodyReduced))
+  FoilApp f args -> 
+    let fReduced = eval scope f
+        argsReduced = eval scope args
+      in reduce scope (FoilApp fReduced argsReduced) 
+  FoilVar name -> FoilVar name
+  FoilPair term1 term2 -> FoilPair (eval scope term1) (eval scope term2)
+  x -> x
+
+
+reduce :: Distinct n => Scope n -> FoilTerm n -> FoilTerm n
+reduce scope = \case
+  FoilApp f x ->
+    case reduce scope f of
+      FoilLam pattern (FoilAScopedTerm body) -> case pattern of
+        FoilPatternWildcard -> body
+        FoilPatternVar binder -> case x of
+          FoilVar name ->
+            let substitution = UnsafeSubstitution FoilVar (Map.insert (ppName (nameOf binder)) x Map.empty)
+            in substitute scope substitution body
+          _ -> FoilApp (FoilLam pattern (FoilAScopedTerm body)) x
+        FoilPatternPair binder1 binder2 ->  case x of
+          FoilPair (FoilVar name1) (FoilVar name2) ->
+            let substitution = UnsafeSubstitution FoilVar (Map.fromList [(ppName (nameOf binder1), FoilVar name1),
+                                                                          (ppName (nameOf binder2), FoilVar name2)])
+            in substitute scope substitution body
+          _ -> FoilApp (FoilLam pattern (FoilAScopedTerm body)) x
+      func -> FoilApp func x
+  FoilPi pattern term (FoilAScopedTerm body) -> case pattern of
+    FoilPatternWildcard -> body
+    FoilPatternVar binder -> case term of
+      FoilVar name ->
+        let substitution = UnsafeSubstitution FoilVar (Map.insert (ppName (nameOf binder)) term Map.empty)
+        in substitute scope substitution body
+      _ -> FoilPi pattern term (FoilAScopedTerm body)
+    FoilPatternPair binder1 binder2 ->  case term of
+      FoilPair (FoilVar name1) (FoilVar name2) ->
+        let substitution = UnsafeSubstitution FoilVar (Map.fromList [(ppName (nameOf binder1), FoilVar name1),
+                                                                      (ppName (nameOf binder2), FoilVar name2)])
+        in substitute scope substitution body
+      _ -> FoilPi pattern term (FoilAScopedTerm body)
+  term -> term
 
 substitute :: Distinct o => Scope o -> Substitution FoilTerm i o -> FoilTerm i -> FoilTerm o
 substitute scope subst = \case
@@ -76,6 +137,8 @@ substitute scope subst = \case
         )
     FoilPair a b -> FoilPair (substitute scope subst a) (substitute scope subst b)
 
+
+-- Language.LambdaPi.Foil.LambdaPiExample.substitute Language.LambdaPi.Foil.LambdaPiExample.scope1 Language.LambdaPi.Foil.LambdaPiExample.substitution Language.LambdaPi.Foil.LambdaPiExample.foilLam
 foilLam :: FoilTerm n
 foilLam = FoilLam
             (FoilPatternVar (UnsafeNameBinder (UnsafeName "s")))
@@ -87,8 +150,8 @@ foilLam = FoilLam
                                                       (FoilVar (UnsafeName "s"))
                                                       (FoilVar (UnsafeName "s")))))))
 
-scope1 :: Scope VoidS
-scope1 = UnsafeScope ["s"]
+emptyScope :: Scope VoidS
+emptyScope = UnsafeScope []
 
 foilTerm :: FoilTerm n
 foilTerm = FoilVar (UnsafeName "aa" :: Name n)
@@ -96,12 +159,24 @@ foilTerm = FoilVar (UnsafeName "aa" :: Name n)
 substitution :: Substitution FoilTerm i o
 substitution = UnsafeSubstitution FoilVar (Map.insert "s" foilTerm Map.empty)
 
--- two :: Term
--- two = Lam (PatternVar "s") (AScopedTerm (Lam (PatternVar "z") (AScopedTerm (App (Var "s") (App (Var "s") (Var "z"))))))
+-- Language.LambdaPi.Foil.LambdaPiExample.reduce Language.LambdaPi.Foil.LambdaPiExample.emptyScope Language.LambdaPi.Foil.LambdaPiExample.reduceFoilExample
+reduceFoilExample :: FoilTerm n
+reduceFoilExample = FoilApp 
+                      (FoilLam
+                        (FoilPatternVar (UnsafeNameBinder (UnsafeName "s")))
+                        (FoilAScopedTerm (FoilApp
+                                            (FoilVar (UnsafeName "s"))
+                                            (FoilVar (UnsafeName "s")))))
+                      (FoilVar (UnsafeName "a"))
 
--- func :: VarIdent -> Name n
--- func (VarIdent s) = UnsafeName s :: Name n
+-- Language.LambdaPi.Foil.LambdaPiExample.reduce Language.LambdaPi.Foil.LambdaPiExample.emptyScope Language.LambdaPi.Foil.LambdaPiExample.reducePiExample
+reducePiExample :: FoilTerm n
+reducePiExample = FoilPi 
+                    (FoilPatternVar (UnsafeNameBinder (UnsafeName "s")))
+                    (FoilVar (UnsafeName "a"))
+                    (FoilAScopedTerm (FoilApp
+                                        (FoilVar (UnsafeName "s"))
+                                        (FoilVar (UnsafeName "s"))))
 
--- substed = FoilLam (FoilPatternVar (UnsafeNameBinder (UnsafeName "z"))) (FoilAScopedTerm (FoilApp (FoilVar (UnsafeName "zz")) (FoilApp (FoilVar (UnsafeName "zz")) (FoilVar (UnsafeName "z")))))
-
--- -- Language.LambdaPi.Foil.LambdaPiExample.toFoilTerm Language.LambdaPi.Foil.LambdaPiExample.func Language.LambdaPi.Foil.emptyScope Language.LambdaPi.Foil.LambdaPiExample.two
+reducePiExample2 :: FoilTerm n
+reducePiExample2 = FoilApp (FoilVar (UnsafeName "a")) (FoilVar (UnsafeName "a"))
