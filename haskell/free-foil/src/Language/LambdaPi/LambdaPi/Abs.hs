@@ -35,7 +35,7 @@ data ScopedTerm = AScopedTerm Term
 data Pattern
     = PatternWildcard
     | PatternVar VarIdent
-    | PatternPair VarIdent VarIdent
+    | PatternPair Pattern Pattern
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Data, C.Typeable, C.Generic)
 
 newtype VarIdent = VarIdent String

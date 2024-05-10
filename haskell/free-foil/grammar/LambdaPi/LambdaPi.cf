@@ -22,4 +22,4 @@ AScopedTerm. ScopedTerm ::= Term ;
 
 PatternWildcard.  Pattern ::= "_" ;
 PatternVar.       Pattern ::= VarIdent ;
-PatternPair.      Pattern ::= "(" VarIdent "," VarIdent ")" ;
+PatternPair.      Pattern ::= "(" Pattern "," Pattern ")" ;

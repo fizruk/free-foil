@@ -168,4 +168,4 @@ instance Print Language.LambdaPi.LambdaPi.Abs.Pattern where
   prt i = \case
     Language.LambdaPi.LambdaPi.Abs.PatternWildcard -> prPrec i 0 (concatD [doc (showString "_")])
     Language.LambdaPi.LambdaPi.Abs.PatternVar varident -> prPrec i 0 (concatD [prt 0 varident])
-    Language.LambdaPi.LambdaPi.Abs.PatternPair varident1 varident2 -> prPrec i 0 (concatD [doc (showString "("), prt 0 varident1, doc (showString ","), prt 0 varident2, doc (showString ")")])
+    Language.LambdaPi.LambdaPi.Abs.PatternPair pattern_1 pattern_2 -> prPrec i 0 (concatD [doc (showString "("), prt 0 pattern_1, doc (showString ","), prt 0 pattern_2, doc (showString ")")])

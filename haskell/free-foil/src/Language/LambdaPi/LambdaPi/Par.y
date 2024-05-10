@@ -93,7 +93,7 @@ Pattern :: { Language.LambdaPi.LambdaPi.Abs.Pattern }
 Pattern
   : '_' { Language.LambdaPi.LambdaPi.Abs.PatternWildcard }
   | VarIdent { Language.LambdaPi.LambdaPi.Abs.PatternVar $1 }
-  | '(' VarIdent ',' VarIdent ')' { Language.LambdaPi.LambdaPi.Abs.PatternPair $2 $4 }
+  | '(' Pattern ',' Pattern ')' { Language.LambdaPi.LambdaPi.Abs.PatternPair $2 $4 }
 
 {
 

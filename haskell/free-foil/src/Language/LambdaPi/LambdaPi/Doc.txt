@@ -52,7 +52,7 @@ All other symbols are terminals.
   | //ScopedTerm// | -> | //Term//
   | //Pattern// | -> | ``_``
   |  |  **|**  | //VarIdent//
-  |  |  **|**  | ``(`` //VarIdent// ``,`` //VarIdent// ``)``
+  |  |  **|**  | ``(`` //Pattern// ``,`` //Pattern// ``)``
 
 
 
