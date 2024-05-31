@@ -46,6 +46,7 @@ module Control.Monad.Foil (
   DistinctEvidence(..),
   assertDistinct,
   DExt,
+  InjectName(..),
 ) where
 
 import           Control.Monad.Foil.Internal

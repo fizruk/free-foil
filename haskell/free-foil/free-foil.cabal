@@ -38,6 +38,7 @@ library
       Control.Monad.Foil.Example
       Control.Monad.Foil.Internal
       Control.Monad.Free.Foil
+      Control.Monad.Free.Foil.Example
       LambdaPi.Simple.Interpret
       Language.LambdaPi.Foil
       Language.LambdaPi.Foil.Example

@@ -1,53 +1,40 @@
-{-# LANGUAGE DataKinds  #-}
-{-# LANGUAGE GADTs      #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE DeriveFunctor     #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE PatternSynonyms   #-}
+{-# LANGUAGE RankNTypes        #-}
+{-# LANGUAGE TemplateHaskell   #-}
 -- | Example implementation of untyped \(\lambda\)-calculus with the foil.
-module Control.Monad.Foil.Example where
+module Control.Monad.Free.Foil.Example where
 
-import           Control.DeepSeq
 import           Control.Monad.Foil
+import           Control.Monad.Free.Foil
+import           Data.Bifunctor.TH
 
 -- | Untyped \(\lambda\)-terms in scope @n@.
-data Expr n where
-  -- | Variables are names in scope @n@: \(x\)
-  VarE :: Name n -> Expr n
+data ExprF scope term
   -- | Application of one term to another: \((t_1, t_2)\)
-  AppE :: Expr n -> Expr n -> Expr n
+  = AppF term term
   -- | \(\lambda\)-abstraction introduces a binder and a term in an extended scope: \(\lambda x. t\)
-  LamE :: NameBinder n l -> Expr l -> Expr n
+  | LamF scope
+  deriving (Functor)
+deriveBifunctor ''ExprF
+
+pattern AppE :: AST ExprF n -> AST ExprF n -> AST ExprF n
+pattern AppE x y = Node (AppF x y)
+
+pattern LamE :: NameBinder n l -> AST ExprF l -> AST ExprF n
+pattern LamE binder body = Node (LamF (ScopedAST binder body))
+
+{-# COMPLETE Var, AppE, LamE #-}
+
+type Expr = AST ExprF
 
 -- | Use 'ppExpr' to show \(\lambda\)-terms.
 instance Show (Expr n) where
   show = ppExpr
-
-instance NFData (Expr l) where
-  rnf (LamE binder body) = rnf binder `seq` rnf body
-  rnf (AppE fun arg)     = rnf fun `seq` rnf arg
-  rnf (VarE name)        = rnf name
-
--- | This instance serves as a proof
--- that sinking of 'Expr' is safe.
-instance Sinkable Expr where
-  sinkabilityProof rename (VarE v) = VarE (rename v)
-  sinkabilityProof rename (AppE f e) = AppE (sinkabilityProof rename f) (sinkabilityProof rename e)
-  sinkabilityProof rename (LamE binder body) = extendRenaming rename binder $ \rename' binder' ->
-    LamE binder' (sinkabilityProof rename' body)
-
-instance InjectName Expr where
-  injectName = VarE
-
--- | Substitution for untyped \(\lambda\)-terms.
--- The foil helps implement this function without forgetting scope extensions and renaming.
-substitute :: Distinct o => Scope o -> Substitution Expr i o -> Expr i -> Expr o
-substitute scope subst = \case
-    VarE name -> lookupSubst subst name
-    AppE f x -> AppE (substitute scope subst f) (substitute scope subst x)
-    LamE binder body -> withRefreshed scope (nameOf binder) $ \binder' ->
-      let subst' = addRename (sink subst) binder (nameOf binder')
-          scope' = extendScope binder' scope
-          body' = substitute scope' subst' body
-       in LamE binder' body'
 
 -- | Compute weak head normal form (WHNF) of a \(\lambda\)-term.
 --
@@ -109,7 +96,7 @@ ppName name = "x" <> show (nameId name)
 -- "\955x0. \955x1. (x0 (x0 (x0 x1)))"
 ppExpr :: Expr n -> String
 ppExpr = \case
-  VarE name -> ppName name
+  Var name -> ppName name
   AppE x y -> "(" <> ppExpr x <> " " <> ppExpr y <> ")"
   LamE binder body -> "λ" <> ppName (nameOf binder) <> ". " <> ppExpr body
 
@@ -130,6 +117,6 @@ churchN :: Int -> Expr VoidS
 churchN n =
   lam emptyScope $ \sx nx ->
     lam sx $ \_sxy ny ->
-      let x = sink (VarE (nameOf nx))
-          y = VarE (nameOf ny)
+      let x = sink (Var (nameOf nx))
+          y = Var (nameOf ny)
        in iterate (AppE x) y !! n

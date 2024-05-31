@@ -221,21 +221,20 @@ instance CoSinkable NameBinder where
 
 -- | A substitution is a mapping from names in scope @i@
 -- to expressions @e o@ in scope @o@.
-data Substitution (e :: S -> Type) (i :: S) (o :: S) =
-  UnsafeSubstitution (forall n. Name n -> e n) (IntMap (e o))
+newtype Substitution (e :: S -> Type) (i :: S) (o :: S) =
+  UnsafeSubstitution (IntMap (e o))
 
 -- | Apply substitution to a given name.
-lookupSubst :: Substitution e i o -> Name i -> e o
-lookupSubst (UnsafeSubstitution f env) (UnsafeName name) =
+lookupSubst :: InjectName e => Substitution e i o -> Name i -> e o
+lookupSubst (UnsafeSubstitution env) (UnsafeName name) =
     case IntMap.lookup name env of
         Just ex -> ex
-        Nothing -> f (UnsafeName name)
+        Nothing -> injectName (UnsafeName name)
 
 -- | Identity substitution maps all names to expresion-variables.
 identitySubst
-  :: (forall n. Name n -> e n)  -- ^ How to wrap a name into a variable.
-  -> Substitution e i i
-identitySubst f = UnsafeSubstitution f IntMap.empty
+  :: InjectName e => Substitution e i i
+identitySubst = UnsafeSubstitution IntMap.empty
 
 -- | Extend substitution with a particular mapping.
 addSubst
@@ -243,20 +242,20 @@ addSubst
   -> NameBinder i i'
   -> e o
   -> Substitution e i' o
-addSubst (UnsafeSubstitution f env) (UnsafeNameBinder (UnsafeName name)) ex
-  = UnsafeSubstitution f (IntMap.insert name ex env)
+addSubst (UnsafeSubstitution env) (UnsafeNameBinder (UnsafeName name)) ex
+  = UnsafeSubstitution (IntMap.insert name ex env)
 
 -- | Add variable renaming to a substitution.
 -- This includes the performance optimization of eliding names mapped to themselves.
-addRename :: Substitution e i o -> NameBinder i i' -> Name o -> Substitution e i' o
-addRename s@(UnsafeSubstitution f env) b@(UnsafeNameBinder (UnsafeName name1)) n@(UnsafeName name2)
-    | name1 == name2 = UnsafeSubstitution f (IntMap.delete name1 env)
-    | otherwise = addSubst s b (f n)
+addRename :: InjectName e => Substitution e i o -> NameBinder i i' -> Name o -> Substitution e i' o
+addRename s@(UnsafeSubstitution env) b@(UnsafeNameBinder (UnsafeName name1)) n@(UnsafeName name2)
+    | name1 == name2 = UnsafeSubstitution (IntMap.delete name1 env)
+    | otherwise = addSubst s b (injectName n)
 
 -- | Substitutions are sinkable as long as corresponding expressions are.
 instance (Sinkable e) => Sinkable (Substitution e i) where
-  sinkabilityProof rename (UnsafeSubstitution f env) =
-    UnsafeSubstitution f (fmap (sinkabilityProof rename) env)
+  sinkabilityProof rename (UnsafeSubstitution env) =
+    UnsafeSubstitution (fmap (sinkabilityProof rename) env)
 
 -- * Raw types and operations
 
@@ -307,3 +306,9 @@ instance Distinct VoidS
 
 -- | Scope extensions with distinct names.
 type DExt n l = (Distinct l, Ext n l)
+
+-- | Instances of this typeclass possess the ability to inject names.
+-- Usually, this is a variable data constructor.
+class InjectName (e :: S -> Type) where
+  -- | Inject names into expressions.
+  injectName :: Name n -> e n
