@@ -34,6 +34,10 @@ custom-setup
 
 library
   exposed-modules:
+      Control.Monad.Foil
+      Control.Monad.Foil.Example
+      Control.Monad.Foil.Internal
+      Control.Monad.Free.Foil
       LambdaPi.Simple.Interpret
       Language.LambdaPi.Foil
       Language.LambdaPi.Foil.Example
@@ -71,6 +75,7 @@ library
     , base >=4.7 && <5
     , bifunctors
     , containers
+    , deepseq
     , template-haskell
     , text >=1.2.3.1
   default-language: Haskell2010
@@ -92,6 +97,7 @@ executable lambda-pi
     , base >=4.7 && <5
     , bifunctors
     , containers
+    , deepseq
     , free-foil
     , template-haskell
     , text >=1.2.3.1
@@ -115,6 +121,7 @@ test-suite doctests
     , base
     , bifunctors
     , containers
+    , deepseq
     , doctest
     , template-haskell
     , text >=1.2.3.1
@@ -138,6 +145,7 @@ test-suite free-foil-test
     , base >=4.7 && <5
     , bifunctors
     , containers
+    , deepseq
     , free-foil
     , template-haskell
     , text >=1.2.3.1

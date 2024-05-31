@@ -37,6 +37,7 @@ dependencies:
   containers:
   bifunctors:
   template-haskell:
+  deepseq:
 
 ghc-options:
   - -Wall

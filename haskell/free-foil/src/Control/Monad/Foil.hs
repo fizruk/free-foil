@@ -1,0 +1,48 @@
+-- | Main definitions of the foil that can be
+-- reused for specific implementations.
+--
+-- The original description of this approach
+-- is described in the IFL 2022 paper by Maclaurin, Radul, and Paszke
+-- [«The Foil: Capture-Avoiding Substitution With No Sharp Edges»](https://doi.org/10.1145/3587216.3587224).
+-- This module also introduces 'CoSinkable' class,
+-- generalizing handling of patterns, as described in
+-- [«Free Foil: Generating Efficient and Scope-Safe Abstract Syntax»](https://arxiv.org/abs/2405.16384).
+--
+-- Since the representation of scopes and substitutions
+-- is either 'IntMap' or 'IntSet', many of the operations
+-- have a worst-case complexity of \(O(\min(n,W))\).
+-- This means that the operation can become linear in the size of the scope \(n\) with a maximum of \(W\)
+-- — the number of bits in an 'Int' (32 or 64).
+module Control.Monad.Foil (
+  -- * Safe scopes
+  S(..),
+  Scope,
+  Name,
+  NameBinder,
+  emptyScope,
+  extendScope,
+  member,
+  nameOf,
+  withFreshBinder,
+  withFresh,
+  withRefreshed,
+  -- * Safe sinking
+  Sinkable(..),
+  sink,
+  extendRenaming,
+  -- * Safe substitutions
+  Substitution,
+  lookupSubst,
+  identitySubst,
+  addSubst,
+  addRename,
+  -- * Constraints
+  Ext,
+  ExtEvidence(..),
+  Distinct,
+  DistinctEvidence(..),
+  assertDistinct,
+  DExt,
+) where
+
+import           Control.Monad.Foil.Internal
