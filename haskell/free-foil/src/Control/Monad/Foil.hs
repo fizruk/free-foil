@@ -14,7 +14,7 @@
 -- This means that the operation can become linear in the size of the scope \(n\) with a maximum of \(W\)
 -- — the number of bits in an 'Int' (32 or 64).
 module Control.Monad.Foil (
-  -- * Safe scopes
+  -- * Safe scopes, names, and binders
   S(..),
   Scope,
   Name,
@@ -23,13 +23,16 @@ module Control.Monad.Foil (
   extendScope,
   member,
   nameOf,
+  nameId,
   withFreshBinder,
   withFresh,
   withRefreshed,
-  -- * Safe sinking
+  -- * Safe (co)sinking
   Sinkable(..),
+  CoSinkable(..),
   sink,
   extendRenaming,
+  extendRenamingNameBinder,
   -- * Safe substitutions
   Substitution,
   lookupSubst,

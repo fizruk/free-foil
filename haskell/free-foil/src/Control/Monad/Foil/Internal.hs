@@ -4,7 +4,6 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE KindSignatures             #-}
-{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE QuantifiedConstraints      #-}
 {-# LANGUAGE RankNTypes                 #-}
@@ -83,6 +82,11 @@ member (UnsafeName name) (UnsafeScope s) = rawMember name s
 -- | Extract name from a name binder.
 nameOf :: NameBinder n l -> Name l
 nameOf (UnsafeNameBinder name) = name
+
+-- | Convert 'Name' into an identifier.
+-- This may be useful for printing and debugging.
+nameId :: Name l -> Id
+nameId (UnsafeName i) = i
 
 -- | Allocate a fresh binder for a given scope.
 withFreshBinder
@@ -164,7 +168,20 @@ instance Sinkable Name where
 sink :: (Sinkable e, DExt n l) => e n -> e l
 sink = unsafeCoerce
 
--- | Extend renaming when going under a binder.
+-- | Extend renaming when going under a 'CoSinkable' pattern (generalized binder).
+-- Note that the scope under pattern is independent of the codomain of the renaming.
+--
+-- This function is used to go under binders when implementing 'sinkabilityProof'
+-- and is both a generalization of 'extendRenamingNameBinder' and an efficient implementation of 'coSinkabilityProof'.
+extendRenaming
+  :: CoSinkable pattern
+  => (Name n -> Name n')
+  -> pattern n l
+  -> (forall l'. (Name l -> Name l') -> pattern n' l' -> r ) -> r
+extendRenaming _ pattern cont =
+  cont unsafeCoerce (unsafeCoerce pattern)
+
+-- | Extend renaming when going under a 'NameBinder'.
 -- Note that the scope under binder is independent of the codomain of the renaming.
 --
 -- Semantically, this function may need to rename the binder (resulting in the new scope @l'@),
@@ -174,13 +191,31 @@ sink = unsafeCoerce
 -- See Appendix A in [«The Foil: Capture-Avoiding Substitution With No Sharp Edges»](https://doi.org/10.1145/3587216.3587224) for the details.
 --
 -- This function is used to go under binders when implementing 'sinkabilityProof'.
--- A generalization of this function is 'coSinkabilityProof'.
-extendRenaming
+-- A generalization of this function is 'extendRenaming' (which is an efficient version of 'coSinkabilityProof').
+extendRenamingNameBinder
   :: (Name n -> Name n')
   -> NameBinder n l
   -> (forall l'. (Name l -> Name l') -> NameBinder n' l' -> r ) -> r
-extendRenaming _ (UnsafeNameBinder name) cont =
+extendRenamingNameBinder _ (UnsafeNameBinder name) cont =
   cont unsafeCoerce (UnsafeNameBinder name)
+
+-- | 'CoSinkable' is to patterns (generalized binders)
+-- what 'Sinkable' is to expressions.
+--
+-- See Section 2.3 of [«Free Foil: Generating Efficient and Scope-Safe Abstract Syntax»](https://arxiv.org/abs/2405.16384) for more details.
+class CoSinkable (pattern :: S -> S -> Type) where
+  -- | An implementation of this method that typechecks
+  -- proves to the compiler that the pattern is indeed
+  -- 'CoSinkable'. However, instead of this implementation,
+  -- 'extendRenaming' should be used at all call sites for efficiency.
+  coSinkabilityProof
+    :: (Name n -> Name n')
+    -> pattern n l
+    -> (forall l'. (Name l -> Name l') -> pattern n' l' -> r) -> r
+
+instance CoSinkable NameBinder where
+  coSinkabilityProof _rename (UnsafeNameBinder name) cont =
+    cont unsafeCoerce (UnsafeNameBinder name)
 
 -- * Safe substitions
 
@@ -241,6 +276,7 @@ rawFreshName :: RawScope -> RawName
 rawFreshName scope | IntSet.null scope = 0
                    | otherwise = IntSet.findMax scope + 1
 
+-- | Check if a raw name is contained in a raw scope.
 rawMember :: RawName -> RawScope -> Bool
 rawMember = IntSet.member
 
