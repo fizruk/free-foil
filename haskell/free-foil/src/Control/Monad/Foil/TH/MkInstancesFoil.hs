@@ -1,17 +1,15 @@
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE QuasiQuotes           #-}
 {-# LANGUAGE TemplateHaskellQuotes #-}
-{-# LANGUAGE QuasiQuotes #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE LambdaCase #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
-module Language.LambdaPi.Foil.TH.MkInstancesFoil (mkInstancesFoil) where
+module Control.Monad.Foil.TH.MkInstancesFoil (mkInstancesFoil) where
 
-import Language.Haskell.TH
+import           Language.Haskell.TH
 
-import qualified Language.LambdaPi.Foil as Foil
-import Data.Maybe (fromJust)
-import Data.Coerce (coerce)
+import qualified Control.Monad.Foil  as Foil
+import           Data.Maybe          (fromJust)
 
 
 mkInstancesFoil :: Name -> Name -> Name -> Name -> Q [Dec]

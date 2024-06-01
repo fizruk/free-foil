@@ -1,16 +1,15 @@
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE QuasiQuotes           #-}
 {-# LANGUAGE TemplateHaskellQuotes #-}
-{-# LANGUAGE QuasiQuotes #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE LambdaCase #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
-module Language.LambdaPi.Foil.TH.MkFromFoil (mkFromFoil) where
+module Control.Monad.Foil.TH.MkFromFoil (mkFromFoil) where
 
-import Language.Haskell.TH
+import           Language.Haskell.TH
 
-import qualified Language.LambdaPi.Foil as Foil
-import Data.Coerce (coerce)
+import qualified Control.Monad.Foil  as Foil
+import           Data.Coerce         (coerce)
 
 mkFromFoil :: Name -> Name -> Name -> Name -> Q [Dec]
 mkFromFoil termT nameT scopeT patternT = do
@@ -27,7 +26,7 @@ mkFromFoil termT nameT scopeT patternT = do
   return [
     SigD fromFoilTermT (ForallT [PlainTV n SpecifiedSpec] []
     (AppT (AppT ArrowT
-      (AppT (ConT foilTermT) (VarT n))) -- FoilTerm n 
+      (AppT (ConT foilTermT) (VarT n))) -- FoilTerm n
       (ConT termT)) -- Term
     )
     , FunD fromFoilTermT [Clause [] fromFoilTBody []]
@@ -41,7 +40,7 @@ mkFromFoil termT nameT scopeT patternT = do
 
     , SigD fromFoilScopedTermT (ForallT [PlainTV n SpecifiedSpec] []
     (AppT (AppT ArrowT
-      (AppT (ConT foilScopeT) (VarT n))) -- FoilScopedTerm n 
+      (AppT (ConT foilScopeT) (VarT n))) -- FoilScopedTerm n
       (ConT scopeT)) -- ScopedTerm
     )
     , FunD fromFoilScopedTermT [Clause [] fromFoilScopedBody []]
@@ -61,12 +60,12 @@ mkFromFoil termT nameT scopeT patternT = do
             (NormalC _ params) -> (getBinderNumber (map snd params) 0)
             _ -> 0
         ) cons)
-    
+
     generateNames :: Int -> Int -> [Name]
     generateNames from to
       | from >= to = []
       | otherwise = mkName ("t" ++ show from) : generateNames (from + 1) to
-    
+
     getBinderNumber :: [Type] -> Int -> Int
     getBinderNumber [] counter = counter
     getBinderNumber ((ConT tyName):types) counter
@@ -95,8 +94,9 @@ mkFromFoil termT nameT scopeT patternT = do
           (foldl AppE (ConE name) (zipWith toExpr matchTypes matchParams))
 
         toExpr :: Type -> Pat -> Exp
-        toExpr _ (ConP _ _ [VarP varName]) = AppE (VarE 'coerce) (AppE (VarE 'Foil.ppName) (VarE varName)) -- Уязвимость: mkName (nameBase nameT) предполагает что имя конструктора совпадает с именем типа. Но нет возможности выбрать подходищай конструктор так как непонятно как паттернматчить аргумент конструктора с нужным
-        toExpr (ConT typeN) (VarP patName) 
+        toExpr _ (ConP _ _ [VarP varName]) =
+          AppE (VarE 'coerce) (VarE varName) -- Уязвимость: mkName (nameBase nameT) предполагает что имя конструктора совпадает с именем типа. Но нет возможности выбрать подходищай конструктор так как непонятно как паттернматчить аргумент конструктора с нужным
+        toExpr (ConT typeN) (VarP patName)
           | typeN == patternT = AppE (VarE fromFoilPatternT) (VarE patName)
           | otherwise = VarE patName
 
