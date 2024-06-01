@@ -1,12 +1,14 @@
-{-# LANGUAGE DataKinds  #-}
-{-# LANGUAGE GADTs      #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes            #-}
 -- | Example implementation of untyped \(\lambda\)-calculus with the foil.
 module Control.Monad.Foil.Example where
 
 import           Control.DeepSeq
 import           Control.Monad.Foil
+import           Control.Monad.Foil.Relative
 
 -- | Untyped \(\lambda\)-terms in scope @n@.
 data Expr n where
@@ -36,6 +38,21 @@ instance Sinkable Expr where
 
 instance InjectName Expr where
   injectName = VarE
+
+-- | 'Expr' is a monad relative to 'Name'.
+instance RelMonad Name Expr where
+  rreturn = VarE
+  rbind scope term subst =
+    case term of
+      VarE name -> subst name
+      AppE x y  -> AppE (rbind scope x subst) (rbind scope y subst)
+      LamE binder body ->
+        withRefreshed scope (nameOf binder) $ \binder' ->
+          let scope' = extendScope binder' scope
+              subst' name = case unsinkName binder name of
+                          Nothing -> rreturn (nameOf binder')
+                          Just n  -> sink (subst n)
+           in LamE binder' (rbind scope' body subst')
 
 -- | Substitution for untyped \(\lambda\)-terms.
 -- The foil helps implement this function without forgetting scope extensions and renaming.

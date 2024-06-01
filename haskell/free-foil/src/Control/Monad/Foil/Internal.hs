@@ -145,6 +145,12 @@ withRefreshed scope@(UnsafeScope rawScope) name@(UnsafeName rawName) cont
   | IntSet.member rawName rawScope = withFresh scope cont
   | otherwise = unsafeAssertFresh (UnsafeNameBinder name) cont
 
+-- | Try coercing the name back to the (smaller) scope,
+-- given a binder that extends that scope.
+unsinkName :: NameBinder n l -> Name l -> Maybe (Name n)
+unsinkName binder name@(UnsafeName raw)
+  | nameOf binder == name = Nothing
+  | otherwise = Just (UnsafeName raw)
 
 -- * Safe sinking
 

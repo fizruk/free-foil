@@ -27,6 +27,7 @@ module Control.Monad.Foil (
   withFreshBinder,
   withFresh,
   withRefreshed,
+  unsinkName,
   -- * Safe (co)sinking
   Sinkable(..),
   CoSinkable(..),

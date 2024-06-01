@@ -2,8 +2,11 @@
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE UndecidableInstances  #-}
@@ -15,9 +18,10 @@
 module Control.Monad.Free.Foil where
 
 import           Control.DeepSeq
-import qualified Control.Monad.Foil as Foil
+import qualified Control.Monad.Foil.Internal as Foil
+import qualified Control.Monad.Foil.Relative as Foil
 import           Data.Bifunctor
-import           GHC.Generics       (Generic)
+import           GHC.Generics                (Generic)
 
 -- | Scoped term under a (single) name binder.
 data ScopedAST sig n where
@@ -66,3 +70,20 @@ substitute scope subst = \case
             scope' = Foil.extendScope binder' scope
             body' = substitute scope' subst' body
         in ScopedAST binder' body'
+
+-- | @'AST' sig@ is a monad relative to 'Foil.Name'.
+instance Bifunctor sig => Foil.RelMonad Foil.Name (AST sig) where
+  rreturn = Var
+  rbind scope term subst =
+    case term of
+      Var name  -> subst name
+      Node node -> Node (bimap g' g node)
+    where
+      g x = Foil.rbind scope x subst
+      g' (ScopedAST binder body) =
+        Foil.withRefreshed scope (Foil.nameOf binder) $ \binder' ->
+          let scope' = Foil.extendScope binder' scope
+              subst' name = case Foil.unsinkName binder name of
+                          Nothing -> Foil.rreturn (Foil.nameOf binder')
+                          Just n  -> Foil.sink (subst n)
+           in ScopedAST binder' (Foil.rbind scope' body subst')
