@@ -20,8 +20,14 @@ import           Control.Monad.Foil.Internal
 import           Control.Monad.Foil.TH
 import qualified Language.LambdaPi.Syntax.Abs as Raw
 
+-- * Generated code
+
+-- ** Scope-safe AST
 mkFoilData ''Raw.Term ''Raw.VarIdent ''Raw.ScopedTerm ''Raw.Pattern
+
+-- ** Conversion from raw to scope-safe AST
 mkToFoil ''Raw.Term ''Raw.VarIdent ''Raw.ScopedTerm ''Raw.Pattern
+
 -- mkFromFoil ''Raw.Term ''Raw.VarIdent ''Raw.ScopedTerm ''Raw.Pattern
 -- mkInstancesFoil ''Raw.Term ''Raw.VarIdent ''Raw.ScopedTerm ''Raw.Pattern
 

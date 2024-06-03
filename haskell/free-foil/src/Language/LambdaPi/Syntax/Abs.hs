@@ -22,11 +22,11 @@ data Command = CommandCheck Term Term | CommandCompute Term Term
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Data, C.Typeable, C.Generic)
 
 data Term
-    = Lam Pattern ScopedTerm
+    = Var VarIdent
     | Pi Pattern Term ScopedTerm
-    | Product Term Term
+    | Lam Pattern ScopedTerm
     | App Term Term
-    | Var VarIdent
+    | Product Term Term
     | Pair Term Term
     | First Term
     | Second Term

@@ -154,11 +154,11 @@ instance Print [Language.LambdaPi.Syntax.Abs.Command] where
 
 instance Print Language.LambdaPi.Syntax.Abs.Term where
   prt i = \case
-    Language.LambdaPi.Syntax.Abs.Lam pattern_ scopedterm -> prPrec i 0 (concatD [doc (showString "\955"), prt 0 pattern_, doc (showString "."), prt 0 scopedterm])
-    Language.LambdaPi.Syntax.Abs.Pi pattern_ term scopedterm -> prPrec i 0 (concatD [doc (showString "\928"), doc (showString "("), prt 0 pattern_, doc (showString ":"), prt 0 term, doc (showString ")"), doc (showString "\8594"), prt 0 scopedterm])
-    Language.LambdaPi.Syntax.Abs.Product term1 term2 -> prPrec i 0 (concatD [prt 1 term1, doc (showString "\215"), prt 1 term2])
-    Language.LambdaPi.Syntax.Abs.App term1 term2 -> prPrec i 1 (concatD [prt 1 term1, prt 2 term2])
     Language.LambdaPi.Syntax.Abs.Var varident -> prPrec i 2 (concatD [prt 0 varident])
+    Language.LambdaPi.Syntax.Abs.Pi pattern_ term scopedterm -> prPrec i 0 (concatD [doc (showString "\928"), doc (showString "("), prt 0 pattern_, doc (showString ":"), prt 0 term, doc (showString ")"), doc (showString "\8594"), prt 0 scopedterm])
+    Language.LambdaPi.Syntax.Abs.Lam pattern_ scopedterm -> prPrec i 0 (concatD [doc (showString "\955"), prt 0 pattern_, doc (showString "."), prt 0 scopedterm])
+    Language.LambdaPi.Syntax.Abs.App term1 term2 -> prPrec i 1 (concatD [prt 1 term1, prt 2 term2])
+    Language.LambdaPi.Syntax.Abs.Product term1 term2 -> prPrec i 0 (concatD [prt 1 term1, doc (showString "\215"), prt 1 term2])
     Language.LambdaPi.Syntax.Abs.Pair term1 term2 -> prPrec i 0 (concatD [doc (showString "("), prt 0 term1, doc (showString ","), prt 0 term2, doc (showString ")")])
     Language.LambdaPi.Syntax.Abs.First term -> prPrec i 0 (concatD [doc (showString "\960\8321"), doc (showString "("), prt 0 term, doc (showString ")")])
     Language.LambdaPi.Syntax.Abs.Second term -> prPrec i 0 (concatD [doc (showString "\960\8322"), doc (showString "("), prt 0 term, doc (showString ")")])

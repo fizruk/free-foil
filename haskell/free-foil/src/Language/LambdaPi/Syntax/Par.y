@@ -11,9 +11,9 @@ module Language.LambdaPi.Syntax.Par
   , pProgram
   , pCommand
   , pListCommand
+  , pTerm2
   , pTerm
   , pTerm1
-  , pTerm2
   , pScopedTerm
   , pPattern
   ) where
@@ -28,9 +28,9 @@ import Language.LambdaPi.Syntax.Lex
 %name pProgram Program
 %name pCommand Command
 %name pListCommand ListCommand
+%name pTerm2 Term2
 %name pTerm Term
 %name pTerm1 Term1
-%name pTerm2 Term2
 %name pScopedTerm ScopedTerm
 %name pPattern Pattern
 -- no lexer declaration
@@ -72,10 +72,15 @@ ListCommand :: { [Language.LambdaPi.Syntax.Abs.Command] }
 ListCommand
   : {- empty -} { [] } | Command ';' ListCommand { (:) $1 $3 }
 
+Term2 :: { Language.LambdaPi.Syntax.Abs.Term }
+Term2
+  : VarIdent { Language.LambdaPi.Syntax.Abs.Var $1 }
+  | '(' Term ')' { $2 }
+
 Term :: { Language.LambdaPi.Syntax.Abs.Term }
 Term
-  : 'λ' Pattern '.' ScopedTerm { Language.LambdaPi.Syntax.Abs.Lam $2 $4 }
-  | 'Π' '(' Pattern ':' Term ')' '→' ScopedTerm { Language.LambdaPi.Syntax.Abs.Pi $3 $5 $8 }
+  : 'Π' '(' Pattern ':' Term ')' '→' ScopedTerm { Language.LambdaPi.Syntax.Abs.Pi $3 $5 $8 }
+  | 'λ' Pattern '.' ScopedTerm { Language.LambdaPi.Syntax.Abs.Lam $2 $4 }
   | Term1 '×' Term1 { Language.LambdaPi.Syntax.Abs.Product $1 $3 }
   | '(' Term ',' Term ')' { Language.LambdaPi.Syntax.Abs.Pair $2 $4 }
   | 'π₁' '(' Term ')' { Language.LambdaPi.Syntax.Abs.First $3 }
@@ -87,11 +92,6 @@ Term1 :: { Language.LambdaPi.Syntax.Abs.Term }
 Term1
   : Term1 Term2 { Language.LambdaPi.Syntax.Abs.App $1 $2 }
   | Term2 { $1 }
-
-Term2 :: { Language.LambdaPi.Syntax.Abs.Term }
-Term2
-  : VarIdent { Language.LambdaPi.Syntax.Abs.Var $1 }
-  | '(' Term ')' { $2 }
 
 ScopedTerm :: { Language.LambdaPi.Syntax.Abs.ScopedTerm }
 ScopedTerm : Term { Language.LambdaPi.Syntax.Abs.AScopedTerm $1 }

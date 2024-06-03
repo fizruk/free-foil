@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE QuasiQuotes           #-}
 {-# LANGUAGE TemplateHaskellQuotes #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
@@ -7,12 +8,19 @@
 module Control.Monad.Foil.TH.MkToFoil (mkToFoil) where
 
 import           Language.Haskell.TH
+import Language.Haskell.TH.Syntax (addModFinalizer)
 
 import qualified Control.Monad.Foil  as Foil
-import           Data.Maybe          (fromJust)
+import           Data.Maybe          (fromJust, catMaybes)
 
 
-mkToFoil :: Name -> Name -> Name -> Name -> Q [Dec]
+-- | Generate conversion functions from raw to scope-safe representation.
+mkToFoil
+  :: Name -- ^ Type name for raw terms.
+  -> Name -- ^ Type name for raw variable identifiers.
+  -> Name -- ^ Type name for raw scoped terms.
+  -> Name -- ^ Type name for raw patterns.
+  -> Q [Dec]
 mkToFoil termT nameT scopeT patternT = do
   n <- newName "n"
   l <- newName "l"
@@ -38,7 +46,19 @@ mkToFoil termT nameT scopeT patternT = do
               )
             splitedPatternCons
 
+  extendScopePatternSignature <-
+    SigD extendScopePatternFunName <$> [t| forall n l. $(return (ConT foilPatternT)) n l -> Foil.Scope n -> Foil.Scope l |]
+
+  composefun <- [e| (.) |]
+  idfun <- [e| id |]
+  extendScopeFun <- [e| Foil.extendScope |]
+
+  addModFinalizer $ putDoc (DeclDoc extendScopePatternFunName)
+    "Extend a scope with the names bound by the given pattern."
+
   return (
+    [extendScopePatternSignature] ++
+    [extendScopePatternBody extendScopeFun composefun idfun patternCons] ++
     -- toFoilPatternSignatures ++
     toFoilPatternFunctions ++
     [
@@ -95,6 +115,31 @@ mkToFoil termT nameT scopeT patternT = do
     toFoilScopedT = mkName ("toFoil" ++ nameBase scopeT)
     withPatternT = mkName "withPattern"
 
+    extendScopePatternFunName = mkName ("extendScopeFoil" ++ nameBase patternT)
+    extendScopePatternBody extendScopeFun composefun idfun patternCons = FunD extendScopePatternFunName
+      [Clause [VarP p] (NormalB (CaseE (VarE p) (map toMatch patternCons))) []]
+      where
+        p = mkName "pattern"
+        toMatch (NormalC conName conParams) =
+          Match (ConP foilConName [] conParamPatterns) (NormalB conMatchBody) []
+          where
+            foilConName = mkName ("Foil" ++ nameBase conName)
+            conParamPatterns = map toConParamPattern conParamVars
+            conMatchExts = map snd (catMaybes conParamVars)
+            conMatchBody = foldr (\f g -> InfixE (Just g) composefun (Just f)) idfun conMatchExts
+
+            toConParamPattern Nothing = WildP
+            toConParamPattern (Just (x, _f)) = VarP x
+
+            conParamVars = zipWith mkConParamVar conParams [1..]
+
+            mkConParamVar :: BangType -> Int -> Maybe (Name, Exp)
+            mkConParamVar (_bang, ConT tyName) i
+              | tyName == nameT    = Just (x, AppE extendScopeFun (VarE x))
+              | tyName == patternT = Just (x, AppE (VarE extendScopePatternFunName) (VarE x))
+              where
+                x = mkName ("x" <> show i)
+            mkConParamVar (_bang, _type) _i = Nothing
 
     splitConsesByBinderNumber :: [Con] -> [((Int, Int), [Con])] -> [((Int, Int), [Con])]
     splitConsesByBinderNumber [] current = current

@@ -25,8 +25,8 @@ The reserved words used in Syntax are the following:
   | ``π₁`` | ``π₂`` | ``𝕌`` |
 
 The symbols used in Syntax are the following:
-  | : | ; | . | (
-  | ) | → | × | ,
+  | : | ; | ( | )
+  | → | . | × | ,
   | _ |  |  |
 
 ===Comments===
@@ -43,8 +43,10 @@ All other symbols are terminals.
   |  |  **|**  | ``compute`` //Term// ``:`` //Term//
   | //[Command]// | -> | **eps**
   |  |  **|**  | //Command// ``;`` //[Command]//
-  | //Term// | -> | ``λ`` //Pattern// ``.`` //ScopedTerm//
-  |  |  **|**  | ``Π`` ``(`` //Pattern// ``:`` //Term// ``)`` ``→`` //ScopedTerm//
+  | //Term2// | -> | //VarIdent//
+  |  |  **|**  | ``(`` //Term// ``)``
+  | //Term// | -> | ``Π`` ``(`` //Pattern// ``:`` //Term// ``)`` ``→`` //ScopedTerm//
+  |  |  **|**  | ``λ`` //Pattern// ``.`` //ScopedTerm//
   |  |  **|**  | //Term1// ``×`` //Term1//
   |  |  **|**  | ``(`` //Term// ``,`` //Term// ``)``
   |  |  **|**  | ``π₁`` ``(`` //Term// ``)``
@@ -53,8 +55,6 @@ All other symbols are terminals.
   |  |  **|**  | //Term1//
   | //Term1// | -> | //Term1// //Term2//
   |  |  **|**  | //Term2//
-  | //Term2// | -> | //VarIdent//
-  |  |  **|**  | ``(`` //Term// ``)``
   | //ScopedTerm// | -> | //Term//
   | //Pattern// | -> | ``_``
   |  |  **|**  | //VarIdent//
