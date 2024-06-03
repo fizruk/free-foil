@@ -13,7 +13,6 @@ import Language.Haskell.TH.Syntax (addModFinalizer)
 import qualified Control.Monad.Foil  as Foil
 import           Data.Maybe          (fromJust, catMaybes)
 
-
 -- | Generate conversion functions from raw to scope-safe representation.
 mkToFoil
   :: Name -- ^ Type name for raw terms.
@@ -46,19 +45,11 @@ mkToFoil termT nameT scopeT patternT = do
               )
             splitedPatternCons
 
-  extendScopePatternSignature <-
-    SigD extendScopePatternFunName <$> [t| forall n l. $(return (ConT foilPatternT)) n l -> Foil.Scope n -> Foil.Scope l |]
-
-  composefun <- [e| (.) |]
-  idfun <- [e| id |]
-  extendScopeFun <- [e| Foil.extendScope |]
-
-  addModFinalizer $ putDoc (DeclDoc extendScopePatternFunName)
-    "Extend a scope with the names bound by the given pattern."
-
+  extendScopeFoilPattenD <- mkExtendScopeFoilPattern nameT patternT
+  withRefreshedFoilPatternD <- mkWithRefreshedFoilPattern nameT patternT
   return (
-    [extendScopePatternSignature] ++
-    [extendScopePatternBody extendScopeFun composefun idfun patternCons] ++
+    extendScopeFoilPattenD ++
+    withRefreshedFoilPatternD ++
     -- toFoilPatternSignatures ++
     toFoilPatternFunctions ++
     [
@@ -114,32 +105,6 @@ mkToFoil termT nameT scopeT patternT = do
     toFoilPatternT = mkName ("toFoil" ++ nameBase patternT)
     toFoilScopedT = mkName ("toFoil" ++ nameBase scopeT)
     withPatternT = mkName "withPattern"
-
-    extendScopePatternFunName = mkName ("extendScopeFoil" ++ nameBase patternT)
-    extendScopePatternBody extendScopeFun composefun idfun patternCons = FunD extendScopePatternFunName
-      [Clause [VarP p] (NormalB (CaseE (VarE p) (map toMatch patternCons))) []]
-      where
-        p = mkName "pattern"
-        toMatch (NormalC conName conParams) =
-          Match (ConP foilConName [] conParamPatterns) (NormalB conMatchBody) []
-          where
-            foilConName = mkName ("Foil" ++ nameBase conName)
-            conParamPatterns = map toConParamPattern conParamVars
-            conMatchExts = map snd (catMaybes conParamVars)
-            conMatchBody = foldr (\f g -> InfixE (Just g) composefun (Just f)) idfun conMatchExts
-
-            toConParamPattern Nothing = WildP
-            toConParamPattern (Just (x, _f)) = VarP x
-
-            conParamVars = zipWith mkConParamVar conParams [1..]
-
-            mkConParamVar :: BangType -> Int -> Maybe (Name, Exp)
-            mkConParamVar (_bang, ConT tyName) i
-              | tyName == nameT    = Just (x, AppE extendScopeFun (VarE x))
-              | tyName == patternT = Just (x, AppE (VarE extendScopePatternFunName) (VarE x))
-              where
-                x = mkName ("x" <> show i)
-            mkConParamVar (_bang, _type) _i = Nothing
 
     splitConsesByBinderNumber :: [Con] -> [((Int, Int), [Con])] -> [((Int, Int), [Con])]
     splitConsesByBinderNumber [] current = current
@@ -427,3 +392,156 @@ mkToFoil termT nameT scopeT patternT = do
                   | tyName == patternT = VarE (mkName (nameBase patName ++ "'"))
                   | tyName == scopeT = foldl AppE (VarE toFoilScopedT) [VarE (mkName "toName'"), VarE (mkName "scope'"), VarE patName]
                   | otherwise = VarE patName
+
+-- | Generate a function to extend scope with variables from a given pattern.
+mkExtendScopeFoilPattern
+  :: Name -- ^ Type name for raw variable identifiers.
+  -> Name -- ^ Type name for raw patterns.
+  -> Q [Dec]
+mkExtendScopeFoilPattern nameT patternT = do
+  TyConI (DataD _ctx _name _tvars _kind patternCons _deriv) <- reify patternT
+
+  extendScopePatternSignature <-
+    SigD extendScopePatternFunName <$>
+      [t| forall n l. $(return (ConT foilPatternT)) n l -> Foil.Scope n -> Foil.Scope l |]
+
+  composefun <- [e| (.) |]
+  idfun <- [e| id |]
+  extendScopeFun <- [e| Foil.extendScope |]
+
+  addModFinalizer $ putDoc (DeclDoc extendScopePatternFunName)
+    "Extend a scope with the names bound by the given pattern.\nThis is a more flexible version of 'Control.Monad.Foil.extendScope'."
+
+  return
+    [ extendScopePatternSignature
+    , extendScopePatternBody extendScopeFun composefun idfun patternCons
+    ]
+  where
+    foilPatternT = mkName ("Foil" ++ nameBase patternT)
+    toFoilPatternT = mkName ("toFoil" ++ nameBase patternT)
+
+    extendScopePatternFunName = mkName ("extendScopeFoil" ++ nameBase patternT)
+    extendScopePatternBody extendScopeFun composefun idfun patternCons = FunD extendScopePatternFunName
+      [Clause [VarP p] (NormalB (CaseE (VarE p) (map toMatch patternCons))) []]
+      where
+        p = mkName "pattern"
+        toMatch (NormalC conName conParams) =
+          Match (ConP foilConName [] conParamPatterns) (NormalB conMatchBody) []
+          where
+            foilConName = mkName ("Foil" ++ nameBase conName)
+            conParamPatterns = map toConParamPattern conParamVars
+            conMatchExts = map snd (catMaybes conParamVars)
+            conMatchBody = foldr (\f g -> InfixE (Just g) composefun (Just f)) idfun conMatchExts
+
+            toConParamPattern Nothing = WildP
+            toConParamPattern (Just (x, _f)) = VarP x
+
+            conParamVars = zipWith mkConParamVar conParams [1..]
+
+            mkConParamVar :: BangType -> Int -> Maybe (Name, Exp)
+            mkConParamVar (_bang, ConT tyName) i
+              | tyName == nameT    = Just (x, AppE extendScopeFun (VarE x))
+              | tyName == patternT = Just (x, AppE (VarE extendScopePatternFunName) (VarE x))
+              where
+                x = mkName ("x" <> show i)
+            mkConParamVar (_bang, _type) _i = Nothing
+
+-- | Generate a function to extend scope with variables from a given pattern.
+mkWithRefreshedFoilPattern
+  :: Name -- ^ Type name for raw variable identifiers.
+  -> Name -- ^ Type name for raw patterns.
+  -> Q [Dec]
+mkWithRefreshedFoilPattern nameT patternT = do
+  TyConI (DataD _ctx _name _tvars _kind patternCons _deriv) <- reify patternT
+
+  withRefreshedFoilPatternSignature <-
+    SigD withRefreshedFoilPatternFunName <$>
+      [t| forall o e n l r.
+            ( Foil.Distinct o, Foil.InjectName e, Foil.Sinkable e )
+            => Foil.Scope o
+            -> $(return (ConT foilPatternT)) n l
+            -> (forall o'. Foil.DExt o o'
+                  => (Foil.Substitution e n o -> Foil.Substitution e l o')
+                  -> $(return (ConT foilPatternT)) o o'
+                  -> r)
+            -> r
+        |]
+
+  composefun <- [e| (.) |]
+  addRenameFun <- [e| Foil.addRename |]
+  nameOfFun <- [e| Foil.nameOf |]
+  sinkFun <- [e| Foil.sink |]
+  withRefreshedFun <- [e| Foil.withRefreshed |]
+  extendScopeFun <- [e| Foil.extendScope |]
+
+  addModFinalizer $ putDoc (DeclDoc withRefreshedFoilPatternFunName)
+    "Refresh (if needed) bound variables introduced in a pattern.\nThis is a more flexible version of 'Control.Monad.Foil.withRefreshed'."
+
+  return
+    [ withRefreshedFoilPatternSignature
+    , withRefreshedFoilPatternBody composefun addRenameFun nameOfFun sinkFun withRefreshedFun extendScopeFun patternCons
+    ]
+  where
+    foilPatternT = mkName ("Foil" ++ nameBase patternT)
+    toFoilPatternT = mkName ("toFoil" ++ nameBase patternT)
+
+    extendScopePatternFunName = mkName ("extendScopeFoil" ++ nameBase patternT)
+    extendScopePatternFun = VarE extendScopePatternFunName
+
+    withRefreshedFoilPatternFunName = mkName ("withRefreshedFoil" ++ nameBase patternT)
+    withRefreshedFoilPatternFun = VarE withRefreshedFoilPatternFunName
+
+    withRefreshedFoilPatternBody composefun addRenameFun nameOfFun sinkFun withRefreshedFun extendScopeFun patternCons = FunD withRefreshedFoilPatternFunName
+      [Clause [VarP scope, VarP pattern, VarP cont] (NormalB (CaseE (VarE pattern) (map toMatch patternCons))) []]
+      where
+        scope = mkName "scope"
+        pattern = mkName "pattern"
+        cont = mkName "cont"
+
+        toMatch (NormalC conName conParams) =
+          Match (ConP foilConName [] conParamPatterns) (NormalB conMatchBody) []
+          where
+            conMatchBody = go 1 (VarE scope) sinkFun (ConE foilConName) conParams
+
+            go i scope' f p [] = AppE (AppE (VarE cont) f) p
+            go i scope' f p ((_bang, ConT tyName) : conParams)
+              | tyName == nameT =
+                  AppE
+                    (AppE (AppE withRefreshedFun scope') (AppE nameOfFun (VarE xi)))
+                    (LamE [VarP xi']
+                      (LetE [ValD (VarP scopei) (NormalB (AppE (AppE extendScopeFun (VarE xi')) scope')) []]
+                        (go (i+1) (VarE scopei) (InfixE (Just fi) composefun (Just f)) (AppE p (VarE xi')) conParams)))
+              | tyName == patternT =
+                  AppE
+                    (AppE (AppE withRefreshedFoilPatternFun scope') (VarE xi))
+                    (LamE [VarP xsubst, VarP xi']
+                      (LetE [ValD (VarP scopei) (NormalB (AppE (AppE extendScopePatternFun (VarE xi')) scope')) []]
+                        (go (i+1) (VarE scopei) (InfixE (Just (VarE xsubst)) composefun (Just f)) (AppE p (VarE xi')) conParams)))
+              where
+                xi = mkName ("x" <> show i)
+                xi' = mkName ("x" <> show i <> "'")
+                scopei = mkName ("scope" <> show i)
+                xsubst = mkName ("subst" <> show i)
+                subst = mkName "subst"
+                fi = LamE [VarP subst]
+                      (AppE (AppE (AppE addRenameFun
+                        (VarE subst))
+                        (VarE xi))
+                        (AppE nameOfFun (VarE xi')))
+
+            foilConName = mkName ("Foil" ++ nameBase conName)
+            conParamPatterns = map toConParamPattern conParamVars
+            conMatchExts = map snd (catMaybes conParamVars)
+
+            toConParamPattern Nothing = WildP
+            toConParamPattern (Just (x, _f)) = VarP x
+
+            conParamVars = zipWith mkConParamVar conParams [1..]
+
+            mkConParamVar :: BangType -> Int -> Maybe (Name, Exp)
+            mkConParamVar (_bang, ConT tyName) i
+              | tyName == nameT    = Just (x, AppE extendScopeFun (VarE x))
+              | tyName == patternT = Just (x, AppE (VarE extendScopePatternFunName) (VarE x))
+              where
+                x = mkName ("x" <> show i)
+            mkConParamVar (_bang, _type) _i = Nothing

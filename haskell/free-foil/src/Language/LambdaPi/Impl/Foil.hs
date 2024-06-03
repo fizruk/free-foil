@@ -154,8 +154,9 @@ withRefreshedPattern scope pattern cont =
     PatternVar x    -> withRefreshed scope (nameOf x) $ \x' ->
       cont (\subst -> addRename (sink subst) x (nameOf x')) (PatternVar x')
     PatternPair l r -> withRefreshedPattern scope l $ \lsubst l' ->
-      withRefreshedPattern (extendScopePattern l' scope) r $ \rsubst r' ->
-        cont (rsubst . lsubst) (PatternPair l' r')
+      let scope' = extendScopePattern l' scope
+       in withRefreshedPattern scope' r $ \rsubst r' ->
+            cont (rsubst . lsubst) (PatternPair l' r')
 
 -- | Perform substitution in a \(\lambda\Pi\)-term.
 substitute :: Distinct o => Scope o -> Substitution Expr i o -> Expr i -> Expr o
