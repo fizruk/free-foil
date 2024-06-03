@@ -8,7 +8,7 @@ module Control.Monad.Foil.TH.MkFoilData (mkFoilData) where
 
 import           Language.Haskell.TH
 
-import qualified Control.Monad.Foil  as Foil
+import qualified Control.Monad.Foil.Internal as Foil
 
 -- FoilPatternPair :: forall l1. FoilPattern n l1 -> FoilPattern l1 l -> FoilPattern n l
 

@@ -4,12 +4,12 @@ github: "fizruk/free-foil"
 license: BSD3
 author: "Nikolai Kudasov"
 maintainer: "nickolay.kudasov@gmail.com"
-copyright: "2023 Nikolai Kudasov"
+copyright: "2023–2024 Nikolai Kudasov, Renata Shakirova, Egor Shalagin, Karina Tyulebaeva"
 
 extra-source-files:
   - README.md
   - LICENSE
-  - grammar/LambdaPi/Simple.cf
+  - grammar/LambdaPi/Syntax.cf
 
 synopsis: Efficient Type-Safe Capture-Avoiding Substitution for Free (Scoped Monads)
 category: Parsing # same as BNFC
@@ -56,15 +56,11 @@ library:
   when:
     - condition: false
       other-modules:
-        - Language.LambdaPi.Simple.Test
-        - Language.LambdaPi.Simple.ErrM
-        - Language.LambdaPi.Simple.Skel
-        - Language.LambdaPi.LambdaPi.Test
-        - Language.LambdaPi.LambdaPi.ErrM
-        - Language.LambdaPi.LambdaPi.Skel
-        - Language.LambdaPi.Bound.Test
-        - Language.LambdaPi.Bound.ErrM
-        - Language.LambdaPi.Bound.Skel
+        - Language.LambdaPi.Syntax.Test
+        - Language.LambdaPi.Syntax.ErrM
+        - Language.LambdaPi.Syntax.Skel
+        - Language.LambdaPi.Impl.Foil # temporarily disabled
+        - Language.LambdaPi.Impl.FoilBnfcTH # temporarily disabled
 
 executables:
   lambda-pi:

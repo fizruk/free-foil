@@ -55,12 +55,12 @@ newtype Scope (n :: S) = UnsafeScope RawScope
 
 -- | A name in a safe scope, indexed by a type-level scope index 'n'.
 newtype Name (n :: S) = UnsafeName RawName
-  deriving newtype (NFData, Eq, Ord)
+  deriving newtype (NFData, Eq, Ord, Show)
 
 -- | A name binder is a name that extends scope @n@ to a (larger) scope @l@.
 newtype NameBinder (n :: S) (l :: S) =
   UnsafeNameBinder (Name l)
-    deriving newtype (NFData, Eq, Ord)
+    deriving newtype (NFData, Eq, Ord, Show)
 
 -- | An empty scope (without any names).
 emptyScope :: Scope VoidS

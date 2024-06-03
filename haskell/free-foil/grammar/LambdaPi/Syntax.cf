@@ -13,13 +13,17 @@ terminator Command ";" ;
 
 Lam.  Term ::= "λ" Pattern "." ScopedTerm ;
 Pi.   Term ::= "Π" "(" Pattern ":" Term ")" "→" ScopedTerm ;
+Product. Term ::= Term1 "×" Term1 ;
 App.  Term1 ::= Term1 Term2 ;
 Var.  Term2 ::= VarIdent ;
 Pair. Term ::= "(" Term "," Term ")" ;
+First. Term ::= "π₁" "(" Term ")" ;
+Second. Term ::= "π₂" "(" Term ")" ;
+Universe. Term ::= "𝕌" ;
 coercions Term 2 ;
 
 AScopedTerm. ScopedTerm ::= Term ;
 
 PatternWildcard.  Pattern ::= "_" ;
 PatternVar.       Pattern ::= VarIdent ;
-PatternPair.      Pattern ::= "(" VarIdent "," VarIdent ")" ;
+PatternPair.      Pattern ::= "(" Pattern "," Pattern ")" ;

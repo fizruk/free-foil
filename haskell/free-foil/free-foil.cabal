@@ -13,14 +13,14 @@ homepage:       https://github.com/fizruk/free-foil#readme
 bug-reports:    https://github.com/fizruk/free-foil/issues
 author:         Nikolai Kudasov
 maintainer:     nickolay.kudasov@gmail.com
-copyright:      2023 Nikolai Kudasov
+copyright:      2023–2024 Nikolai Kudasov, Renata Shakirova, Egor Shalagin, Karina Tyulebaeva
 license:        BSD3
 license-file:   LICENSE
 build-type:     Custom
 extra-source-files:
     README.md
     LICENSE
-    grammar/LambdaPi/Simple.cf
+    grammar/LambdaPi/Syntax.cf
 
 source-repository head
   type: git
@@ -38,30 +38,22 @@ library
       Control.Monad.Foil.Example
       Control.Monad.Foil.Internal
       Control.Monad.Foil.Relative
+      Control.Monad.Foil.TH
+      Control.Monad.Foil.TH.MkFoilData
+      Control.Monad.Foil.TH.MkFromFoil
+      Control.Monad.Foil.TH.MkInstancesFoil
+      Control.Monad.Foil.TH.MkToFoil
       Control.Monad.Free.Foil
       Control.Monad.Free.Foil.Example
       LambdaPi.Simple.Interpret
-      Language.LambdaPi.Foil
-      Language.LambdaPi.Foil.Example
-      Language.LambdaPi.Foil.LambdaPiExample
-      Language.LambdaPi.Foil.NewExample
-      Language.LambdaPi.Foil.TH
-      Language.LambdaPi.Foil.TH.MkFoilData
-      Language.LambdaPi.Foil.TH.MkFromFoil
-      Language.LambdaPi.Foil.TH.MkInstancesFoil
-      Language.LambdaPi.Foil.TH.MkToFoil
-      Language.LambdaPi.FreeFoil
-      Language.LambdaPi.FreeScoped
-      Language.LambdaPi.LambdaPi.Abs
-      Language.LambdaPi.LambdaPi.Layout
-      Language.LambdaPi.LambdaPi.Lex
-      Language.LambdaPi.LambdaPi.Par
-      Language.LambdaPi.LambdaPi.Print
-      Language.LambdaPi.Simple.Abs
-      Language.LambdaPi.Simple.Layout
-      Language.LambdaPi.Simple.Lex
-      Language.LambdaPi.Simple.Par
-      Language.LambdaPi.Simple.Print
+      Language.LambdaPi.Impl.FoilBnfc
+      Language.LambdaPi.Impl.FreeFoil
+      Language.LambdaPi.Impl.NewExample
+      Language.LambdaPi.Syntax.Abs
+      Language.LambdaPi.Syntax.Layout
+      Language.LambdaPi.Syntax.Lex
+      Language.LambdaPi.Syntax.Par
+      Language.LambdaPi.Syntax.Print
   other-modules:
       Paths_free_foil
   hs-source-dirs:

@@ -1,29 +1,26 @@
-{-# OPTIONS_GHC -ddump-splices #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE DerivingStrategies #-}
+-- {-# OPTIONS_GHC -ddump-splices #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE LiberalTypeSynonyms #-}
-{-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE InstanceSigs               #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE LiberalTypeSynonyms        #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-} -- Убрать
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-} -- Убрать
-module Language.LambdaPi.Foil.Example where
+module Language.LambdaPi.Impl.Foil where
 
-import Data.String (IsString)
+import           Data.String                 (IsString)
 
-import Language.LambdaPi.Foil (Scope(..), Name (UnsafeName), NameBinder(UnsafeNameBinder)
-                            , extendScope, withFresh, sink, Distinct
-                            , nameOf, ppName, Sinkable(..), CoSinkable(..), extendRenaming)
-import Language.LambdaPi.Foil.TH
-import qualified Language.LambdaPi.Foil.TH as TH
-import qualified Language.Haskell.TH as Foil
-import Unsafe.Coerce (unsafeCoerce)
+
+import           Control.Monad.Foil.Internal
+import           Control.Monad.Foil.TH
+import           Unsafe.Coerce               (unsafeCoerce)
 
 
 data Term

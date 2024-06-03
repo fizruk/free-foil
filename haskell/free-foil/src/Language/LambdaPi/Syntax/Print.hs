@@ -9,7 +9,7 @@
 
 -- | Pretty-printer for Language.
 
-module Language.LambdaPi.LambdaPi.Print where
+module Language.LambdaPi.Syntax.Print where
 
 import Prelude
   ( ($), (.)
@@ -20,7 +20,7 @@ import Prelude
   , all, elem, foldr, id, map, null, replicate, shows, span
   )
 import Data.Char ( Char, isSpace )
-import qualified Language.LambdaPi.LambdaPi.Abs
+import qualified Language.LambdaPi.Syntax.Abs
 
 -- | The top-level printing method.
 
@@ -137,35 +137,39 @@ instance Print Integer where
 instance Print Double where
   prt _ x = doc (shows x)
 
-instance Print Language.LambdaPi.LambdaPi.Abs.VarIdent where
-  prt _ (Language.LambdaPi.LambdaPi.Abs.VarIdent i) = doc $ showString i
-instance Print Language.LambdaPi.LambdaPi.Abs.Program where
+instance Print Language.LambdaPi.Syntax.Abs.VarIdent where
+  prt _ (Language.LambdaPi.Syntax.Abs.VarIdent i) = doc $ showString i
+instance Print Language.LambdaPi.Syntax.Abs.Program where
   prt i = \case
-    Language.LambdaPi.LambdaPi.Abs.AProgram commands -> prPrec i 0 (concatD [prt 0 commands])
+    Language.LambdaPi.Syntax.Abs.AProgram commands -> prPrec i 0 (concatD [prt 0 commands])
 
-instance Print Language.LambdaPi.LambdaPi.Abs.Command where
+instance Print Language.LambdaPi.Syntax.Abs.Command where
   prt i = \case
-    Language.LambdaPi.LambdaPi.Abs.CommandCheck term1 term2 -> prPrec i 0 (concatD [doc (showString "check"), prt 0 term1, doc (showString ":"), prt 0 term2])
-    Language.LambdaPi.LambdaPi.Abs.CommandCompute term1 term2 -> prPrec i 0 (concatD [doc (showString "compute"), prt 0 term1, doc (showString ":"), prt 0 term2])
+    Language.LambdaPi.Syntax.Abs.CommandCheck term1 term2 -> prPrec i 0 (concatD [doc (showString "check"), prt 0 term1, doc (showString ":"), prt 0 term2])
+    Language.LambdaPi.Syntax.Abs.CommandCompute term1 term2 -> prPrec i 0 (concatD [doc (showString "compute"), prt 0 term1, doc (showString ":"), prt 0 term2])
 
-instance Print [Language.LambdaPi.LambdaPi.Abs.Command] where
+instance Print [Language.LambdaPi.Syntax.Abs.Command] where
   prt _ [] = concatD []
   prt _ (x:xs) = concatD [prt 0 x, doc (showString ";"), prt 0 xs]
 
-instance Print Language.LambdaPi.LambdaPi.Abs.Term where
+instance Print Language.LambdaPi.Syntax.Abs.Term where
   prt i = \case
-    Language.LambdaPi.LambdaPi.Abs.Lam pattern_ scopedterm -> prPrec i 0 (concatD [doc (showString "\955"), prt 0 pattern_, doc (showString "."), prt 0 scopedterm])
-    Language.LambdaPi.LambdaPi.Abs.Pi pattern_ term scopedterm -> prPrec i 0 (concatD [doc (showString "\928"), doc (showString "("), prt 0 pattern_, doc (showString ":"), prt 0 term, doc (showString ")"), doc (showString "\8594"), prt 0 scopedterm])
-    Language.LambdaPi.LambdaPi.Abs.App term1 term2 -> prPrec i 1 (concatD [prt 1 term1, prt 2 term2])
-    Language.LambdaPi.LambdaPi.Abs.Var varident -> prPrec i 2 (concatD [prt 0 varident])
-    Language.LambdaPi.LambdaPi.Abs.Pair term1 term2 -> prPrec i 0 (concatD [doc (showString "("), prt 0 term1, doc (showString ","), prt 0 term2, doc (showString ")")])
+    Language.LambdaPi.Syntax.Abs.Lam pattern_ scopedterm -> prPrec i 0 (concatD [doc (showString "\955"), prt 0 pattern_, doc (showString "."), prt 0 scopedterm])
+    Language.LambdaPi.Syntax.Abs.Pi pattern_ term scopedterm -> prPrec i 0 (concatD [doc (showString "\928"), doc (showString "("), prt 0 pattern_, doc (showString ":"), prt 0 term, doc (showString ")"), doc (showString "\8594"), prt 0 scopedterm])
+    Language.LambdaPi.Syntax.Abs.Product term1 term2 -> prPrec i 0 (concatD [prt 1 term1, doc (showString "\215"), prt 1 term2])
+    Language.LambdaPi.Syntax.Abs.App term1 term2 -> prPrec i 1 (concatD [prt 1 term1, prt 2 term2])
+    Language.LambdaPi.Syntax.Abs.Var varident -> prPrec i 2 (concatD [prt 0 varident])
+    Language.LambdaPi.Syntax.Abs.Pair term1 term2 -> prPrec i 0 (concatD [doc (showString "("), prt 0 term1, doc (showString ","), prt 0 term2, doc (showString ")")])
+    Language.LambdaPi.Syntax.Abs.First term -> prPrec i 0 (concatD [doc (showString "\960\8321"), doc (showString "("), prt 0 term, doc (showString ")")])
+    Language.LambdaPi.Syntax.Abs.Second term -> prPrec i 0 (concatD [doc (showString "\960\8322"), doc (showString "("), prt 0 term, doc (showString ")")])
+    Language.LambdaPi.Syntax.Abs.Universe -> prPrec i 0 (concatD [doc (showString "\120140")])
 
-instance Print Language.LambdaPi.LambdaPi.Abs.ScopedTerm where
+instance Print Language.LambdaPi.Syntax.Abs.ScopedTerm where
   prt i = \case
-    Language.LambdaPi.LambdaPi.Abs.AScopedTerm term -> prPrec i 0 (concatD [prt 0 term])
+    Language.LambdaPi.Syntax.Abs.AScopedTerm term -> prPrec i 0 (concatD [prt 0 term])
 
-instance Print Language.LambdaPi.LambdaPi.Abs.Pattern where
+instance Print Language.LambdaPi.Syntax.Abs.Pattern where
   prt i = \case
-    Language.LambdaPi.LambdaPi.Abs.PatternWildcard -> prPrec i 0 (concatD [doc (showString "_")])
-    Language.LambdaPi.LambdaPi.Abs.PatternVar varident -> prPrec i 0 (concatD [prt 0 varident])
-    Language.LambdaPi.LambdaPi.Abs.PatternPair varident1 varident2 -> prPrec i 0 (concatD [doc (showString "("), prt 0 varident1, doc (showString ","), prt 0 varident2, doc (showString ")")])
+    Language.LambdaPi.Syntax.Abs.PatternWildcard -> prPrec i 0 (concatD [doc (showString "_")])
+    Language.LambdaPi.Syntax.Abs.PatternVar varident -> prPrec i 0 (concatD [prt 0 varident])
+    Language.LambdaPi.Syntax.Abs.PatternPair pattern_1 pattern_2 -> prPrec i 0 (concatD [doc (showString "("), prt 0 pattern_1, doc (showString ","), prt 0 pattern_2, doc (showString ")")])

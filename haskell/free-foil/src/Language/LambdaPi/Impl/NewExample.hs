@@ -1,14 +1,14 @@
 
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE InstanceSigs        #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE InstanceSigs #-}
-module Language.LambdaPi.Foil.NewExample where
+module Language.LambdaPi.Impl.NewExample where
 
-import Language.LambdaPi.Foil
-import Unsafe.Coerce (unsafeCoerce)
+import           Control.Monad.Foil
+import           Unsafe.Coerce      (unsafeCoerce)
 
 data Pattern (n :: S) (l :: S) where
   PatternWildcard :: Pattern n n
@@ -44,6 +44,8 @@ data Term (n :: S) where
   Pi   :: Pattern n l -> Term n -> Term l -> Term n
   Universe :: Term n
 
+instance InjectName Term where
+  injectName = Var
 
 instance Sinkable Term where
      sinkabilityProof :: (Name n -> Name l) -> Term n -> Term l

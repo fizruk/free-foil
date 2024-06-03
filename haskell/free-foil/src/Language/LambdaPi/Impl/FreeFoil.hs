@@ -1,55 +1,22 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE DeriveFunctor   #-}
+{-# LANGUAGE GADTs           #-}
+{-# LANGUAGE LambdaCase      #-}
 {-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE GADTs #-}
 {-# LANGUAGE TemplateHaskell #-}
-module Language.LambdaPi.FreeFoil where
+module Language.LambdaPi.Impl.FreeFoil where
 
-import Data.Bifunctor
-import Data.Bifunctor.TH
-import Data.Map (Map)
-import System.Exit (exitFailure)
-import qualified Data.Map as Map
-import qualified Language.LambdaPi.Foil as Foil
-import qualified Language.LambdaPi.Simple.Abs as Syntax
-import qualified Language.LambdaPi.Simple.Par as Syntax
-import qualified Language.LambdaPi.Simple.Lex as Syntax
-import qualified Language.LambdaPi.Simple.Layout as Syntax
-import qualified Language.LambdaPi.Simple.Print as Print
-
-data ScopedAST sig n where
-  ScopedAST :: Foil.NameBinder n l -> AST sig l -> ScopedAST sig n
-
-data AST sig n where
-  Var :: Foil.Name n -> AST sig n
-  Node :: sig (ScopedAST sig n) (AST sig n) -> AST sig n
-
-instance Bifunctor sig => Foil.Sinkable (AST sig) where
-  -- sinkabilityProof :: (Name n -> Name l) -> AST sig n -> AST sig l
-  sinkabilityProof rename = \case
-    Var name -> Var (rename name)
-    Node node -> Node (bimap f (Foil.sinkabilityProof rename) node)
-    where
-      f (ScopedAST binder body) =
-        Foil.extendRenaming rename binder $ \rename' binder' ->
-          ScopedAST binder' (Foil.sinkabilityProof rename' body)
-
-substitute
-  :: (Bifunctor sig, Foil.Distinct o)
-  => Foil.Scope o
-  -> Foil.Substitution (AST sig) i o
-  -> AST sig i
-  -> AST sig o
-substitute scope subst = \case
-  Var name -> Foil.lookupSubst subst name
-  Node node -> Node (bimap f (substitute scope subst) node)
-  where
-    f (ScopedAST binder body) =
-      Foil.withRefreshed scope (Foil.nameOf binder) $ \binder' ->
-        let subst' = Foil.addRename (Foil.sink subst) binder (Foil.nameOf binder')
-            scope' = Foil.extendScope binder' scope
-            body' = substitute scope' subst' body
-        in ScopedAST binder' body'
+import qualified Control.Monad.Foil              as Foil
+import           Control.Monad.Free.Foil
+import           Data.Bifunctor
+import           Data.Bifunctor.TH
+import           Data.Map                        (Map)
+import qualified Data.Map                        as Map
+import qualified Language.LambdaPi.Syntax.Abs    as Syntax
+import qualified Language.LambdaPi.Syntax.Layout as Syntax
+import qualified Language.LambdaPi.Syntax.Lex    as Syntax
+import qualified Language.LambdaPi.Syntax.Par    as Syntax
+import qualified Language.LambdaPi.Syntax.Print  as Print
+import           System.Exit                     (exitFailure)
 
 data LambdaPiF scope term
   = AppF term term
@@ -76,44 +43,47 @@ whnf scope = \case
   App fun arg ->
     case whnf scope fun of
       Lam binder body ->
-        let subst = Foil.addSubst (Foil.identitySubst Var) binder arg
+        let subst = Foil.addSubst Foil.identitySubst binder arg
         in whnf scope (substitute scope subst body)
       fun' -> App fun' arg
   t -> t
 
 toLambdaPi :: Foil.Distinct n => Foil.Scope n -> Map String (Foil.Name n) -> Syntax.Term -> LambdaPi n
 toLambdaPi scope env = \case
-  Syntax.Var (Syntax.Ident x) ->
+  Syntax.Var (Syntax.VarIdent x) ->
     case Map.lookup x env of
       Just name -> Var name
-      Nothing -> error ("unbound variable: " ++ x)
+      Nothing   -> error ("unbound variable: " ++ x)
 
   Syntax.App fun arg ->
     App (toLambdaPi scope env fun) (toLambdaPi scope env arg)
 
-  Syntax.Lam (Syntax.Ident x) body -> Foil.withFresh scope $ \binder ->
+  Syntax.Lam (Syntax.PatternVar (Syntax.VarIdent x)) (Syntax.AScopedTerm body) -> Foil.withFresh scope $ \binder ->
     let scope' = Foil.extendScope binder scope
         env' = Map.insert x (Foil.nameOf binder) (Foil.sink <$> env)
     in Lam binder (toLambdaPi scope' env' body)
 
-  Syntax.Pi (Syntax.Ident x) a b -> Foil.withFresh scope $ \binder ->
+  Syntax.Pi (Syntax.PatternVar (Syntax.VarIdent x)) a (Syntax.AScopedTerm b) -> Foil.withFresh scope $ \binder ->
     let scope' = Foil.extendScope binder scope
         env' = Map.insert x (Foil.nameOf binder) (Foil.sink <$> env)
     in Pi binder (toLambdaPi scope env a) (toLambdaPi scope' env' b)
 
 fromLambdaPi :: LambdaPi n -> Syntax.Term
 fromLambdaPi = \case
-  Var (Foil.UnsafeName name) -> Syntax.Var (Syntax.Ident name)
+  Var name -> Syntax.Var (Syntax.VarIdent (ppName name))
   App fun arg -> Syntax.App (fromLambdaPi fun) (fromLambdaPi arg)
   Lam binder body ->
-    let Foil.UnsafeName x = Foil.nameOf binder
-    in Syntax.Lam (Syntax.Ident x) (fromLambdaPi body)
+    let x = Foil.nameOf binder
+    in Syntax.Lam (Syntax.PatternVar (Syntax.VarIdent (ppName x))) (Syntax.AScopedTerm (fromLambdaPi body))
   Pi binder a b ->
-    let Foil.UnsafeName x = Foil.nameOf binder
-    in Syntax.Pi (Syntax.Ident x) (fromLambdaPi a) (fromLambdaPi b)
+    let x = Foil.nameOf binder
+    in Syntax.Pi (Syntax.PatternVar (Syntax.VarIdent (ppName x))) (fromLambdaPi a) (Syntax.AScopedTerm (fromLambdaPi b))
 
 ppLambdaPi :: LambdaPi n -> String
 ppLambdaPi = Print.printTree . fromLambdaPi
+
+ppName :: Foil.Name n -> String
+ppName name = "x" <> show (Foil.nameId name)
 
 -- | Interpret a λΠ command.
 interpretCommand :: Syntax.Command -> IO ()

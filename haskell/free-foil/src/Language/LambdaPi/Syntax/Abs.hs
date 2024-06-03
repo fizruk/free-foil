@@ -4,9 +4,9 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
--- | The abstract syntax of language LambdaPi.
+-- | The abstract syntax of language Syntax.
 
-module Language.LambdaPi.LambdaPi.Abs where
+module Language.LambdaPi.Syntax.Abs where
 
 import Prelude (String)
 import qualified Prelude as C (Eq, Ord, Show, Read)
@@ -24,9 +24,13 @@ data Command = CommandCheck Term Term | CommandCompute Term Term
 data Term
     = Lam Pattern ScopedTerm
     | Pi Pattern Term ScopedTerm
+    | Product Term Term
     | App Term Term
     | Var VarIdent
     | Pair Term Term
+    | First Term
+    | Second Term
+    | Universe
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Data, C.Typeable, C.Generic)
 
 data ScopedTerm = AScopedTerm Term
@@ -35,7 +39,7 @@ data ScopedTerm = AScopedTerm Term
 data Pattern
     = PatternWildcard
     | PatternVar VarIdent
-    | PatternPair VarIdent VarIdent
+    | PatternPair Pattern Pattern
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Data, C.Typeable, C.Generic)
 
 newtype VarIdent = VarIdent String

@@ -26,9 +26,11 @@ mkFromFoil termT nameT scopeT patternT = do
   return [
     SigD fromFoilTermT (ForallT [PlainTV n SpecifiedSpec] []
     (AppT (AppT ArrowT
+      (AppT ListT (AppT (ConT ''Foil.Name) (VarT n)))) -- [VarIdent]  -- fresh identifiers
+    (AppT (AppT ArrowT
       (AppT (ConT foilTermT) (VarT n))) -- FoilTerm n
       (ConT termT)) -- Term
-    )
+    ))
     , FunD fromFoilTermT [Clause [] fromFoilTBody []]
 
     , SigD fromFoilPatternT (ForallT ([PlainTV n SpecifiedSpec, PlainTV l SpecifiedSpec]) []
@@ -148,7 +150,7 @@ mkFromFoil termT nameT scopeT patternT = do
 
         toExpr :: Type -> Pat -> Exp
         toExpr (ConT tyName) (VarP patName)
-          | tyName == nameT = AppE (VarE 'coerce) (AppE (VarE 'Foil.ppName) (VarE patName))
+          | tyName == nameT = AppE (VarE 'coerce) (VarE patName)
           | tyName == patternT = AppE (VarE fromFoilPatternT) (VarE patName)
           | tyName == scopeT = AppE (VarE fromFoilScopedTermT) (VarE patName)
           | tyName == termT = AppE (VarE fromFoilTermT) (VarE patName)

@@ -6,13 +6,13 @@
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Language.LambdaPi.Simple.Layout where
+module Language.LambdaPi.Syntax.Layout where
 
 import Prelude
 import Data.Maybe ( fromMaybe, listToMaybe, mapMaybe )
 import qualified Data.List as List
 
-import Language.LambdaPi.Simple.Lex
+import Language.LambdaPi.Syntax.Lex
   ( Posn(..), Tok(..), Token(..), TokSymbol(..)
   , prToken, tokenLineCol, tokenPos, tokenPosn
   )
@@ -37,7 +37,7 @@ layoutStopWords = []
 layoutOpen, layoutClose, layoutSep :: [TokSymbol]
 layoutOpen  = List.nub $ mapMaybe (delimOpen  . snd) layoutWords
 layoutClose = List.nub $ mapMaybe (delimClose . snd) layoutWords
-layoutSep   = List.nub $ TokSymbol ";" 5 : map (delimSep . snd) layoutWords
+layoutSep   = List.nub $ TokSymbol ";" 6 : map (delimSep . snd) layoutWords
 
 parenOpen, parenClose :: [TokSymbol]
 parenOpen  = [TokSymbol "(" 1]
@@ -68,7 +68,7 @@ resolveLayout topLayout =
   res Nothing [if topLayout then Implicit topDelim Definitive 1 else Explicit]
   where
   topDelim :: LayoutDelimiters
-  topDelim = LayoutDelimiters (TokSymbol ";" 5) Nothing Nothing
+  topDelim = LayoutDelimiters (TokSymbol ";" 6) Nothing Nothing
 
   res :: Maybe Token -- ^ The previous token, if any.
       -> [Block]     -- ^ A stack of layout blocks.

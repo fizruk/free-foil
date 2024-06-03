@@ -7,7 +7,7 @@
 
 {-# LANGUAGE PatternSynonyms #-}
 
-module Language.LambdaPi.LambdaPi.Lex where
+module Language.LambdaPi.Syntax.Lex where
 
 import Prelude
 
@@ -28,7 +28,7 @@ $u = [. \n]          -- universal: any character
 
 -- Symbols and non-identifier-like reserved words
 
-@rsyms = \λ | \Π | \: | \; | \. | \( | \) | \→ | \, | \_
+@rsyms = \λ | \Π | \π \₁ | \π \₂ | \𝕌 | \: | \; | \. | \( | \) | \→ | \× | \, | \_
 
 :-
 
@@ -156,12 +156,13 @@ eitherResIdent tv s = treeFind resWords
 -- | The keywords and symbols of the language organized as binary search tree.
 resWords :: BTree
 resWords =
-  b "_" 7
-    (b "." 4
-       (b ")" 2 (b "(" 1 N N) (b "," 3 N N)) (b ";" 6 (b ":" 5 N N) N))
-    (b "\928" 10
-       (b "compute" 9 (b "check" 8 N N) N)
-       (b "\8594" 12 (b "\955" 11 N N) N))
+  b "compute" 9
+    (b ":" 5
+       (b "," 3 (b ")" 2 (b "(" 1 N N) N) (b "." 4 N N))
+       (b "_" 7 (b ";" 6 N N) (b "check" 8 N N)))
+    (b "\960\8321" 13
+       (b "\928" 11 (b "\215" 10 N N) (b "\955" 12 N N))
+       (b "\8594" 15 (b "\960\8322" 14 N N) (b "\120140" 16 N N)))
   where
   b s n = B bs (TS bs n)
     where
