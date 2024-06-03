@@ -40,6 +40,11 @@ module Control.Monad.Foil (
   identitySubst,
   addSubst,
   addRename,
+  -- * Name maps
+  NameMap,
+  emptyNameMap,
+  lookupName,
+  addNameBinder,
   -- * Constraints
   Ext,
   ExtEvidence(..),

@@ -263,6 +263,30 @@ instance (Sinkable e) => Sinkable (Substitution e i) where
   sinkabilityProof rename (UnsafeSubstitution env) =
     UnsafeSubstitution (fmap (sinkabilityProof rename) env)
 
+-- * 'Name' maps
+
+-- | A /total/ map from names in scope @n@ to elements of type @a@.
+newtype NameMap (n :: S) a = NameMap { getNameMap :: IntMap a }
+
+-- | An empty map belongs in the empty scope.
+emptyNameMap :: NameMap VoidS a
+emptyNameMap = NameMap IntMap.empty
+
+-- | Looking up a name should always succeed.
+--
+-- Note that since 'Name' is 'Sinkable', you can lookup a name from scope @n@ in a 'NameMap' for scope @l@ whenever @l@ extends @n@.
+lookupName :: Name n -> NameMap n a -> a
+lookupName name (NameMap m) =
+  case IntMap.lookup (nameId name) m of
+    Nothing -> error "impossible: unknown name in a NameMap"
+    Just x  -> x
+
+-- | Extending a map with a single mapping.
+--
+-- Note that the scope parameter of the result differs from the initial map.
+addNameBinder :: NameBinder n l -> a -> NameMap n a -> NameMap l a
+addNameBinder name x (NameMap m) = NameMap (IntMap.insert (nameId (nameOf name)) x m)
+
 -- * Raw types and operations
 
 -- | We will use 'Int' for efficient representation of identifiers.

@@ -185,20 +185,6 @@ toFoilPattern scope env pattern cont =
          in toFoilPattern scope' env' r $ \r' env'' ->
               cont (PatternPair l' r') env''
 
-newtype NameMap (n :: S) a = NameMap { getNameMap :: IntMap a }
-
-emptyNameMap :: NameMap VoidS a
-emptyNameMap = NameMap IntMap.empty
-
-lookupName :: Name n -> NameMap n a -> a
-lookupName name (NameMap m) =
-  case IntMap.lookup (nameId name) m of
-    Nothing -> error "impossible: unknown name in a NameMap"
-    Just x  -> x
-
-addNameBinder :: NameBinder n l -> a -> NameMap n a -> NameMap l a
-addNameBinder name x (NameMap m) = NameMap (IntMap.insert (nameId (nameOf name)) x m)
-
 fromFoilPattern :: [Raw.VarIdent] -> NameMap n Raw.VarIdent -> Pattern n l -> ([Raw.VarIdent] -> NameMap l Raw.VarIdent -> Raw.Pattern -> r) -> r
 fromFoilPattern freshVars env pattern cont =
   case pattern of

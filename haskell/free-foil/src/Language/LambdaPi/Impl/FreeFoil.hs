@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds       #-}
 {-# LANGUAGE DeriveFunctor   #-}
 {-# LANGUAGE GADTs           #-}
 {-# LANGUAGE LambdaCase      #-}
@@ -116,27 +117,30 @@ toLambdaPi scope env = \case
 
   Raw.Universe -> Universe
 
-fromLambdaPi :: LambdaPi n -> Raw.Term
-fromLambdaPi = \case
-  Var name -> Raw.Var (Raw.VarIdent (ppName name))
-  App fun arg -> Raw.App (fromLambdaPi fun) (fromLambdaPi arg)
+fromLambdaPi :: [Raw.VarIdent] -> Foil.NameMap n Raw.VarIdent -> LambdaPi n -> Raw.Term
+fromLambdaPi freshVars env = \case
+  Var name -> Raw.Var (Foil.lookupName name env)
+  App fun arg -> Raw.App (fromLambdaPi freshVars env fun) (fromLambdaPi freshVars env arg)
   Lam binder body ->
-    let x = Foil.nameOf binder
-    in Raw.Lam (Raw.PatternVar (Raw.VarIdent (ppName x))) (Raw.AScopedTerm (fromLambdaPi body))
+    case freshVars of
+      [] -> error "not enough fresh variables"
+      x:freshVars' ->
+        let env' = Foil.addNameBinder binder x env
+         in Raw.Lam (Raw.PatternVar x) (Raw.AScopedTerm (fromLambdaPi freshVars' env' body))
   Pi binder a b ->
-    let x = Foil.nameOf binder
-    in Raw.Pi (Raw.PatternVar (Raw.VarIdent (ppName x))) (fromLambdaPi a) (Raw.AScopedTerm (fromLambdaPi b))
-  Pair l r -> Raw.Pair (fromLambdaPi l) (fromLambdaPi r)
-  First t -> Raw.First (fromLambdaPi t)
-  Second t -> Raw.Second (fromLambdaPi t)
-  Product l r -> Raw.Product (fromLambdaPi l) (fromLambdaPi r)
+    case freshVars of
+      [] -> error "not enough fresh variables"
+      x:freshVars' ->
+        let env' = Foil.addNameBinder binder x env
+         in Raw.Pi (Raw.PatternVar x) (fromLambdaPi freshVars env a) (Raw.AScopedTerm (fromLambdaPi freshVars' env' b))
+  Pair l r -> Raw.Pair (fromLambdaPi freshVars env l) (fromLambdaPi freshVars env r)
+  First t -> Raw.First (fromLambdaPi freshVars env t)
+  Second t -> Raw.Second (fromLambdaPi freshVars env t)
+  Product l r -> Raw.Product (fromLambdaPi freshVars env l) (fromLambdaPi freshVars env r)
   Universe -> Raw.Universe
 
-ppLambdaPi :: LambdaPi n -> String
-ppLambdaPi = Print.printTree . fromLambdaPi
-
-ppName :: Foil.Name n -> String
-ppName name = "x" <> show (Foil.nameId name)
+ppLambdaPi :: LambdaPi Foil.VoidS -> String
+ppLambdaPi = Print.printTree . fromLambdaPi [ Raw.VarIdent ("x" <> show i) | i <- [1 :: Integer ..] ] Foil.emptyNameMap
 
 -- | Interpret a λΠ command.
 interpretCommand :: Raw.Command -> IO ()
