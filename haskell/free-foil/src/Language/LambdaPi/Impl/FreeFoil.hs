@@ -7,21 +7,26 @@ module Language.LambdaPi.Impl.FreeFoil where
 
 import qualified Control.Monad.Foil              as Foil
 import           Control.Monad.Free.Foil
-import           Data.Bifunctor
 import           Data.Bifunctor.TH
 import           Data.Map                        (Map)
 import qualified Data.Map                        as Map
-import qualified Language.LambdaPi.Syntax.Abs    as Syntax
-import qualified Language.LambdaPi.Syntax.Layout as Syntax
-import qualified Language.LambdaPi.Syntax.Lex    as Syntax
-import qualified Language.LambdaPi.Syntax.Par    as Syntax
+import qualified Language.LambdaPi.Syntax.Abs    as Raw
+import qualified Language.LambdaPi.Syntax.Layout as Raw
+import qualified Language.LambdaPi.Syntax.Lex    as Raw
+import qualified Language.LambdaPi.Syntax.Par    as Raw
 import qualified Language.LambdaPi.Syntax.Print  as Print
+import qualified Language.LambdaPi.Syntax.Print  as Raw
 import           System.Exit                     (exitFailure)
 
 data LambdaPiF scope term
   = AppF term term
   | LamF scope
   | PiF term scope
+  | PairF term term
+  | FirstF term
+  | SecondF term
+  | ProductF term term
+  | UniverseF
   deriving (Eq, Show, Functor)
 deriveBifunctor ''LambdaPiF
 
@@ -36,7 +41,22 @@ pattern Lam binder body = Node (LamF (ScopedAST binder body))
 pattern Pi :: Foil.NameBinder n l -> LambdaPi n -> LambdaPi l -> LambdaPi n
 pattern Pi binder a b = Node (PiF a (ScopedAST binder b))
 
-{-# COMPLETE Var, App, Lam, Pi #-}
+pattern Pair :: LambdaPi n -> LambdaPi n -> LambdaPi n
+pattern Pair l r = Node (PairF l r)
+
+pattern First :: LambdaPi n -> LambdaPi n
+pattern First t = Node (FirstF t)
+
+pattern Second :: LambdaPi n -> LambdaPi n
+pattern Second t = Node (SecondF t)
+
+pattern Product :: LambdaPi n -> LambdaPi n -> LambdaPi n
+pattern Product l r = Node (ProductF l r)
+
+pattern Universe :: LambdaPi n
+pattern Universe = Node UniverseF
+
+{-# COMPLETE Var, App, Lam, Pi, Pair, First, Second, Product, Universe #-}
 
 whnf :: Foil.Distinct n => Foil.Scope n -> LambdaPi n -> LambdaPi n
 whnf scope = \case
@@ -48,36 +68,69 @@ whnf scope = \case
       fun' -> App fun' arg
   t -> t
 
-toLambdaPi :: Foil.Distinct n => Foil.Scope n -> Map String (Foil.Name n) -> Syntax.Term -> LambdaPi n
+toLambdaPiLam :: Foil.Distinct n => Foil.Scope n -> Map Raw.VarIdent (Foil.Name n) -> Raw.Pattern -> Raw.ScopedTerm -> LambdaPi n
+toLambdaPiLam scope env pat (Raw.AScopedTerm body) =
+  case pat of
+    Raw.PatternWildcard -> Foil.withFresh scope $ \binder ->
+      let scope' = Foil.extendScope binder scope
+       in Lam binder (toLambdaPi scope' (Foil.sink <$> env) body)
+
+    Raw.PatternVar x -> Foil.withFresh scope $ \binder ->
+      let scope' = Foil.extendScope binder scope
+          env' = Map.insert x (Foil.nameOf binder) (Foil.sink <$> env)
+       in Lam binder (toLambdaPi scope' env' body)
+
+    Raw.PatternPair{} -> error "pattern pairs are not supported in the FreeFoil example"
+
+toLambdaPiPi :: Foil.Distinct n => Foil.Scope n -> Map Raw.VarIdent (Foil.Name n) -> Raw.Pattern -> Raw.Term -> Raw.ScopedTerm -> LambdaPi n
+toLambdaPiPi scope env pat a (Raw.AScopedTerm b) =
+  case pat of
+    Raw.PatternWildcard -> Foil.withFresh scope $ \binder ->
+      let scope' = Foil.extendScope binder scope
+       in Pi binder (toLambdaPi scope env a) (toLambdaPi scope' (Foil.sink <$> env) b)
+
+    Raw.PatternVar x -> Foil.withFresh scope $ \binder ->
+      let scope' = Foil.extendScope binder scope
+          env' = Map.insert x (Foil.nameOf binder) (Foil.sink <$> env)
+       in Pi binder (toLambdaPi scope env a) (toLambdaPi scope' env' b)
+
+    Raw.PatternPair{} -> error "pattern pairs are not supported in the FreeFoil example"
+
+toLambdaPi :: Foil.Distinct n => Foil.Scope n -> Map Raw.VarIdent (Foil.Name n) -> Raw.Term -> LambdaPi n
 toLambdaPi scope env = \case
-  Syntax.Var (Syntax.VarIdent x) ->
+  Raw.Var x ->
     case Map.lookup x env of
       Just name -> Var name
-      Nothing   -> error ("unbound variable: " ++ x)
+      Nothing   -> error ("unbound variable: " ++ Raw.printTree x)
 
-  Syntax.App fun arg ->
+  Raw.App fun arg ->
     App (toLambdaPi scope env fun) (toLambdaPi scope env arg)
 
-  Syntax.Lam (Syntax.PatternVar (Syntax.VarIdent x)) (Syntax.AScopedTerm body) -> Foil.withFresh scope $ \binder ->
-    let scope' = Foil.extendScope binder scope
-        env' = Map.insert x (Foil.nameOf binder) (Foil.sink <$> env)
-    in Lam binder (toLambdaPi scope' env' body)
+  Raw.Lam pat body -> toLambdaPiLam scope env pat body
+  Raw.Pi pat a b -> toLambdaPiPi scope env pat a b
 
-  Syntax.Pi (Syntax.PatternVar (Syntax.VarIdent x)) a (Syntax.AScopedTerm b) -> Foil.withFresh scope $ \binder ->
-    let scope' = Foil.extendScope binder scope
-        env' = Map.insert x (Foil.nameOf binder) (Foil.sink <$> env)
-    in Pi binder (toLambdaPi scope env a) (toLambdaPi scope' env' b)
+  Raw.Pair l r -> Pair (toLambdaPi scope env l) (toLambdaPi scope env r)
+  Raw.First t -> First (toLambdaPi scope env t)
+  Raw.Second t -> Second (toLambdaPi scope env t)
+  Raw.Product l r -> Product (toLambdaPi scope env l) (toLambdaPi scope env r)
 
-fromLambdaPi :: LambdaPi n -> Syntax.Term
+  Raw.Universe -> Universe
+
+fromLambdaPi :: LambdaPi n -> Raw.Term
 fromLambdaPi = \case
-  Var name -> Syntax.Var (Syntax.VarIdent (ppName name))
-  App fun arg -> Syntax.App (fromLambdaPi fun) (fromLambdaPi arg)
+  Var name -> Raw.Var (Raw.VarIdent (ppName name))
+  App fun arg -> Raw.App (fromLambdaPi fun) (fromLambdaPi arg)
   Lam binder body ->
     let x = Foil.nameOf binder
-    in Syntax.Lam (Syntax.PatternVar (Syntax.VarIdent (ppName x))) (Syntax.AScopedTerm (fromLambdaPi body))
+    in Raw.Lam (Raw.PatternVar (Raw.VarIdent (ppName x))) (Raw.AScopedTerm (fromLambdaPi body))
   Pi binder a b ->
     let x = Foil.nameOf binder
-    in Syntax.Pi (Syntax.PatternVar (Syntax.VarIdent (ppName x))) (fromLambdaPi a) (Syntax.AScopedTerm (fromLambdaPi b))
+    in Raw.Pi (Raw.PatternVar (Raw.VarIdent (ppName x))) (fromLambdaPi a) (Raw.AScopedTerm (fromLambdaPi b))
+  Pair l r -> Raw.Pair (fromLambdaPi l) (fromLambdaPi r)
+  First t -> Raw.First (fromLambdaPi t)
+  Second t -> Raw.Second (fromLambdaPi t)
+  Product l r -> Raw.Product (fromLambdaPi l) (fromLambdaPi r)
+  Universe -> Raw.Universe
 
 ppLambdaPi :: LambdaPi n -> String
 ppLambdaPi = Print.printTree . fromLambdaPi
@@ -86,21 +139,20 @@ ppName :: Foil.Name n -> String
 ppName name = "x" <> show (Foil.nameId name)
 
 -- | Interpret a λΠ command.
-interpretCommand :: Syntax.Command -> IO ()
-interpretCommand (Syntax.CommandCompute term type_) =
+interpretCommand :: Raw.Command -> IO ()
+interpretCommand (Raw.CommandCompute term _type) =
       putStrLn ("  ↦ " ++ ppLambdaPi (whnf Foil.emptyScope (toLambdaPi Foil.emptyScope Map.empty term)))
 -- #TODO: add typeCheck
-interpretCommand (Syntax.CommandCheck term type_) =
-      putStrLn ("check is not yet implemented")
+interpretCommand (Raw.CommandCheck _term _type) = putStrLn "check is not yet implemented"
 
 -- | Interpret a λΠ program.
-interpretProgram :: Syntax.Program -> IO ()
-interpretProgram (Syntax.AProgram typedTerms) = mapM_ interpretCommand typedTerms
+interpretProgram :: Raw.Program -> IO ()
+interpretProgram (Raw.AProgram typedTerms) = mapM_ interpretCommand typedTerms
 
 main :: IO ()
 main = do
   input <- getContents
-  case Syntax.pProgram (Syntax.resolveLayout True (Syntax.tokens input)) of
+  case Raw.pProgram (Raw.resolveLayout True (Raw.tokens input)) of
     Left err -> do
       putStrLn err
       exitFailure

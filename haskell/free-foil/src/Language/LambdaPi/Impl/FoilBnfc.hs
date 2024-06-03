@@ -9,14 +9,16 @@
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
 module Language.LambdaPi.Impl.FoilBnfc where
 
 import           Control.Monad.Foil
+import           Data.IntMap                     (IntMap)
+import qualified Data.IntMap                     as IntMap
 import           Data.Map                        (Map)
 import qualified Data.Map                        as Map
-import           Data.String                     (String)
 import qualified Language.LambdaPi.Syntax.Abs    as Raw
 import           Language.LambdaPi.Syntax.Layout (resolveLayout)
 import           Language.LambdaPi.Syntax.Lex    (tokens)
@@ -89,6 +91,13 @@ ppExpr = \case
   LamE pat body -> "λ" ++ ppPattern pat ++ ". " ++ ppExpr body
   PiE pat a b -> "Π" ++ "(" ++ ppPattern pat ++ " : " ++ ppExpr a ++ "), " ++ ppExpr b
   PairE l r -> "(" ++ ppExpr l ++ "," ++ ppExpr r ++ ")"
+  FirstE t -> "π₁(" ++ ppExpr t ++ ")"
+  SecondE t -> "π₂(" ++ ppExpr t ++ ")"
+  ProductE l r -> "(" ++ ppExpr l ++ " × " ++ ppExpr r ++ ")"
+  UniverseE -> "𝕌"
+
+printExpr :: Expr VoidS -> String
+printExpr = printTree . fromFoilTermClosed [ Raw.VarIdent ("x" <> show i) | i <- [1 :: Integer ..] ]
 
 -- | Pretty-print a pattern in a \(\lambda\Pi\)-term.
 ppPattern :: Pattern n l -> String
@@ -100,8 +109,16 @@ ppPattern = \case
 instance Sinkable Expr where
   sinkabilityProof rename (VarE v) = VarE (rename v)
   sinkabilityProof rename (AppE f e) = AppE (sinkabilityProof rename f) (sinkabilityProof rename e)
-  sinkabilityProof rename (LamE binder body) = extendRenaming rename binder \rename' pat' ->
+  sinkabilityProof rename (LamE pat body) = extendRenaming rename pat $ \rename' pat' ->
     LamE pat' (sinkabilityProof rename' body)
+  sinkabilityProof rename (PiE pat a b) =
+    extendRenaming rename pat $ \rename' pat' ->
+      PiE pat' (sinkabilityProof rename a) (sinkabilityProof rename' b)
+  sinkabilityProof rename (PairE l r) = PairE (sinkabilityProof rename l) (sinkabilityProof rename r)
+  sinkabilityProof rename (FirstE t) = FirstE (sinkabilityProof rename t)
+  sinkabilityProof rename (SecondE t) = SecondE (sinkabilityProof rename t)
+  sinkabilityProof rename (ProductE l r) = ProductE (sinkabilityProof rename l) (sinkabilityProof rename r)
+  sinkabilityProof _ UniverseE = UniverseE
 
 -- | Extend scope with variables inside a pattern.
 -- This is a more flexible version of 'extendScope'.
@@ -132,11 +149,22 @@ substitute :: Distinct o => Scope o -> Substitution Expr i o -> Expr i -> Expr o
 substitute scope subst = \case
     VarE name -> lookupSubst subst name
     AppE f x -> AppE (substitute scope subst f) (substitute scope subst x)
-    LamE pattern body -> withRefreshedPattern scope pattern (\extendSubst pattern' ->
-        let subst' = extendSubst subst
-            scope' = extendScopePattern pattern' scope
-            body' = substitute scope' subst' body in LamE pattern' body'
-        )
+    LamE pattern body -> withRefreshedPattern scope pattern $ \extendSubst pattern' ->
+      let subst' = extendSubst subst
+          scope' = extendScopePattern pattern' scope
+          body' = substitute scope' subst' body
+       in LamE pattern' body'
+    PiE pattern a b -> withRefreshedPattern scope pattern $ \extendSubst pattern' ->
+      let subst' = extendSubst subst
+          scope' = extendScopePattern pattern' scope
+          a' = substitute scope subst a
+          b' = substitute scope' subst' b
+       in PiE pattern' a' b'
+    PairE l r -> PairE (substitute scope subst l) (substitute scope subst r)
+    FirstE t -> FirstE (substitute scope subst t)
+    SecondE t -> SecondE (substitute scope subst t)
+    ProductE l r -> ProductE (substitute scope subst l) (substitute scope subst r)
+    UniverseE -> UniverseE
 
 toFoilPattern
   :: Distinct n
@@ -157,6 +185,52 @@ toFoilPattern scope env pattern cont =
          in toFoilPattern scope' env' r $ \r' env'' ->
               cont (PatternPair l' r') env''
 
+newtype NameMap (n :: S) a = NameMap { getNameMap :: IntMap a }
+
+emptyNameMap :: NameMap VoidS a
+emptyNameMap = NameMap IntMap.empty
+
+lookupName :: Name n -> NameMap n a -> a
+lookupName name (NameMap m) =
+  case IntMap.lookup (nameId name) m of
+    Nothing -> error "impossible: unknown name in a NameMap"
+    Just x  -> x
+
+addNameBinder :: NameBinder n l -> a -> NameMap n a -> NameMap l a
+addNameBinder name x (NameMap m) = NameMap (IntMap.insert (nameId (nameOf name)) x m)
+
+fromFoilPattern :: [Raw.VarIdent] -> NameMap n Raw.VarIdent -> Pattern n l -> ([Raw.VarIdent] -> NameMap l Raw.VarIdent -> Raw.Pattern -> r) -> r
+fromFoilPattern freshVars env pattern cont =
+  case pattern of
+    PatternWildcard -> cont freshVars env Raw.PatternWildcard
+    PatternVar z ->
+      case freshVars of
+        []   -> error "not enough fresh variables!"
+        x:xs -> cont xs (addNameBinder z x env) (Raw.PatternVar x)
+    PatternPair l r ->
+      fromFoilPattern freshVars env l $ \freshVars' env' l' ->
+        fromFoilPattern freshVars' env' r $ \freshVars'' env'' r' ->
+          cont freshVars'' env'' (Raw.PatternPair l' r')
+
+fromFoilTerm :: [Raw.VarIdent] -> NameMap n Raw.VarIdent -> Expr n -> Raw.Term
+fromFoilTerm freshVars env = \case
+  VarE name -> Raw.Var (lookupName name env)
+  AppE t1 t2 -> Raw.App (fromFoilTerm freshVars env t1) (fromFoilTerm freshVars env t2)
+  LamE pattern body ->
+    fromFoilPattern freshVars env pattern $ \freshVars' env' pattern' ->
+      Raw.Lam pattern' (Raw.AScopedTerm (fromFoilTerm freshVars' env' body))
+  PiE pattern a b ->
+    fromFoilPattern freshVars env pattern $ \freshVars' env' pattern' ->
+      Raw.Pi pattern' (fromFoilTerm freshVars env a) (Raw.AScopedTerm (fromFoilTerm freshVars' env' b))
+  PairE t1 t2 -> Raw.Pair (fromFoilTerm freshVars env t1) (fromFoilTerm freshVars env t2)
+  FirstE t -> Raw.First (fromFoilTerm freshVars env t)
+  SecondE t -> Raw.Second (fromFoilTerm freshVars env t)
+  ProductE t1 t2 -> Raw.Product (fromFoilTerm freshVars env t1) (fromFoilTerm freshVars env t2)
+  UniverseE -> Raw.Universe
+
+fromFoilTermClosed :: [Raw.VarIdent] -> Expr VoidS -> Raw.Term
+fromFoilTermClosed freshVars = fromFoilTerm freshVars emptyNameMap
+
 -- | Convert a raw term into a scope-safe \(\lambda\Pi\)-term.
 toFoilTerm :: Distinct n => Scope n -> Map Raw.VarIdent (Name n) -> Raw.Term -> Expr n
 toFoilTerm scope env = \case
@@ -173,6 +247,11 @@ toFoilTerm scope env = \case
       let scope' = extendScopePattern pattern' scope
        in LamE pattern' (toFoilTerm scope' env' body)
 
+  Raw.Pi pattern a (Raw.AScopedTerm b) ->
+    toFoilPattern scope env pattern $ \pattern' env' ->
+      let scope' = extendScopePattern pattern' scope
+       in PiE pattern' (toFoilTerm scope env a) (toFoilTerm scope' env' b)
+
   Raw.Pair t1 t2 ->
     PairE (toFoilTerm scope env t1) (toFoilTerm scope env t2)
   Raw.First t ->
@@ -185,18 +264,13 @@ toFoilTerm scope env = \case
 
   Raw.Universe -> UniverseE
 
--- toFoilTerm (Raw.App a b) scope env = AppE (toFoilTerm a scope env) (toFoilTerm b scope env)
--- toFoilTerm (Raw.Lam (Raw.PatternVar (Raw.VarIdent str)) (Raw.AScopedTerm body)) scope env = withFresh scope (\s ->
---   let scope' = extendScope s scope
---       env' = Map.insert str (nameOf s) (fmap sink env) in LamE (PatternVar s) (toFoilTerm body scope' env'))
--- toFoilTerm (Raw.Var (Raw.VarIdent str)) scope env = case Map.lookup str env of
---   Just name -> VarE name
---   Nothing   -> error ("Unbound variable " ++ str)
--- -- #TODO: suppori Pi expressions
--- toFoilTerm Raw.Pi{} scope env = error "Not yet implemented"
-
 matchPattern :: Pattern n l -> Expr n -> Substitution Expr l n
-matchPattern PatternWildcard _ = identitySubst
+matchPattern pattern expr = go pattern expr identitySubst
+  where
+    go :: Pattern i l -> Expr n -> Substitution Expr i n -> Substitution Expr l n
+    go PatternWildcard _   = id
+    go (PatternVar x) e    = \subst -> addSubst subst x e
+    go (PatternPair l r) e = go r (SecondE e) . go l (FirstE e)
 
 whnf :: (Distinct n) => Scope n -> Expr n -> Expr n
 whnf scope = \case
@@ -204,17 +278,25 @@ whnf scope = \case
     case whnf scope f of
       LamE pat body ->
         let subst = matchPattern pat arg
-         in substitute scope subst body
+         in whnf scope (substitute scope subst body)
       f' -> AppE f' arg
+  FirstE t ->
+    case whnf scope t of
+      PairE l _r -> whnf scope l
+      t'         -> FirstE t'
+  SecondE t ->
+    case whnf scope t of
+      PairE _l r -> whnf scope r
+      t'         -> SecondE t'
   t -> t
 
 -- | Interpret a λΠ command.
 interpretCommand :: Raw.Command -> IO ()
-interpretCommand (Raw.CommandCompute term type_) =
-      putStrLn ("  ↦ " ++ ppExpr (whnf emptyScope (toFoilTerm emptyScope Map.empty term)))
+interpretCommand (Raw.CommandCompute term _type) =
+  putStrLn ("  ↦ " ++ printExpr (whnf emptyScope (toFoilTerm emptyScope Map.empty term)))
 -- #TODO: add typeCheck
-interpretCommand (Raw.CommandCheck term type_) =
-      putStrLn "Not yet implemented"
+interpretCommand (Raw.CommandCheck _term _type) =
+  putStrLn "Not yet implemented"
 
 -- | Interpret a λΠ program.
 interpretProgram :: Raw.Program -> IO ()
