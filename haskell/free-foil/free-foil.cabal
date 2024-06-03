@@ -45,10 +45,9 @@ library
       Control.Monad.Foil.TH.MkToFoil
       Control.Monad.Free.Foil
       Control.Monad.Free.Foil.Example
-      LambdaPi.Simple.Interpret
-      Language.LambdaPi.Impl.FoilBnfc
+      Language.LambdaPi.Impl.Foil
+      Language.LambdaPi.Impl.FoilTH
       Language.LambdaPi.Impl.FreeFoil
-      Language.LambdaPi.Impl.NewExample
       Language.LambdaPi.Syntax.Abs
       Language.LambdaPi.Syntax.Layout
       Language.LambdaPi.Syntax.Lex

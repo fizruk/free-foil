@@ -1,11 +1,30 @@
 {-# LANGUAGE DataKinds       #-}
+{-# LANGUAGE TypeSynonymInstances       #-}
+{-# LANGUAGE FlexibleInstances       #-}
 {-# LANGUAGE DeriveFunctor   #-}
 {-# LANGUAGE GADTs           #-}
 {-# LANGUAGE LambdaCase      #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE TemplateHaskell #-}
+-- | Free foil implementation of the \(\lambda\Pi\)-calculus (with pairs).
+--
+-- Free foil provides the following:
+--
+-- 1. Freely generated (from a simple signature) scope-safe AST.
+-- 2. Correct capture-avoiding substitution (see 'substitute').
+-- 3. Convenient pattern synonyms (FIXME: use TH to generate those).
+--
+-- The following is implemented manually in this module:
+--
+-- 1. Conversion between scope-safe and raw term representation (the latter is generated via BNFC), see 'toLambdaPi' and 'fromLambdaPi'.
+-- 2. Computation of weak head normal form (WHNF), see 'whnf'.
+-- 3. Entry point, gluing everything together. See 'defaultMain'.
+--
+-- __Note:__ free foil does not (easily) support patterns at the moment,
+-- so only wildcard patterns and variable patterns are handled in this implementation.
 module Language.LambdaPi.Impl.FreeFoil where
 
+import Data.String (IsString(..))
 import qualified Control.Monad.Foil              as Foil
 import           Control.Monad.Free.Foil
 import           Data.Bifunctor.TH
@@ -19,18 +38,20 @@ import qualified Language.LambdaPi.Syntax.Print  as Print
 import qualified Language.LambdaPi.Syntax.Print  as Raw
 import           System.Exit                     (exitFailure)
 
+-- | The signature 'Bifunctor' for the \(\lambda\Pi\) with pairs.
 data LambdaPiF scope term
-  = AppF term term
-  | LamF scope
-  | PiF term scope
-  | PairF term term
-  | FirstF term
-  | SecondF term
-  | ProductF term term
-  | UniverseF
+  = AppF term term        -- ^ Application: \((t_1 \; t_2)\)
+  | LamF scope            -- ^ Abstraction: \(\lambda x. t\)
+  | PiF term scope        -- ^ Dependent function type: \(\prod_{x : T_1} T_2\)
+  | PairF term term       -- ^ Pair: \(\langle t_1, t_2 \rangle\)
+  | FirstF term           -- ^ First projection: \(\pi_1(t)\)
+  | SecondF term          -- ^ Second projection: \(\pi_2(t)\)
+  | ProductF term term    -- ^ Product type (non-dependent): \(T_1 \times T_2\)
+  | UniverseF             -- ^ Universe (type of types): \(\mathcal{U}\)
   deriving (Eq, Show, Functor)
 deriveBifunctor ''LambdaPiF
 
+-- | \(\lambda\Pi\)-terms in scope @n@, freely generated from the signature 'LambdaPiF'.
 type LambdaPi n = AST LambdaPiF n
 
 pattern App :: LambdaPi n -> LambdaPi n -> LambdaPi n
@@ -59,6 +80,24 @@ pattern Universe = Node UniverseF
 
 {-# COMPLETE Var, App, Lam, Pi, Pair, First, Second, Product, Universe #-}
 
+-- | \(\lambda\Pi\)-terms are pretty-printed using BNFC-generated printer via 'Raw.Term'.
+instance Show (LambdaPi Foil.VoidS) where
+  show = ppLambdaPi
+
+-- | \(\lambda\Pi\)-terms can be (unsafely) parsed from a 'String' via 'Raw.Term'.
+instance IsString (LambdaPi Foil.VoidS) where
+  fromString input =
+    case Raw.pTerm (Raw.tokens input) of
+      Left err -> error ("could not parse λΠ-term: " <> input <> "\n  " <> err)
+      Right term -> toLambdaPiClosed term
+
+-- | Compute weak head normal form (WHNF) of a \(\lambda\Pi\)-term.
+--
+-- >>> whnf Foil.emptyScope "(λx.(λ_.x)(λy.x))(λy.λz.z)"
+-- λ x1 . λ x2 . x2
+--
+-- >>> whnf Foil.emptyScope "(λs.λz.s(s(z)))(λs.λz.s(s(z)))"
+-- λ x1 . (λ x2 . λ x3 . x2 (x2 x3)) ((λ x2 . λ x3 . x2 (x2 x3)) x1)
 whnf :: Foil.Distinct n => Foil.Scope n -> LambdaPi n -> LambdaPi n
 whnf scope = \case
   App fun arg ->
@@ -67,9 +106,24 @@ whnf scope = \case
         let subst = Foil.addSubst Foil.identitySubst binder arg
         in whnf scope (substitute scope subst body)
       fun' -> App fun' arg
+  First t ->
+    case whnf scope t of
+      Pair l _r -> whnf scope l
+      t' -> First t'
+  Second t ->
+    case whnf scope t of
+      Pair _l r -> whnf scope r
+      t' -> Second t'
   t -> t
 
-toLambdaPiLam :: Foil.Distinct n => Foil.Scope n -> Map Raw.VarIdent (Foil.Name n) -> Raw.Pattern -> Raw.ScopedTerm -> LambdaPi n
+-- | Convert a raw \(\lambda\)-abstraction into a scope-safe \(\lambda\Pi\)-term.
+toLambdaPiLam
+  :: Foil.Distinct n
+  => Foil.Scope n                   -- ^ Target scope of the \(\lambda\Pi\)-term.
+  -> Map Raw.VarIdent (Foil.Name n) -- ^ Mapping for the free variables in the raw term.
+  -> Raw.Pattern                    -- ^ Raw pattern (argument) of the \(\lambda\)-abstraction.
+  -> Raw.ScopedTerm                 -- ^ Raw body of the \(\lambda\)-abstraction.
+  -> LambdaPi n
 toLambdaPiLam scope env pat (Raw.AScopedTerm body) =
   case pat of
     Raw.PatternWildcard -> Foil.withFresh scope $ \binder ->
@@ -83,7 +137,15 @@ toLambdaPiLam scope env pat (Raw.AScopedTerm body) =
 
     Raw.PatternPair{} -> error "pattern pairs are not supported in the FreeFoil example"
 
-toLambdaPiPi :: Foil.Distinct n => Foil.Scope n -> Map Raw.VarIdent (Foil.Name n) -> Raw.Pattern -> Raw.Term -> Raw.ScopedTerm -> LambdaPi n
+-- | Convert a raw \(\Pi\)-type into a scope-safe \(\lambda\Pi\)-term.
+toLambdaPiPi
+  :: Foil.Distinct n
+  => Foil.Scope n                   -- ^ Target scope of the \(\lambda\Pi\)-term.
+  -> Map Raw.VarIdent (Foil.Name n) -- ^ Mapping for the free variables in the raw term.
+  -> Raw.Pattern                    -- ^ Raw argument pattern of the \(\Pi\)-type.
+  -> Raw.Term                       -- ^ Raw argument type of the \(\Pi\)-type.
+  -> Raw.ScopedTerm                 -- ^ Raw body (result type family) of the \(\Pi\)-type.
+  -> LambdaPi n
 toLambdaPiPi scope env pat a (Raw.AScopedTerm b) =
   case pat of
     Raw.PatternWildcard -> Foil.withFresh scope $ \binder ->
@@ -97,7 +159,13 @@ toLambdaPiPi scope env pat a (Raw.AScopedTerm b) =
 
     Raw.PatternPair{} -> error "pattern pairs are not supported in the FreeFoil example"
 
-toLambdaPi :: Foil.Distinct n => Foil.Scope n -> Map Raw.VarIdent (Foil.Name n) -> Raw.Term -> LambdaPi n
+-- | Convert a raw expression into a scope-safe \(\lambda\Pi\)-term.
+toLambdaPi
+  :: Foil.Distinct n
+  => Foil.Scope n                   -- ^ Target scope of the \(\lambda\Pi\)-term.
+  -> Map Raw.VarIdent (Foil.Name n) -- ^ Mapping for the free variables in the raw term.
+  -> Raw.Term                       -- ^ Raw expression or type.
+  -> LambdaPi n
 toLambdaPi scope env = \case
   Raw.Var x ->
     case Map.lookup x env of
@@ -117,7 +185,16 @@ toLambdaPi scope env = \case
 
   Raw.Universe -> Universe
 
-fromLambdaPi :: [Raw.VarIdent] -> Foil.NameMap n Raw.VarIdent -> LambdaPi n -> Raw.Term
+-- | Convert a raw expression into a /closed/ scope-safe \(\lambda\Pi\)-term.
+toLambdaPiClosed :: Raw.Term -> LambdaPi Foil.VoidS
+toLambdaPiClosed = toLambdaPi Foil.emptyScope Map.empty
+
+-- | Convert back from a scope-safe \(\lambda\Pi\)-term into a raw expression or type.
+fromLambdaPi
+  :: [Raw.VarIdent]               -- ^ Stream of fresh raw identifiers.
+  -> Foil.NameMap n Raw.VarIdent  -- ^ A /total/ map for all names in scope @n@.
+  -> LambdaPi n                   -- ^ A scope-safe \(\lambda\Pi\)-term.
+  -> Raw.Term
 fromLambdaPi freshVars env = \case
   Var name -> Raw.Var (Foil.lookupName name env)
   App fun arg -> Raw.App (fromLambdaPi freshVars env fun) (fromLambdaPi freshVars env arg)
@@ -139,6 +216,7 @@ fromLambdaPi freshVars env = \case
   Product l r -> Raw.Product (fromLambdaPi freshVars env l) (fromLambdaPi freshVars env r)
   Universe -> Raw.Universe
 
+-- | Pretty-print a /closed/ \(\lambda\Pi\)-term.
 ppLambdaPi :: LambdaPi Foil.VoidS -> String
 ppLambdaPi = Print.printTree . fromLambdaPi [ Raw.VarIdent ("x" <> show i) | i <- [1 :: Integer ..] ] Foil.emptyNameMap
 
@@ -153,8 +231,9 @@ interpretCommand (Raw.CommandCheck _term _type) = putStrLn "check is not yet imp
 interpretProgram :: Raw.Program -> IO ()
 interpretProgram (Raw.AProgram typedTerms) = mapM_ interpretCommand typedTerms
 
-main :: IO ()
-main = do
+-- | A \(\lambda\Pi\) interpreter implemented via the free foil.
+defaultMain :: IO ()
+defaultMain = do
   input <- getContents
   case Raw.pProgram (Raw.resolveLayout True (Raw.tokens input)) of
     Left err -> do

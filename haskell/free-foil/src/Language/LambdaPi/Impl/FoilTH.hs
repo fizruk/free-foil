@@ -13,18 +13,17 @@
 {-# LANGUAGE TypeApplications           #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-} -- Убрать
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-} -- Убрать
-module Language.LambdaPi.Impl.FoilBnfcTH where
+module Language.LambdaPi.Impl.FoilTH where
 
 
 import           Control.Monad.Foil.Internal
 import           Control.Monad.Foil.TH
-import           Language.LambdaPi.Syntax.Abs
-import           Unsafe.Coerce                (unsafeCoerce)
+import qualified Language.LambdaPi.Syntax.Abs as Raw
 
--- mkFoilData ''Term ''VarIdent ''ScopedTerm ''Pattern
--- mkToFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
--- mkFromFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
--- mkInstancesFoil ''Term ''VarIdent ''ScopedTerm ''Pattern
+mkFoilData ''Raw.Term ''Raw.VarIdent ''Raw.ScopedTerm ''Raw.Pattern
+mkToFoil ''Raw.Term ''Raw.VarIdent ''Raw.ScopedTerm ''Raw.Pattern
+-- mkFromFoil ''Raw.Term ''Raw.VarIdent ''Raw.ScopedTerm ''Raw.Pattern
+-- mkInstancesFoil ''Raw.Term ''Raw.VarIdent ''Raw.ScopedTerm ''Raw.Pattern
 
 -- substitute :: FoilTerm o -> FoilTerm i -> FoilTerm o
 -- substitute substTerm = \case
