@@ -59,7 +59,6 @@ library:
         - Language.LambdaPi.Syntax.Test
         - Language.LambdaPi.Syntax.ErrM
         - Language.LambdaPi.Syntax.Skel
-        - Language.LambdaPi.Impl.FoilBnfcTH # temporarily disabled
 
 executables:
   lambda-pi:

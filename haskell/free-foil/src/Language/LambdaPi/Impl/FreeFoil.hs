@@ -34,7 +34,6 @@ import qualified Language.LambdaPi.Syntax.Abs    as Raw
 import qualified Language.LambdaPi.Syntax.Layout as Raw
 import qualified Language.LambdaPi.Syntax.Lex    as Raw
 import qualified Language.LambdaPi.Syntax.Par    as Raw
-import qualified Language.LambdaPi.Syntax.Print  as Print
 import qualified Language.LambdaPi.Syntax.Print  as Raw
 import           System.Exit                     (exitFailure)
 
@@ -218,7 +217,7 @@ fromLambdaPi freshVars env = \case
 
 -- | Pretty-print a /closed/ \(\lambda\Pi\)-term.
 ppLambdaPi :: LambdaPi Foil.VoidS -> String
-ppLambdaPi = Print.printTree . fromLambdaPi [ Raw.VarIdent ("x" <> show i) | i <- [1 :: Integer ..] ] Foil.emptyNameMap
+ppLambdaPi = Raw.printTree . fromLambdaPi [ Raw.VarIdent ("x" <> show i) | i <- [1 :: Integer ..] ] Foil.emptyNameMap
 
 -- | Interpret a λΠ command.
 interpretCommand :: Raw.Command -> IO ()
