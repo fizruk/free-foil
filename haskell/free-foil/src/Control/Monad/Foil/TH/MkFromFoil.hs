@@ -1,51 +1,68 @@
+{-# OPTIONS_GHC -fno-warn-type-defaults #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE QuasiQuotes           #-}
 {-# LANGUAGE TemplateHaskellQuotes #-}
-{-# OPTIONS_GHC -Wno-incomplete-patterns #-}
-{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 module Control.Monad.Foil.TH.MkFromFoil (mkFromFoil) where
 
 import           Language.Haskell.TH
+import Language.Haskell.TH.Syntax (addModFinalizer)
 
 import qualified Control.Monad.Foil  as Foil
-import           Data.Coerce         (coerce)
 
-mkFromFoil :: Name -> Name -> Name -> Name -> Q [Dec]
+-- | Generate conversion functions from raw to scope-safe representation.
+mkFromFoil
+  :: Name -- ^ Type name for raw terms.
+  -> Name -- ^ Type name for raw variable identifiers.
+  -> Name -- ^ Type name for raw scoped terms.
+  -> Name -- ^ Type name for raw patterns.
+  -> Q [Dec]
 mkFromFoil termT nameT scopeT patternT = do
-  n <- newName "n"
-  l <- newName "l"
   TyConI (DataD _ctx _name _tvars _kind patternCons _deriv) <- reify patternT
   TyConI (DataD _ctx _name _tvars _kind scopeCons _deriv) <- reify scopeT
   TyConI (DataD _ctx _name _tvars _kind termCons _deriv) <- reify termT
 
-  let fromFoilTBody = NormalB (LamCaseE (map fromMatchFoilTerm termCons))
-  let fromFoilPatternBody = NormalB (LamCaseE (map fromMatchFoilPattern patternCons))
-  let fromFoilScopedBody = NormalB (LamCaseE (map fromMatchFoilScoped scopeCons))
+  fromFoilTermSignature <-
+    SigD fromFoilTermT <$>
+      [t| forall n.
+          [$(return (ConT nameT))]
+          -> Foil.NameMap n $(return (ConT nameT))
+          -> $(return (ConT foilTermT)) n
+          -> $(return (ConT termT))
+        |]
+  fromFoilScopedSignature <-
+    SigD fromFoilScopedT <$>
+      [t| forall n.
+          [$(return (ConT nameT))]
+          -> Foil.NameMap n $(return (ConT nameT))
+          -> $(return (ConT foilScopeT)) n
+          -> $(return (ConT scopeT))
+        |]
+  fromFoilPatternSignature <-
+    SigD fromFoilPatternT <$>
+      [t| forall n l r.
+          [$(return (ConT nameT))]
+          -> Foil.NameMap n $(return (ConT nameT))
+          -> $(return (ConT foilPatternT)) n l
+          -> ([$(return (ConT nameT))] -> Foil.NameMap l $(return (ConT nameT)) -> $(return (ConT patternT)) -> r)
+          -> r
+        |]
 
-  return [
-    SigD fromFoilTermT (ForallT [PlainTV n SpecifiedSpec] []
-    (AppT (AppT ArrowT
-      (AppT ListT (AppT (ConT ''Foil.Name) (VarT n)))) -- [VarIdent]  -- fresh identifiers
-    (AppT (AppT ArrowT
-      (AppT (ConT foilTermT) (VarT n))) -- FoilTerm n
-      (ConT termT)) -- Term
-    ))
-    , FunD fromFoilTermT [Clause [] fromFoilTBody []]
+  addModFinalizer $ putDoc (DeclDoc fromFoilTermT)
+    "Convert a scope-safe term into a raw term."
+  addModFinalizer $ putDoc (DeclDoc fromFoilPatternT)
+    "Convert a scope-safe pattern into a raw pattern."
+  addModFinalizer $ putDoc (DeclDoc fromFoilScopedT)
+    "Convert a scope-safe scoped term into a raw scoped term."
 
-    , SigD fromFoilPatternT (ForallT ([PlainTV n SpecifiedSpec, PlainTV l SpecifiedSpec]) []
-    (AppT (AppT ArrowT
-      (foldl AppT (ConT foilPatternT) ([VarT n, VarT l]))) -- FoilPattern n t1..tn l
-      (ConT patternT)) -- Pattern
-    )
-    , FunD fromFoilPatternT [Clause [] fromFoilPatternBody []]
-
-    , SigD fromFoilScopedTermT (ForallT [PlainTV n SpecifiedSpec] []
-    (AppT (AppT ArrowT
-      (AppT (ConT foilScopeT) (VarT n))) -- FoilScopedTerm n
-      (ConT scopeT)) -- ScopedTerm
-    )
-    , FunD fromFoilScopedTermT [Clause [] fromFoilScopedBody []]
+  return
+    [ fromFoilTermSignature
+    , fromFoilTermBody termCons
+    , fromFoilPatternSignature
+    , fromFoilPatternBody patternCons
+    , fromFoilScopedSignature
+    , fromFoilScopedBody scopeCons
     ]
   where
     foilTermT = mkName ("Foil" ++ nameBase termT)
@@ -54,104 +71,154 @@ mkFromFoil termT nameT scopeT patternT = do
 
     fromFoilTermT = mkName ("fromFoil" ++ nameBase termT)
     fromFoilPatternT = mkName ("fromFoil" ++ nameBase patternT)
-    fromFoilScopedTermT = mkName ("fromFoil" ++ nameBase scopeT)
+    fromFoilScopedT = mkName ("fromFoil" ++ nameBase scopeT)
 
-    maxBinderNumber :: [Con] -> Int
-    maxBinderNumber cons = maximum (map
-        (\case
-            (NormalC _ params) -> (getBinderNumber (map snd params) 0)
-            _ -> 0
-        ) cons)
-
-    generateNames :: Int -> Int -> [Name]
-    generateNames from to
-      | from >= to = []
-      | otherwise = mkName ("t" ++ show from) : generateNames (from + 1) to
-
-    getBinderNumber :: [Type] -> Int -> Int
-    getBinderNumber [] counter = counter
-    getBinderNumber ((ConT tyName):types) counter
-      | tyName == nameT = getBinderNumber types (counter + 1)
-      | otherwise = getBinderNumber types counter
-
-    fromMatchFoilPattern :: Con -> Match
-    fromMatchFoilPattern (NormalC conName params) =
-      let
-        matchPat = ConP (mkName ("Foil" ++ nameBase conName)) [] (toPats 0 conTypes)
-        conTypes = map snd params
-      in Match matchPat (matchBody conTypes matchPat conName) []
-
+    fromFoilTermBody termCons = FunD fromFoilTermT
+      [Clause [VarP freshVars, VarP env, VarP term] (NormalB (CaseE (VarE term) (map toMatch termCons))) []]
       where
-        toPats :: Int -> [Type] -> [Pat]
-        toPats _ [] = []
-        toPats n ((ConT tyName):types)
-          | tyName == nameT = ConP (mkName "UnsafeNameBinder") [] [VarP (mkName $ "binder" ++ show n)]:toPats (n+1) types -- change to WildP
-          | tyName == patternT = VarP (mkName $ "pat" ++ show n):toPats (n+1) types
-          | tyName == scopeT = VarP (mkName "scopedTerm"):toPats (n+1) types
-          | tyName == termT = VarP (mkName $ "term" ++ show n):toPats (n+1) types
-          | otherwise = VarP (mkName ("x" ++ show n)):toPats (n+1) types
+        freshVars = mkName "freshVars"
+        env = mkName "env"
+        term = mkName "term"
 
-        matchBody :: [Type] -> Pat -> Name -> Body
-        matchBody matchTypes (ConP _ _ matchParams) name = NormalB
-          (foldl AppE (ConE name) (zipWith toExpr matchTypes matchParams))
+        toMatch (NormalC conName params) =
+          Match (ConP foilConName [] conParamPatterns) (NormalB conMatchBody) []
+          where
+            conMatchBody = go 1 (VarE freshVars) (VarE env) (ConE conName) params
 
-        toExpr :: Type -> Pat -> Exp
-        toExpr _ (ConP _ _ [VarP varName]) =
-          AppE (VarE 'coerce) (VarE varName) -- Уязвимость: mkName (nameBase nameT) предполагает что имя конструктора совпадает с именем типа. Но нет возможности выбрать подходищай конструктор так как непонятно как паттернматчить аргумент конструктора с нужным
-        toExpr (ConT typeN) (VarP patName)
-          | typeN == patternT = AppE (VarE fromFoilPatternT) (VarE patName)
-          | otherwise = VarE patName
+            go _i _freshVars' _env' p [] = p
+            go i freshVars' env' p ((_bang, ConT tyName) : conParams)
+              | tyName == nameT =
+                  go (i+1) freshVars' env' (AppE p (AppE (AppE (VarE 'Foil.lookupName) (VarE xi)) env')) conParams
+              | tyName == termT =
+                  go (i+1) freshVars' env' (AppE p (AppE (AppE (AppE (VarE fromFoilTermT) (VarE freshVars)) (VarE env)) (VarE xi))) conParams
+              | tyName == scopeT =
+                  go (i+1) freshVars' env' (AppE p (AppE (AppE (AppE (VarE fromFoilScopedT) freshVars') env') (VarE xi))) conParams
+              | tyName == patternT =
+                  AppE
+                    (AppE (AppE (AppE (VarE fromFoilPatternT) freshVars') env') (VarE xi))
+                    (LamE [VarP freshVarsi, VarP envi, VarP xi']
+                      (go (i+1) (VarE freshVarsi) (VarE envi) (AppE p (VarE xi')) conParams))
+              where
+                xi = mkName ("x" <> show i)
+                xi' = mkName ("x" <> show i <> "'")
+                freshVarsi = mkName ("freshVars" <> show i)
+                envi = mkName ("env" <> show i)
+            go i freshVars' env' p (_ : conParams) =
+              go (i + 1) freshVars' env' (AppE p (VarE xi)) conParams
+              where
+                xi = mkName ("x" <> show i)
 
-    fromMatchFoilScoped :: Con -> Match
-    fromMatchFoilScoped (NormalC conName params) =
-      let
-        matchPat = ConP (mkName ("Foil" ++ nameBase conName)) [] (toPats 0 conTypes)
-        conTypes = map snd params
-      in Match matchPat (matchBody conTypes matchPat conName) []
+            foilConName = mkName ("Foil" ++ nameBase conName)
+            conParamPatterns = map VarP conParamVars
 
+            conParamVars = zipWith mkConParamVar params [1..]
+
+            mkConParamVar :: BangType -> Int -> Name
+            mkConParamVar _ty i = mkName ("x" <> show i)
+        toMatch RecC{} = error "Record constructors (RecC) are not supported yet!"
+        toMatch InfixC{} = error "Infix constructors (InfixC) are not supported yet!"
+        toMatch ForallC{} = error "Existential constructors (ForallC) are not supported yet!"
+        toMatch GadtC{} = error "GADT constructors (GadtC) are not supported yet!"
+        toMatch RecGadtC{} = error "Record GADT constructors (RecGadtC) are not supported yet!"
+
+    fromFoilPatternBody patternCons = FunD fromFoilPatternT
+      [Clause [VarP freshVars, VarP env, VarP pattern, VarP cont] (NormalB (CaseE (VarE pattern) (map toMatch patternCons))) []]
       where
-        toPats :: Int -> [Type] -> [Pat]
-        toPats _ [] = []
-        toPats n ((ConT tyName):types)
-          | tyName == nameT = VarP (mkName ("varName" ++ show n)):toPats (n+1) types -- change to WildP
-          | tyName == patternT = VarP (mkName $ "pat" ++ show n):toPats (n+1) types
-          | tyName == scopeT = VarP (mkName "scopedTerm"):toPats (n+1) types
-          | tyName == termT = VarP (mkName $ "term" ++ show n):toPats (n+1) types
-          | otherwise = VarP (mkName ("x" ++ show n)):toPats (n+1) types
+        freshVars = mkName "freshVars"
+        env = mkName "env"
+        pattern = mkName "pattern"
+        cont = mkName "cont"
 
-        matchBody :: [Type] -> Pat -> Name -> Body
-        matchBody matchTypes (ConP _ _ matchParams) name = NormalB
-          (foldl AppE (ConE name) (zipWith toExpr matchTypes matchParams))
+        toMatch (NormalC conName params) =
+          Match (ConP foilConName [] conParamPatterns) (NormalB conMatchBody) []
+          where
+            conMatchBody = go 1 (VarE freshVars) (VarE env) (ConE conName) params
 
-        toExpr :: Type -> Pat -> Exp
-        toExpr (ConT tyName) (VarP patName)
-          | tyName == termT = AppE (VarE fromFoilTermT) (VarE patName)
-          | otherwise = VarE patName
+            go _i freshVars' env' p [] = AppE (AppE (AppE (VarE cont) freshVars') env') p
+            go i freshVars' env' p ((_bang, ConT tyName) : conParams)
+              | tyName == nameT =
+                  CaseE freshVars'
+                    [ Match (ListP []) (NormalB (AppE (VarE 'error) (LitE (StringL "not enough fresh variables")))) []
+                    , Match (InfixP (VarP var) '(:) (VarP vars))
+                        (NormalB (LetE
+                          [ValD (VarP envi) (NormalB (AppE (AppE (AppE (VarE 'Foil.addNameBinder) (VarE xi)) (VarE var)) env')) []]
+                          (go (i + 1) (VarE vars) (VarE envi) (AppE p (VarE var)) conParams)))
+                        []
+                    ]
+              | tyName == patternT =
+                  AppE
+                    (AppE (AppE (AppE (VarE fromFoilPatternT) freshVars') env') (VarE xi))
+                    (LamE [VarP freshVarsi, VarP envi, VarP xi']
+                      (go (i+1) (VarE freshVarsi) (VarE envi) (AppE p (VarE xi')) conParams))
+              where
+                var = mkName "var"
+                vars = mkName "vars"
+                xi = mkName ("x" <> show i)
+                xi' = mkName ("x" <> show i <> "'")
+                freshVarsi = mkName ("freshVars" <> show i)
+                envi = mkName ("env" <> show i)
+            go i freshVars' env' p (_ : conParams) =
+              go (i + 1) freshVars' env' (AppE p (VarE xi)) conParams
+              where
+                xi = mkName ("x" <> show i)
 
-    fromMatchFoilTerm :: Con -> Match
-    fromMatchFoilTerm (NormalC conName params) =
-      let matchPat = ConP (mkName ("Foil" ++ nameBase conName)) [] (toPats 0 conTypes)
-          conTypes = map snd params
-      in Match matchPat (matchBody conTypes matchPat conName) []
+            foilConName = mkName ("Foil" ++ nameBase conName)
+            conParamPatterns = map VarP conParamVars
 
+            conParamVars = zipWith mkConParamVar params [1..]
+
+            mkConParamVar :: BangType -> Int -> Name
+            mkConParamVar _ i = mkName ("x" <> show i)
+        toMatch RecC{} = error "Record constructors (RecC) are not supported yet!"
+        toMatch InfixC{} = error "Infix constructors (InfixC) are not supported yet!"
+        toMatch ForallC{} = error "Existential constructors (ForallC) are not supported yet!"
+        toMatch GadtC{} = error "GADT constructors (GadtC) are not supported yet!"
+        toMatch RecGadtC{} = error "Record GADT constructors (RecGadtC) are not supported yet!"
+
+    fromFoilScopedBody freshVarsCons = FunD fromFoilScopedT
+      [Clause [VarP freshVars, VarP env, VarP term] (NormalB (CaseE (VarE term) (map toMatch freshVarsCons))) []]
       where
-        toPats :: Int -> [Type] -> [Pat]
-        toPats _ [] = []
-        toPats n ((ConT tyName):types)
-          | tyName == nameT = VarP (mkName ("varName" ++ show n)):toPats (n+1) types
-          | tyName == patternT = VarP (mkName $ "pat" ++ show n):toPats (n+1) types
-          | tyName == scopeT = VarP (mkName "scopedTerm"):toPats (n+1) types
-          | tyName == termT = VarP (mkName $ "term" ++ show n):toPats (n+1) types
-          | otherwise = VarP (mkName ("x" ++ show n)):toPats (n+1) types
+        freshVars = mkName "freshVars"
+        env = mkName "env"
+        term = mkName "term"
 
-        matchBody :: [Type] -> Pat -> Name -> Body
-        matchBody matchTypes (ConP _ _ matchParams) name = NormalB
-          (foldl AppE (ConE name) (zipWith toExpr matchTypes matchParams))
+        toMatch (NormalC conName params) =
+          Match (ConP foilConName [] conParamPatterns) (NormalB conMatchBody) []
+          where
+            conMatchBody = go 1 (VarE freshVars) (VarE env) (ConE conName) params
 
-        toExpr :: Type -> Pat -> Exp
-        toExpr (ConT tyName) (VarP patName)
-          | tyName == nameT = AppE (VarE 'coerce) (VarE patName)
-          | tyName == patternT = AppE (VarE fromFoilPatternT) (VarE patName)
-          | tyName == scopeT = AppE (VarE fromFoilScopedTermT) (VarE patName)
-          | tyName == termT = AppE (VarE fromFoilTermT) (VarE patName)
-          | otherwise = VarE patName
+            go _i _freshVars' _env' p [] = p
+            go i freshVars' env' p ((_bang, ConT tyName) : conParams)
+              | tyName == nameT =
+                  go (i+1) freshVars' env' (AppE p (AppE (AppE (VarE 'Foil.lookupName) (VarE xi)) env')) conParams
+              | tyName == termT =
+                  go (i+1) freshVars' env' (AppE p (AppE (AppE (AppE (VarE fromFoilTermT) (VarE freshVars)) (VarE env)) (VarE xi))) conParams
+              | tyName == scopeT =
+                  go (i+1) freshVars' env' (AppE p (AppE (AppE (AppE (VarE fromFoilScopedT) freshVars') env') (VarE xi))) conParams
+              | tyName == patternT =
+                  AppE
+                    (AppE (AppE (AppE (VarE fromFoilPatternT) freshVars') env') (VarE xi))
+                    (LamE [VarP freshVarsi, VarP envi, VarP xi']
+                      (go (i+1) (VarE freshVarsi) (VarE envi) (AppE p (VarE xi')) conParams))
+              where
+                xi = mkName ("x" <> show i)
+                xi' = mkName ("x" <> show i <> "'")
+                freshVarsi = mkName ("freshVars" <> show i)
+                envi = mkName ("env" <> show i)
+            go i freshVars' env' p (_ : conParams) =
+              go (i + 1) freshVars' env' (AppE p (VarE xi)) conParams
+              where
+                xi = mkName ("x" <> show i)
+
+            foilConName = mkName ("Foil" ++ nameBase conName)
+            conParamPatterns = map VarP conParamVars
+
+            conParamVars = zipWith mkConParamVar params [1..]
+
+            mkConParamVar :: BangType -> Int -> Name
+            mkConParamVar _ty i = mkName ("x" <> show i)
+        toMatch RecC{} = error "Record constructors (RecC) are not supported yet!"
+        toMatch InfixC{} = error "Infix constructors (InfixC) are not supported yet!"
+        toMatch ForallC{} = error "Existential constructors (ForallC) are not supported yet!"
+        toMatch GadtC{} = error "GADT constructors (GadtC) are not supported yet!"
+        toMatch RecGadtC{} = error "Record GADT constructors (RecGadtC) are not supported yet!"
