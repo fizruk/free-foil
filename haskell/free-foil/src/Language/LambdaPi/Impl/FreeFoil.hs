@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds       #-}
+{-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE TypeSynonymInstances       #-}
 {-# LANGUAGE FlexibleInstances       #-}
 {-# LANGUAGE DeriveFunctor   #-}
@@ -37,45 +38,57 @@ import qualified Language.LambdaPi.Syntax.Par    as Raw
 import qualified Language.LambdaPi.Syntax.Print  as Raw
 import           System.Exit                     (exitFailure)
 
--- | The signature 'Bifunctor' for the \(\lambda\Pi\) with pairs.
+-- | The signature 'Bifunctor' for the \(\lambda\Pi\).
 data LambdaPiF scope term
   = AppF term term        -- ^ Application: \((t_1 \; t_2)\)
   | LamF scope            -- ^ Abstraction: \(\lambda x. t\)
   | PiF term scope        -- ^ Dependent function type: \(\prod_{x : T_1} T_2\)
-  | PairF term term       -- ^ Pair: \(\langle t_1, t_2 \rangle\)
-  | FirstF term           -- ^ First projection: \(\pi_1(t)\)
-  | SecondF term          -- ^ Second projection: \(\pi_2(t)\)
-  | ProductF term term    -- ^ Product type (non-dependent): \(T_1 \times T_2\)
   | UniverseF             -- ^ Universe (type of types): \(\mathcal{U}\)
   deriving (Eq, Show, Functor)
 deriveBifunctor ''LambdaPiF
 
--- | \(\lambda\Pi\)-terms in scope @n@, freely generated from the signature 'LambdaPiF'.
-type LambdaPi n = AST LambdaPiF n
+-- | The signature 'Bifunctor' for pairs.
+data PairF scope term
+  = PairF term term       -- ^ Pair: \(\langle t_1, t_2 \rangle\)
+  | FirstF term           -- ^ First projection: \(\pi_1(t)\)
+  | SecondF term          -- ^ Second projection: \(\pi_2(t)\)
+  | ProductF term term    -- ^ Product type (non-dependent): \(T_1 \times T_2\)
+  deriving (Eq, Show, Functor)
+deriveBifunctor ''PairF
+
+-- | Sum of signature bifunctors.
+data (f :+: g) scope term
+  = InL (f scope term)
+  | InR (g scope term)
+  deriving (Eq, Show, Functor)
+deriveBifunctor ''(:+:)
+
+-- | \(\lambda\Pi\)-terms in scope @n@, freely generated from the sum of signatures 'LambdaPiF' and 'PairF'.
+type LambdaPi n = AST (LambdaPiF :+: PairF) n
 
 pattern App :: LambdaPi n -> LambdaPi n -> LambdaPi n
-pattern App fun arg = Node (AppF fun arg)
+pattern App fun arg = Node (InL (AppF fun arg))
 
 pattern Lam :: Foil.NameBinder n l -> LambdaPi l -> LambdaPi n
-pattern Lam binder body = Node (LamF (ScopedAST binder body))
+pattern Lam binder body = Node (InL (LamF (ScopedAST binder body)))
 
 pattern Pi :: Foil.NameBinder n l -> LambdaPi n -> LambdaPi l -> LambdaPi n
-pattern Pi binder a b = Node (PiF a (ScopedAST binder b))
+pattern Pi binder a b = Node (InL (PiF a (ScopedAST binder b)))
 
 pattern Pair :: LambdaPi n -> LambdaPi n -> LambdaPi n
-pattern Pair l r = Node (PairF l r)
+pattern Pair l r = Node (InR (PairF l r))
 
 pattern First :: LambdaPi n -> LambdaPi n
-pattern First t = Node (FirstF t)
+pattern First t = Node (InR (FirstF t))
 
 pattern Second :: LambdaPi n -> LambdaPi n
-pattern Second t = Node (SecondF t)
+pattern Second t = Node (InR (SecondF t))
 
 pattern Product :: LambdaPi n -> LambdaPi n -> LambdaPi n
-pattern Product l r = Node (ProductF l r)
+pattern Product l r = Node (InR (ProductF l r))
 
 pattern Universe :: LambdaPi n
-pattern Universe = Node UniverseF
+pattern Universe = Node (InL UniverseF)
 
 {-# COMPLETE Var, App, Lam, Pi, Pair, First, Second, Product, Universe #-}
 
