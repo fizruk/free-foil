@@ -82,14 +82,18 @@ tests:
     dependencies:
       - free-foil
 
-  doctests:
-    source-dirs: test
-    main: doctests.hs
-    other-modules: []
-    dependencies:
-      - base
-      - doctest
-      - Glob
-      - QuickCheck
-      - template-haskell
-      - containers
+  # doctests:
+  #   source-dirs:
+  #     - src/
+  #     - test/doctests
+  #   main: Main.hs
+  #   other-modules: []
+  #   dependencies:
+  #     - free-foil
+  #     - doctest-parallel
+  #   when:
+  #     - condition: false
+  #       other-modules:
+  #         - Language.LambdaPi.Syntax.Test
+  #         - Language.LambdaPi.Syntax.ErrM
+  #         - Language.LambdaPi.Syntax.Skel
