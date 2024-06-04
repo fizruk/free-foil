@@ -139,8 +139,11 @@ assertDistinct _ = unsafeDistinct
 -- the scope, it can be used immediately, without renaming.
 withRefreshed
   :: Distinct o
-  => Scope o -> Name i
-  -> (forall o'. DExt o o' => NameBinder o o' -> r) -> r
+  => Scope o    -- ^ Ambient scope.
+  -> Name i     -- ^ Name to refresh (if it clashes with the ambient scope).
+  -> (forall o'. DExt o o' => NameBinder o o' -> r)
+  -- ^ Continuation, accepting the refreshed name.
+  -> r
 withRefreshed scope@(UnsafeScope rawScope) name@(UnsafeName rawName) cont
   | IntSet.member rawName rawScope = withFresh scope cont
   | otherwise = unsafeAssertFresh (UnsafeNameBinder name) cont
@@ -161,7 +164,10 @@ class Sinkable (e :: S -> Type) where
   -- proves to the compiler that the expression is indeed
   -- 'Sinkable'. However, instead of this implementation, 'sink'
   -- should be used at all call sites for efficiency.
-  sinkabilityProof :: (Name n -> Name l) -> e n -> e l
+  sinkabilityProof
+    :: (Name n -> Name l)   -- ^ Map names from scope @n@ to a (possibly larger) scope @l@.
+    -> e n                  -- ^ Expression with free variables in scope @n@.
+    -> e l
 
 -- | Sinking a 'Name' is as simple as applying the renaming.
 instance Sinkable Name where
@@ -181,9 +187,12 @@ sink = unsafeCoerce
 -- and is both a generalization of 'extendRenamingNameBinder' and an efficient implementation of 'coSinkabilityProof'.
 extendRenaming
   :: CoSinkable pattern
-  => (Name n -> Name n')
-  -> pattern n l
-  -> (forall l'. (Name l -> Name l') -> pattern n' l' -> r ) -> r
+  => (Name n -> Name n')  -- ^ Map names from scope @n@ to a (possibly larger) scope @n'@.
+  -> pattern n l          -- ^ A pattern that extends scope @n@ to another scope @l@.
+  -> (forall l'. (Name l -> Name l') -> pattern n' l' -> r )
+  -- ^ A continuation, accepting an extended renaming from @l@ to @l'@ (which itself extends @n'@)
+  -- and a (possibly refreshed) pattern that extends @n'@ to @l'@.
+  -> r
 extendRenaming _ pattern cont =
   cont unsafeCoerce (unsafeCoerce pattern)
 
@@ -199,9 +208,12 @@ extendRenaming _ pattern cont =
 -- This function is used to go under binders when implementing 'sinkabilityProof'.
 -- A generalization of this function is 'extendRenaming' (which is an efficient version of 'coSinkabilityProof').
 extendRenamingNameBinder
-  :: (Name n -> Name n')
-  -> NameBinder n l
-  -> (forall l'. (Name l -> Name l') -> NameBinder n' l' -> r ) -> r
+  :: (Name n -> Name n')  -- ^ Map names from scope @n@ to a (possibly larger) scope @n'@.
+  -> NameBinder n l       -- ^ A name binder that extends scope @n@ to another scope @l@.
+  -> (forall l'. (Name l -> Name l') -> NameBinder n' l' -> r )
+  -- ^ A continuation, accepting an extended renaming from @l@ to @l'@ (which itself extends @n'@)
+  -- and a (possibly refreshed) binder that extends @n'@ to @l'@.
+  -> r
 extendRenamingNameBinder _ (UnsafeNameBinder name) cont =
   cont unsafeCoerce (UnsafeNameBinder name)
 
@@ -215,9 +227,12 @@ class CoSinkable (pattern :: S -> S -> Type) where
   -- 'CoSinkable'. However, instead of this implementation,
   -- 'extendRenaming' should be used at all call sites for efficiency.
   coSinkabilityProof
-    :: (Name n -> Name n')
-    -> pattern n l
-    -> (forall l'. (Name l -> Name l') -> pattern n' l' -> r) -> r
+    :: (Name n -> Name n')  -- ^ Map names from scope @n@ to a (possibly larger) scope @n'@.
+    -> pattern n l          -- ^ A pattern that extends scope @n@ to another scope @l@.
+    -> (forall l'. (Name l -> Name l') -> pattern n' l' -> r)
+    -- ^ A continuation, accepting an extended renaming from @l@ to @l'@ (which itself extends @n'@)
+    -- and a (possibly refreshed) pattern that extends @n'@ to @l'@.
+    -> r
 
 instance CoSinkable NameBinder where
   coSinkabilityProof _rename (UnsafeNameBinder name) cont =
