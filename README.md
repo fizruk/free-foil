@@ -17,7 +17,9 @@ techniques for free generation of the foil. The details are presented in the pap
 
 ## Module structure
 
-The code is organized into multiple modules as follows:
+### Haskell
+
+The Haskell code is organized into multiple modules as follows:
 
 - [`Control.Monad.Foil`](https://fizruk.github.io/free-foil/haddock/free-foil-0.0.1/Control-Monad-Foil.html) provides basic definitions for the foil[^1], including safe scopes, sinking, name maps, and scope constraints. In addition to the standard definitions, we contribute [`CoSinkable`](https://fizruk.github.io/free-foil/haddock/free-foil-0.0.1/Control-Monad-Foil.html#t:CoSinkable) class (dual to [`Sinkable`](https://fizruk.github.io/free-foil/haddock/free-foil-0.0.1/Control-Monad-Foil.html#t:Sinkable), for patterns that generalize `NameBinder`) and a general total [`NameMap`](https://fizruk.github.io/free-foil/haddock/free-foil-0.0.1/Control-Monad-Foil.html#g:4) which is useful for some implementations (e.g. conversion functions).
 
@@ -32,6 +34,10 @@ The code is organized into multiple modules as follows:
 - [`Language.LambdaPi.Impl.FoilTH`](https://fizruk.github.io/free-foil/haddock/free-foil-0.0.1/Language-LambdaPi-Impl-FoilTH.html) defines a simple interpreter for λΠ-calculus with pairs, using Template Haskell to generate a large portion of the code.
 
 - [`Language.LambdaPi.Impl.FreeFoil`](https://fizruk.github.io/free-foil/haddock/free-foil-0.0.1/Language-LambdaPi-Impl-FoilTH.html) defines a simple interpreter for λΠ-calculus with pairs, using the free foil approach.
+
+### Scala
+
+Scala implementation is not documented yet.
 
 [^1]: Dougal Maclaurin, Alexey Radul, and Adam Paszke. 2023. _The Foil: Capture-Avoiding Substitution With No Sharp Edges._ In Proceedings of the 34th Symposium on Implementation and Application of Functional Languages (IFL '22). Association for Computing Machinery, New York, NY, USA, Article 8, 1–10. <https://doi.org/10.1145/3587216.3587224>
 [^2]: Nikolai Kudasov, Renata Shakirova, Egor Shalagin, Karina Tyulebaeva. 2024. _Free Foil: Generating Efficient and Scope-Safe Abstract Syntax._ To appear in ICCQ 2024. <https://arxiv.org/abs/2405.16384>
