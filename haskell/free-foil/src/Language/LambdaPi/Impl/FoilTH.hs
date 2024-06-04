@@ -1,3 +1,4 @@
+-- {-# OPTIONS_GHC -ddump-splices #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -11,6 +12,7 @@
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# OPTIONS_GHC -fno-warn-unused-binds  #-}
+{-# OPTIONS_GHC -fno-warn-unused-matches  #-}
 module Language.LambdaPi.Impl.FoilTH where
 
 
@@ -21,14 +23,13 @@ import qualified Language.LambdaPi.Syntax.Abs as Raw
 
 -- ** Scope-safe AST
 mkFoilData ''Raw.Term ''Raw.VarIdent ''Raw.ScopedTerm ''Raw.Pattern
+mkInstancesFoil ''Raw.Term ''Raw.VarIdent ''Raw.ScopedTerm ''Raw.Pattern
 
 -- ** Conversion from raw to scope-safe AST
 mkToFoil ''Raw.Term ''Raw.VarIdent ''Raw.ScopedTerm ''Raw.Pattern
 
 -- ** Conversion from scope-safe to raw AST
 mkFromFoil ''Raw.Term ''Raw.VarIdent ''Raw.ScopedTerm ''Raw.Pattern
-
--- mkInstancesFoil ''Raw.Term ''Raw.VarIdent ''Raw.ScopedTerm ''Raw.Pattern
 
 -- substitute :: FoilTerm o -> FoilTerm i -> FoilTerm o
 -- substitute substTerm = \case
