@@ -1,4 +1,3 @@
--- {-# OPTIONS_GHC -ddump-splices #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}

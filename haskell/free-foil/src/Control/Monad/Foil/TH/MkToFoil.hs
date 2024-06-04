@@ -226,8 +226,12 @@ mkToFoilTerm termT nameT scopeT patternT = do
           -> r
         |]
 
-  -- addModFinalizer $ putDoc (DeclDoc toFoilTermT)
-    -- "Refresh (if needed) bound variables introduced in a pattern.\nThis is a more flexible version of 'Control.Monad.Foil.withRefreshed'."
+  addModFinalizer $ putDoc (DeclDoc toFoilTermT)
+    "Convert a raw term into a scope-safe term."
+  addModFinalizer $ putDoc (DeclDoc toFoilPatternT)
+    "Convert a raw pattern into a scope-safe pattern."
+  addModFinalizer $ putDoc (DeclDoc toFoilScopedT)
+    "Convert a raw scoped term into a scope-safe scoped term."
 
   return
     [ toFoilTermSignature
