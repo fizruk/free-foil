@@ -11,12 +11,10 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeApplications           #-}
-{-# OPTIONS_GHC -Wno-name-shadowing #-} -- Убрать
-{-# OPTIONS_GHC -Wno-incomplete-patterns #-} -- Убрать
+{-# OPTIONS_GHC -fno-warn-unused-binds  #-}
 module Language.LambdaPi.Impl.FoilTH where
 
 
-import           Control.Monad.Foil.Internal
 import           Control.Monad.Foil.TH
 import qualified Language.LambdaPi.Syntax.Abs as Raw
 
