@@ -18,10 +18,16 @@
 -- 1. Scope-safe AST for \(\lambda\Pi\)-terms.
 -- 2. Correct capture-avoiding substitution (see 'substitute').
 -- 3. Conversion between scope-safe and raw term representation (the latter is generated via BNFC), see 'toFoilTerm' and 'fromFoilTerm'.
--- 4. Computation of weak head normal form (WHNF) and normal form (NF), see 'whnf' and 'nf'.
--- 5. Entry point, gluing everything together. See 'defaultMain'.
+-- 4. Helper functions for patterns. See 'extendScopeFoilPattern' and 'withRefreshedFoilPattern'.
+-- 5. Computation of weak head normal form (WHNF) and normal form (NF), see 'whnf' and 'nf'.
+-- 6. Entry point, gluing everything together. See 'defaultMain'.
 --
 -- This implementation supports (nested) patterns for pairs.
+--
+-- This is a baseline implementation, see other examples for partial automation:
+--
+-- 1. "Language.LambdaPi.Impl.FreeFoil" allows to define substitution (and, in theory, more complicated algorithms) once for a large class of syntax with binders.
+-- 2. "Language.LambdaPi.Impl.FoilTH" works well with patterns and generates conversion functions and helpers for patterns.
 module Language.LambdaPi.Impl.Foil where
 
 import           Control.Monad.Foil
