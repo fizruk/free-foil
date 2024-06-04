@@ -2,7 +2,7 @@
 
 [![Haddock](<https://shields.io/badge/Haddock%20(main)-Code%20documentation-informational>)](https://fizruk.github.io/free-foil/haddock/)
 
-Generating Efficient and Scope-Safe Abstract Syntax with Free (Scoped) Monads and Template Haskell.
+Generating Efficient and Scope-Safe Abstract Syntax with Free (Scoped) Monads and Template Haskell (with a partial port to Scala).
 
 ## About
 
@@ -41,6 +41,20 @@ The Haskell code is organized into multiple modules as follows:
 ### Scala
 
 Scala implementation is not documented yet.
+
+### What is not (yet) in this project
+
+In Haskell:
+
+1. We do not (yet) provide α-equivalence for scopes. That said, we do have a tested (but undocumented) implementation for the foil in the benchmarks (see [`unsafeAeq`](https://github.com/KarinaTyulebaeva/lambda-n-ways/blob/09a995f9644f6bf29db1803eef004ddd382b823d/lib/FreeScoped/Foil.hs#L336-L401)).
+2. We do not (yet) demonstrate an implementation of the typechecker for λΠ in these representations. While it is largely straightforward the main non-trivial part is the equality for the Π-types, which relies on the α-equivalence from the previous item.
+3. The free foil does not (yet) support patterns, only single-variable binders. While we think it should be sufficient to parametrize [`AST`](https://fizruk.github.io/free-foil/haddock/free-foil-0.0.1/Control-Monad-Free-Foil.html#t:AST) and [`ScopedAST`](https://fizruk.github.io/free-foil/haddock/free-foil-0.0.1/Control-Monad-Free-Foil.html#t:ScopedAST) with a `pattern` type constructor (e.g. literally the same [`Pattern`](https://fizruk.github.io/free-foil/haddock/free-foil-0.0.1/Language-LambdaPi-Impl-Foil.html#t:Pattern) type used in the foil examples), we did not check if everything generalizes well enough.
+4. Template Haskell generates the foil, but not (yet) free foil. We believe there should be no problems in implementing TH-generation for the free foil, achieving the best of both worlds: generating the signature bifunctor together with conversion functions while getting [`substitute`](https://fizruk.github.io/free-foil/haddock/free-foil-0.0.1/Control-Monad-Free-Foil.html#v:substitute) (and, potentially, other useful algorithms[^3]) for free (except, as our benchmarks show, a moderate slowdown in performance should be expected compared to the foil).
+5. We do not (yet) provide strict versions of the foil and free foil here. The benchmarks, however, do implement these variations.
+6. We do not (yet) generate pattern synonyms for the foil with Template Haskell, however, this can be done easily, similarly to [this implementation](https://github.com/rzk-lang/rzk/blob/013b4126adeefe69dc757e38e18cd17a79b5a0fc/rzk/src/Free/Scoped/TH.hs) for free scoped monad.
+7. We derive [`CoSinkable`](https://fizruk.github.io/free-foil/haddock/free-foil-0.0.1/Control-Monad-Foil.html#t:CoSinkable) and [`Sinkable`](https://fizruk.github.io/free-foil/haddock/free-foil-0.0.1/Control-Monad-Foil.html#t:Sinkable) instances via Template Haskell at the moment. However, a safer and more flexible derivation should be possible via `GHC.Generics`.
+8. Many functions, including [`rbind`](https://fizruk.github.io/free-foil/haddock/free-foil-0.0.1/Control-Monad-Foil-Relative.html#v:rbind) take in an extra argument of type `Scope n`, which is meant to be the runtime counterpart of the (phantom) type parameter `n :: S`. It might be possible to use [`singletons`](https://hackage.haskell.org/package/singletons) or a similar technique to avoid explicit passing of this argument, making the interface somewhat cleaner. However, since this would change the interface a lot, we do not plan on implementing this approach here.
+9. Dealing with scopes generically might enable generic delayed substitution, which plays a big part in normalization by evaluation (NbE) algorithms (which outperform naïve substitution-based evaluation). It should be possible to provide a generic framework for closures of scoped terms and delayed substitutions, but we have not yet investigated that fully.
 
 [^1]: Dougal Maclaurin, Alexey Radul, and Adam Paszke. 2023. _The Foil: Capture-Avoiding Substitution With No Sharp Edges._ In Proceedings of the 34th Symposium on Implementation and Application of Functional Languages (IFL '22). Association for Computing Machinery, New York, NY, USA, Article 8, 1–10. <https://doi.org/10.1145/3587216.3587224>
 [^2]: Nikolai Kudasov, Renata Shakirova, Egor Shalagin, Karina Tyulebaeva. 2024. _Free Foil: Generating Efficient and Scope-Safe Abstract Syntax._ To appear in ICCQ 2024. <https://arxiv.org/abs/2405.16384>
