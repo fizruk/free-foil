@@ -1,5 +1,6 @@
 # Free Foil
 
+[![Haskell (build, test, haddock)](https://github.com/fizruk/free-foil/actions/workflows/haskell.yml/badge.svg)](https://github.com/fizruk/free-foil/actions/workflows/haskell.yml)
 [![Haddock](<https://shields.io/badge/Haddock%20(main)-Code%20documentation-informational>)](https://fizruk.github.io/free-foil/haddock/)
 
 Generating Efficient and Scope-Safe Abstract Syntax with Free (Scoped) Monads and Template Haskell (with a partial port to Scala).
