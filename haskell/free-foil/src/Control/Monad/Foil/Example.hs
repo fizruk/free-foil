@@ -10,6 +10,9 @@ import           Control.DeepSeq
 import           Control.Monad.Foil
 import           Control.Monad.Foil.Relative
 
+-- $setup
+-- >>> import Control.Monad.Foil
+
 -- | Untyped \(\lambda\)-terms in scope @n@.
 data Expr n where
   -- | Variables are names in scope @n@: \(x\)

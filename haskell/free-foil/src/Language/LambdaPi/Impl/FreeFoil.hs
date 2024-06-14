@@ -1,12 +1,12 @@
-{-# LANGUAGE DataKinds       #-}
-{-# LANGUAGE TypeOperators       #-}
-{-# LANGUAGE TypeSynonymInstances       #-}
-{-# LANGUAGE FlexibleInstances       #-}
-{-# LANGUAGE DeriveFunctor   #-}
-{-# LANGUAGE GADTs           #-}
-{-# LANGUAGE LambdaCase      #-}
-{-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE DeriveFunctor        #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE PatternSynonyms      #-}
+{-# LANGUAGE TemplateHaskell      #-}
+{-# LANGUAGE TypeOperators        #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 -- | Free foil implementation of the \(\lambda\Pi\)-calculus (with pairs).
 --
 -- Free foil provides the following:
@@ -25,18 +25,22 @@
 -- so only wildcard patterns and variable patterns are handled in this implementation.
 module Language.LambdaPi.Impl.FreeFoil where
 
-import Data.String (IsString(..))
 import qualified Control.Monad.Foil              as Foil
 import           Control.Monad.Free.Foil
 import           Data.Bifunctor.TH
 import           Data.Map                        (Map)
 import qualified Data.Map                        as Map
+import           Data.String                     (IsString (..))
 import qualified Language.LambdaPi.Syntax.Abs    as Raw
 import qualified Language.LambdaPi.Syntax.Layout as Raw
 import qualified Language.LambdaPi.Syntax.Lex    as Raw
 import qualified Language.LambdaPi.Syntax.Par    as Raw
 import qualified Language.LambdaPi.Syntax.Print  as Raw
 import           System.Exit                     (exitFailure)
+
+-- $setup
+-- >>> import qualified Control.Monad.Foil as Foil
+-- >>> :set -XOverloadedStrings
 
 -- | The signature 'Bifunctor' for the \(\lambda\Pi\).
 data LambdaPiF scope term
@@ -121,11 +125,11 @@ whnf scope = \case
   First t ->
     case whnf scope t of
       Pair l _r -> whnf scope l
-      t' -> First t'
+      t'        -> First t'
   Second t ->
     case whnf scope t of
       Pair _l r -> whnf scope r
-      t' -> Second t'
+      t'        -> Second t'
   t -> t
 
 -- | Convert a raw \(\lambda\)-abstraction into a scope-safe \(\lambda\Pi\)-term.
