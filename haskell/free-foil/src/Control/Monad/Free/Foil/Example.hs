@@ -13,6 +13,9 @@ import           Control.Monad.Foil
 import           Control.Monad.Free.Foil
 import           Data.Bifunctor.TH
 
+-- $setup
+-- >>> import Control.Monad.Foil
+
 -- | Untyped \(\lambda\)-terms in scope @n@.
 data ExprF scope term
   -- | Application of one term to another: \((t_1, t_2)\)

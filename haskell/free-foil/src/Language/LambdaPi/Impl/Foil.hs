@@ -9,7 +9,6 @@
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE UndecidableInstances  #-}
 -- | Foil implementation of the \(\lambda\Pi\)-calculus (with pairs).
 --
@@ -65,6 +64,9 @@ data Expr n where
   -- | Universe (type of types): \(\mathcal{U}\)
   UniverseE :: Expr n
 
+instance Show (Expr VoidS) where
+  show = ppExpr
+
 -- | Patterns.
 data Pattern n l where
   -- | Wildcard pattern: \(_\)
@@ -96,14 +98,14 @@ ppName name = "x" <> show (nameId name)
 
 -- | Pretty-print a \(\lambda\Pi\)-term directly (without converting to raw term).
 --
--- >>> putStrLn $ ppExpr identity
--- λx1. x1
--- >>> putStrLn $ ppExpr two
--- λx1. λx2. x1(x1(x2))
+-- >>> ppExpr identity
+-- "\955x0. x0"
+-- >>> ppExpr (churchN 2)
+-- "\955x0. \955x1. x0 (x0 (x1))"
 ppExpr :: Expr n -> String
 ppExpr = \case
   VarE name     -> ppName name
-  AppE e1 e2    -> ppExpr e1 ++ "(" ++ ppExpr e2 ++ ")"
+  AppE e1 e2    -> ppExpr e1 ++ " (" ++ ppExpr e2 ++ ")"
   LamE pat body -> "λ" ++ ppPattern pat ++ ". " ++ ppExpr body
   PiE pat a b -> "Π" ++ "(" ++ ppPattern pat ++ " : " ++ ppExpr a ++ "), " ++ ppExpr b
   PairE l r -> "(" ++ ppExpr l ++ "," ++ ppExpr r ++ ")"
@@ -342,3 +344,32 @@ defaultMain = do
       putStrLn err
       exitFailure
     Right program -> interpretProgram program
+
+-- | A helper for constructing \(\lambda\)-abstractions.
+lam :: Distinct n => Scope n -> (forall l. DExt n l => Scope l -> NameBinder n l -> Expr l) -> Expr n
+lam scope mkBody = withFresh scope $ \x ->
+  let scope' = extendScope x scope
+   in LamE (PatternVar x) (mkBody scope' x)
+
+-- | An identity function as a \(\lambda\)-term:
+--
+-- >>> identity
+-- λx0. x0
+identity :: Expr VoidS
+identity = lam emptyScope $ \_ nx ->
+  VarE (nameOf nx)
+
+-- | Church-encoding of a natural number \(n\).
+--
+-- >>> churchN 0
+-- λx0. λx1. x1
+--
+-- >>> churchN 3
+-- λx0. λx1. x0 (x0 (x0 (x1)))
+churchN :: Int -> Expr VoidS
+churchN n =
+  lam emptyScope $ \sx nx ->
+    lam sx $ \_sxy ny ->
+      let x = sink (VarE (nameOf nx))
+          y = VarE (nameOf ny)
+       in iterate (AppE x) y !! n
