@@ -29,6 +29,7 @@ source-repository head
 custom-setup
   setup-depends:
       Cabal >=2.4.0.1 && <4.0
+    , PyF
     , base >=4.11.0.0 && <5.0
     , process >=1.6.3.0
 
@@ -91,6 +92,30 @@ executable lambda-pi
     , bifunctors
     , containers
     , deepseq
+    , free-foil
+    , template-haskell
+    , text >=1.2.3.1
+  default-language: Haskell2010
+
+test-suite doctests
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs:
+      src/
+      test/doctests
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -optP-Wno-nonportable-include-path
+  build-tools:
+      alex >=3.2.4
+    , happy >=1.19.9
+  build-tool-depends:
+      BNFC:bnfc >=2.9.4.1
+  build-depends:
+      array >=0.5.3.0
+    , base >=4.7 && <5
+    , bifunctors
+    , containers
+    , deepseq
+    , doctest-parallel
     , free-foil
     , template-haskell
     , text >=1.2.3.1
