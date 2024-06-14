@@ -1,6 +1,9 @@
-haskell/free-foil/src/Language/**/Test.hs
-haskell/free-foil/src/Language/**/Skel.hs
-haskell/free-foil/src/Language/**/ErrM.hs
+haskell/free-foil/src/Language/LambdaPi/Syntax/Lex.hs
+haskell/free-foil/src/Language/LambdaPi/Syntax/Par.hs
+haskell/free-foil/src/Language/LambdaPi/Syntax/Test
+haskell/free-foil/src/Language/LambdaPi/Syntax/Test.hs
+haskell/free-foil/src/Language/LambdaPi/Syntax/Skel.hs
+haskell/free-foil/src/Language/LambdaPi/Syntax/ErrM.hs
 
 scala/free-foil/src/main/scala/.scala-build/
 
