@@ -37,21 +37,12 @@ jobs:
             haskell/lambda-pi/src/Language/LambdaPi/Syntax/Lex.hs
             haskell/lambda-pi/src/Language/LambdaPi/Syntax/Par.hs
 
-      - name: Check Syntax files exist
-        if: steps.restore-syntax-files.outputs.cache-hit == 'true'
-        shell: bash
-        id: check-syntax-files
-        run: |
-          source scripts/lib.sh
-          check_syntax_files_exist
-          printf "SYNTAX_FILES_EXIST=$SYNTAX_FILES_EXIST\n" >> $GITHUB_OUTPUT
-
       - name: 🧰 Setup Stack
         uses: freckle/stack-action@v5
         with:
           stack-build-arguments: --pedantic
           stack-build-arguments-build: --dry-run
-          stack-build-arguments-test: --ghc-options -O2 ${{ steps.check-syntax-files.outputs.SYNTAX_FILES_EXIST == 'true' && ' ' || '--reconfigure --force-dirty --ghc-options -fforce-recomp' }}
+          stack-build-arguments-test: --ghc-options -O2 ${{ steps.restore-syntax-files.outputs.cache-hit == 'true' && ' ' || '--reconfigure --force-dirty --ghc-options -fforce-recomp' }}
 
       - name: Save Syntax files
         uses: actions/cache/save@v4
