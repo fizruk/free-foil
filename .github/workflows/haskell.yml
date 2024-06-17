@@ -32,10 +32,10 @@ jobs:
         id: restore-syntax-files
         uses: actions/cache/restore@v4
         with:
-          key: syntax-files-${{ runner.os }}-${{ hashFiles(format('{0}.cf', 'haskell/free-foil/src/Language/LambdaPi/Syntax/'), 'stack.yaml.lock') }}
+          key: syntax-files-${{ runner.os }}-${{ hashFiles(format('{0}.cf', 'haskell/lambda-pi/src/Language/LambdaPi/Syntax/'), 'stack.yaml.lock') }}
           path: |
-            haskell/free-foil/src/Language/LambdaPi/Syntax/Lex.hs
-            haskell/free-foil/src/Language/LambdaPi/Syntax/Par.hs
+            haskell/lambda-pi/src/Language/LambdaPi/Syntax/Lex.hs
+            haskell/lambda-pi/src/Language/LambdaPi/Syntax/Par.hs
 
       - name: Check Syntax files exist
         if: steps.restore-syntax-files.outputs.cache-hit == 'true'
@@ -57,10 +57,10 @@ jobs:
         uses: actions/cache/save@v4
         if: steps.restore-syntax-files.outputs.cache-hit != 'true'
         with:
-          key: syntax-files-${{ runner.os }}-${{ hashFiles(format('{0}.cf', 'haskell/free-foil/src/Language/LambdaPi/Syntax/'), 'stack.yaml.lock') }}
+          key: syntax-files-${{ runner.os }}-${{ hashFiles(format('{0}.cf', 'haskell/lambda-pi/src/Language/LambdaPi/Syntax/'), 'stack.yaml.lock') }}
           path: |
-            haskell/free-foil/src/Language/LambdaPi/Syntax/Lex.hs
-            haskell/free-foil/src/Language/LambdaPi/Syntax/Par.hs
+            haskell/lambda-pi/src/Language/LambdaPi/Syntax/Lex.hs
+            haskell/lambda-pi/src/Language/LambdaPi/Syntax/Par.hs
 
   docs:
     needs: [tests]

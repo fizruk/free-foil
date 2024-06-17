@@ -1,4 +1,4 @@
-name: free-foil
+name: lambda-pi
 version: 0.0.1
 github: "fizruk/free-foil"
 license: BSD3
@@ -9,14 +9,27 @@ copyright: "2023–2024 Nikolai Kudasov, Renata Shakirova, Egor Shalagin, Karina
 extra-source-files:
   - README.md
   - LICENSE
+  - grammar/LambdaPi/Syntax.cf
 
-synopsis: Efficient Type-Safe Capture-Avoiding Substitution for Free (Scoped Monads)
-category: Parsing # same as BNFC
+synopsis: λΠ-calculus implemented in a few different ways.
+category: Language
 
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
 description: Please see the README on GitHub at <https://github.com/fizruk/free-foil#readme>
+
+custom-setup:
+  dependencies:
+    base: ">= 4.11.0.0 && < 5.0"
+    Cabal: ">= 2.4.0.1 && < 4.0"
+    process: ">= 1.6.3.0"
+    PyF:
+
+build-tools:
+  alex: ">= 3.2.4"
+  happy: ">= 1.19.9"
+  BNFC:bnfc: ">= 2.9.4.1"
 
 dependencies:
   array: ">= 0.5.3.0"
@@ -26,6 +39,7 @@ dependencies:
   bifunctors:
   template-haskell:
   deepseq:
+  free-foil:
 
 ghc-options:
   - -Wall
@@ -41,6 +55,23 @@ ghc-options:
 
 library:
   source-dirs: src
+  when:
+    - condition: false
+      other-modules:
+        - Language.LambdaPi.Syntax.Test
+        - Language.LambdaPi.Syntax.ErrM
+        - Language.LambdaPi.Syntax.Skel
+
+executables:
+  lambda-pi:
+    main: LambdaPi.hs
+    source-dirs: app
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+    dependencies:
+      - lambda-pi
 
 tests:
   spec:
@@ -51,7 +82,7 @@ tests:
       - -rtsopts
       - -with-rtsopts=-N
     dependencies:
-      - free-foil
+      - lambda-pi
 
   doctests:
     source-dirs:
@@ -60,5 +91,11 @@ tests:
     main: Main.hs
     other-modules: []
     dependencies:
-      - free-foil
+      - lambda-pi
       - doctest-parallel
+    when:
+      - condition: false
+        other-modules:
+          - Language.LambdaPi.Syntax.Test
+          - Language.LambdaPi.Syntax.ErrM
+          - Language.LambdaPi.Syntax.Skel
