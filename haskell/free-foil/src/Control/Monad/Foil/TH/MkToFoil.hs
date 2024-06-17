@@ -13,6 +13,7 @@ import qualified Control.Monad.Foil  as Foil
 import           Data.Maybe          (catMaybes)
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Control.Monad.Foil.TH.Util
 
 -- | Generate conversion functions from raw to scope-safe representation.
 mkToFoil
@@ -37,11 +38,18 @@ mkExtendScopeFoilPattern
   -> Name -- ^ Type name for raw patterns.
   -> Q [Dec]
 mkExtendScopeFoilPattern nameT patternT = do
-  TyConI (DataD _ctx _name _tvars _kind patternCons _deriv) <- reify patternT
+  n <- newName "n"
+  l <- newName "l"
+  TyConI (DataD _ctx _name patternTVars _kind patternCons _deriv) <- reify patternT
 
-  extendScopePatternSignature <-
-    SigD extendScopePatternFunName <$>
-      [t| forall n l. $(return (ConT foilPatternT)) n l -> Foil.Scope n -> Foil.Scope l |]
+  let extendScopePatternSignature =
+        SigD extendScopePatternFunName $
+          ForallT ([ PlainTV name SpecifiedSpec | name <- (map tvarName patternTVars ++ [n, l]) ]) []
+            (AppT (AppT ArrowT
+              (PeelConT foilPatternT [ VarT name | name <- (map tvarName patternTVars ++ [n, l]) ]))
+              (AppT (AppT ArrowT
+                (AppT (ConT ''Foil.Scope) (VarT n)))
+                (AppT (ConT ''Foil.Scope) (VarT l))))
 
   composefun <- [e| (.) |]
   idfun <- [e| id |]
@@ -76,7 +84,7 @@ mkExtendScopeFoilPattern nameT patternT = do
             conParamVars = zipWith mkConParamVar conParams [1..]
 
             mkConParamVar :: BangType -> Int -> Maybe (Name, Exp)
-            mkConParamVar (_bang, ConT tyName) i
+            mkConParamVar (_bang, PeelConT tyName _tyParams) i
               | tyName == nameT    = Just (x, AppE extendScopeFun (VarE x))
               | tyName == patternT = Just (x, AppE (VarE extendScopePatternFunName) (VarE x))
               where
@@ -94,20 +102,40 @@ mkWithRefreshedFoilPattern
   -> Name -- ^ Type name for raw patterns.
   -> Q [Dec]
 mkWithRefreshedFoilPattern nameT patternT = do
-  TyConI (DataD _ctx _name _tvars _kind patternCons _deriv) <- reify patternT
+  o <- newName "o"
+  o' <- newName "o'"
+  e <- newName "e"
+  n <- newName "n"
+  l <- newName "l"
+  r <- newName "r"
+  TyConI (DataD _ctx _name patternTVars _kind patternCons _deriv) <- reify patternT
 
-  withRefreshedFoilPatternSignature <-
-    SigD withRefreshedFoilPatternFunName <$>
-      [t| forall o e n l r.
-            ( Foil.Distinct o, Foil.InjectName e, Foil.Sinkable e )
-            => Foil.Scope o
-            -> $(return (ConT foilPatternT)) n l
-            -> (forall o'. Foil.DExt o o'
-                  => (Foil.Substitution e n o -> Foil.Substitution e l o')
-                  -> $(return (ConT foilPatternT)) o o'
-                  -> r)
-            -> r
-        |]
+  let withRefreshedFoilPatternSignature =
+        SigD withRefreshedFoilPatternFunName $
+          ForallT
+            [ PlainTV name SpecifiedSpec | name <- map tvarName patternTVars ++ [o, e, n, l, r] ]
+            [ AppT (ConT ''Foil.Distinct) (VarT o)
+            , AppT (ConT ''Foil.InjectName) (VarT e)
+            , AppT (ConT ''Foil.Sinkable) (VarT e)
+            ]
+            (AppT (AppT ArrowT (PeelConT ''Foil.Scope [VarT o]))
+              (AppT (AppT ArrowT (PeelConT foilPatternT (map (VarT . tvarName) patternTVars ++ [VarT n, VarT l])))
+                (AppT (AppT ArrowT
+                  (ForallT [PlainTV o' SpecifiedSpec] [PeelConT ''Foil.DExt [VarT o, VarT o']]
+                    (AppT (AppT ArrowT (AppT (AppT ArrowT (PeelConT ''Foil.Substitution [VarT e, VarT n, VarT o])) (PeelConT ''Foil.Substitution [VarT e, VarT l, VarT o'])))
+                      (AppT (AppT ArrowT (PeelConT foilPatternT (map (VarT . tvarName) patternTVars ++ [VarT o, VarT o'])))
+                        (VarT r)))))
+                  (VarT r))))
+
+        --           [t| ( Foil.Distinct o, Foil.InjectName e, Foil.Sinkable e )
+        --     => Foil.Scope o
+        --     -> $(return (PeelConT foilPatternT (map (VarT . tyName patternTVars)))) n l
+        --     -> (forall o'. Foil.DExt o o'
+        --           => (Foil.Substitution e n o -> Foil.Substitution e l o')
+        --           -> $(return (ConT foilPatternT)) o o'
+        --           -> r)
+        --     -> r
+        -- |]
 
   composefun <- [e| (.) |]
   addRenameFun <- [e| Foil.addRename |]
@@ -145,7 +173,7 @@ mkWithRefreshedFoilPattern nameT patternT = do
             conMatchBody = go 1 (VarE scope) sinkFun (ConE foilConName) params
 
             go _i _scope' f p [] = AppE (AppE (VarE cont) f) p
-            go i scope' f p ((_bang, ConT tyName) : conParams)
+            go i scope' f p ((_bang, PeelConT tyName _tyParams) : conParams)
               | tyName == nameT =
                   AppE
                     (AppE (AppE withRefreshedFun scope') (AppE nameOfFun (VarE xi)))
@@ -196,34 +224,38 @@ mkToFoilTerm
   -> Name -- ^ Type name for raw patterns.
   -> Q [Dec]
 mkToFoilTerm termT nameT scopeT patternT = do
-  TyConI (DataD _ctx _name _tvars _kind patternCons _deriv) <- reify patternT
-  TyConI (DataD _ctx _name _tvars _kind scopeCons _deriv) <- reify scopeT
-  TyConI (DataD _ctx _name _tvars _kind termCons _deriv) <- reify termT
+  n <- newName "n"
+  let ntype = return (VarT n)
+  r <- newName "r"
+  let rtype = return (VarT r)
+  TyConI (DataD _ctx _name patternTVars _kind patternCons _deriv) <- reify patternT
+  TyConI (DataD _ctx _name scopeTVars _kind scopeCons _deriv) <- reify scopeT
+  TyConI (DataD _ctx _name termTVars _kind termCons _deriv) <- reify termT
 
   toFoilTermSignature <-
     SigD toFoilTermT <$>
-      [t| forall n. Foil.Distinct n
-          => Foil.Scope n
-          -> Map $(return (ConT nameT)) (Foil.Name n)
-          -> $(return (ConT termT))
-          -> $(return (ConT foilTermT)) n
+      [t| Foil.Distinct $ntype
+          => Foil.Scope $ntype
+          -> Map $(return (ConT nameT)) (Foil.Name $ntype)
+          -> $(return (PeelConT termT (map (VarT . tvarName) termTVars )))
+          -> $(return (PeelConT foilTermT (map (VarT . tvarName) termTVars))) $ntype
         |]
   toFoilScopedSignature <-
     SigD toFoilScopedT <$>
-      [t| forall n. Foil.Distinct n
-          => Foil.Scope n
-          -> Map $(return (ConT nameT)) (Foil.Name n)
-          -> $(return (ConT scopeT))
-          -> $(return (ConT foilScopeT)) n
+      [t| Foil.Distinct $ntype
+          => Foil.Scope $ntype
+          -> Map $(return (ConT nameT)) (Foil.Name $ntype)
+          -> $(return (PeelConT scopeT (map (VarT . tvarName) scopeTVars)))
+          -> $(return (PeelConT foilScopeT (map (VarT . tvarName) scopeTVars))) $ntype
         |]
   toFoilPatternSignature <-
     SigD toFoilPatternT <$>
-      [t| forall n r. Foil.Distinct n
-          => Foil.Scope n
-          -> Map $(return (ConT nameT)) (Foil.Name n)
-          -> $(return (ConT patternT))
-          -> (forall l. Foil.DExt n l => $(return (ConT foilPatternT)) n l -> Map $(return (ConT nameT)) (Foil.Name l) -> r)
-          -> r
+      [t| Foil.Distinct $ntype
+          => Foil.Scope $ntype
+          -> Map $(return (ConT nameT)) (Foil.Name $ntype)
+          -> $(return (PeelConT patternT (map (VarT . tvarName) patternTVars)))
+          -> (forall l. Foil.DExt $ntype l => $(return (PeelConT foilPatternT (map (VarT . tvarName) patternTVars))) $ntype l -> Map $(return (ConT nameT)) (Foil.Name l) -> $rtype)
+          -> $rtype
         |]
 
   addModFinalizer $ putDoc (DeclDoc toFoilTermT)
@@ -276,7 +308,7 @@ mkToFoilTerm termT nameT scopeT patternT = do
             conMatchBody = go 1 (VarE scope) (VarE env) (ConE foilConName) params
 
             go _i _scope' _env' p [] = p
-            go i scope' env' p ((_bang, ConT tyName) : conParams)
+            go i scope' env' p ((_bang, PeelConT tyName _tyParams) : conParams)
               | tyName == nameT =
                   go (i+1) scope' env' (AppE p (AppE toFoilVarFun (VarE xi))) conParams
               | tyName == termT =
@@ -326,7 +358,7 @@ mkToFoilTerm termT nameT scopeT patternT = do
             conMatchBody = go 1 (VarE scope) (VarE env) (ConE foilConName) params
 
             go _i _scope' env' p [] = AppE (AppE (VarE cont) p) env'
-            go i scope' env' p ((_bang, ConT tyName) : conParams)
+            go i scope' env' p ((_bang, PeelConT tyName _tyParams) : conParams)
               | tyName == nameT =
                   AppE (AppE (VarE 'Foil.withFresh) scope')
                     (LamE [VarP xi']
@@ -388,7 +420,7 @@ mkToFoilTerm termT nameT scopeT patternT = do
             conMatchBody = go 1 (VarE scope) (VarE env) (ConE foilConName) params
 
             go _i _scope' _env' p [] = p
-            go i scope' env' p ((_bang, ConT tyName) : conParams)
+            go i scope' env' p ((_bang, PeelConT tyName _tyParams) : conParams)
               | tyName == nameT =
                   go (i+1) scope' env' (AppE p (AppE toFoilVarFun (VarE xi))) conParams
               | tyName == termT =

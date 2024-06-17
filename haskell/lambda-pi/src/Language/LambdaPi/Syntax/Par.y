@@ -25,82 +25,85 @@ import Language.LambdaPi.Syntax.Lex
 
 }
 
-%name pProgram Program
-%name pCommand Command
-%name pListCommand ListCommand
-%name pTerm2 Term2
-%name pTerm Term
-%name pTerm1 Term1
-%name pScopedTerm ScopedTerm
-%name pPattern Pattern
+%name pProgram_internal Program
+%name pCommand_internal Command
+%name pListCommand_internal ListCommand
+%name pTerm2_internal Term2
+%name pTerm_internal Term
+%name pTerm1_internal Term1
+%name pScopedTerm_internal ScopedTerm
+%name pPattern_internal Pattern
 -- no lexer declaration
 %monad { Err } { (>>=) } { return }
 %tokentype {Token}
 %token
-  '('        { PT _ (TS _ 1)        }
-  ')'        { PT _ (TS _ 2)        }
-  ','        { PT _ (TS _ 3)        }
-  '.'        { PT _ (TS _ 4)        }
-  ':'        { PT _ (TS _ 5)        }
-  ';'        { PT _ (TS _ 6)        }
-  '_'        { PT _ (TS _ 7)        }
-  'check'    { PT _ (TS _ 8)        }
-  'compute'  { PT _ (TS _ 9)        }
-  '×'        { PT _ (TS _ 10)       }
-  'Π'        { PT _ (TS _ 11)       }
-  'λ'        { PT _ (TS _ 12)       }
-  'π₁'       { PT _ (TS _ 13)       }
-  'π₂'       { PT _ (TS _ 14)       }
-  '→'        { PT _ (TS _ 15)       }
-  '𝕌'        { PT _ (TS _ 16)       }
-  L_VarIdent { PT _ (T_VarIdent $$) }
+  '('        { PT _ (TS _ 1)       }
+  ')'        { PT _ (TS _ 2)       }
+  ','        { PT _ (TS _ 3)       }
+  '.'        { PT _ (TS _ 4)       }
+  ':'        { PT _ (TS _ 5)       }
+  ';'        { PT _ (TS _ 6)       }
+  '_'        { PT _ (TS _ 7)       }
+  'check'    { PT _ (TS _ 8)       }
+  'compute'  { PT _ (TS _ 9)       }
+  '×'        { PT _ (TS _ 10)      }
+  'Π'        { PT _ (TS _ 11)      }
+  'λ'        { PT _ (TS _ 12)      }
+  'π₁'       { PT _ (TS _ 13)      }
+  'π₂'       { PT _ (TS _ 14)      }
+  '→'        { PT _ (TS _ 15)      }
+  '𝕌'        { PT _ (TS _ 16)      }
+  L_VarIdent { PT _ (T_VarIdent _) }
 
 %%
 
-VarIdent :: { Language.LambdaPi.Syntax.Abs.VarIdent }
-VarIdent  : L_VarIdent { Language.LambdaPi.Syntax.Abs.VarIdent $1 }
+VarIdent :: { (Language.LambdaPi.Syntax.Abs.BNFC'Position, Language.LambdaPi.Syntax.Abs.VarIdent) }
+VarIdent  : L_VarIdent { (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol $1), Language.LambdaPi.Syntax.Abs.VarIdent (tokenText $1)) }
 
-Program :: { Language.LambdaPi.Syntax.Abs.Program }
-Program : ListCommand { Language.LambdaPi.Syntax.Abs.AProgram $1 }
+Program :: { (Language.LambdaPi.Syntax.Abs.BNFC'Position, Language.LambdaPi.Syntax.Abs.Program) }
+Program
+  : ListCommand { (fst $1, Language.LambdaPi.Syntax.Abs.AProgram (fst $1) (snd $1)) }
 
-Command :: { Language.LambdaPi.Syntax.Abs.Command }
+Command :: { (Language.LambdaPi.Syntax.Abs.BNFC'Position, Language.LambdaPi.Syntax.Abs.Command) }
 Command
-  : 'check' Term ':' Term { Language.LambdaPi.Syntax.Abs.CommandCheck $2 $4 }
-  | 'compute' Term ':' Term { Language.LambdaPi.Syntax.Abs.CommandCompute $2 $4 }
+  : 'check' Term ':' Term { (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol $1), Language.LambdaPi.Syntax.Abs.CommandCheck (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol $1)) (snd $2) (snd $4)) }
+  | 'compute' Term ':' Term { (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol $1), Language.LambdaPi.Syntax.Abs.CommandCompute (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol $1)) (snd $2) (snd $4)) }
 
-ListCommand :: { [Language.LambdaPi.Syntax.Abs.Command] }
+ListCommand :: { (Language.LambdaPi.Syntax.Abs.BNFC'Position, [Language.LambdaPi.Syntax.Abs.Command]) }
 ListCommand
-  : {- empty -} { [] } | Command ';' ListCommand { (:) $1 $3 }
+  : {- empty -} { (Language.LambdaPi.Syntax.Abs.BNFC'NoPosition, []) }
+  | Command ';' ListCommand { (fst $1, (:) (snd $1) (snd $3)) }
 
-Term2 :: { Language.LambdaPi.Syntax.Abs.Term }
+Term2 :: { (Language.LambdaPi.Syntax.Abs.BNFC'Position, Language.LambdaPi.Syntax.Abs.Term) }
 Term2
-  : VarIdent { Language.LambdaPi.Syntax.Abs.Var $1 }
-  | '(' Term ')' { $2 }
+  : VarIdent { (fst $1, Language.LambdaPi.Syntax.Abs.Var (fst $1) (snd $1)) }
+  | '(' Term ')' { (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol $1), (snd $2)) }
 
-Term :: { Language.LambdaPi.Syntax.Abs.Term }
+Term :: { (Language.LambdaPi.Syntax.Abs.BNFC'Position, Language.LambdaPi.Syntax.Abs.Term) }
 Term
-  : 'Π' '(' Pattern ':' Term ')' '→' ScopedTerm { Language.LambdaPi.Syntax.Abs.Pi $3 $5 $8 }
-  | 'λ' Pattern '.' ScopedTerm { Language.LambdaPi.Syntax.Abs.Lam $2 $4 }
-  | Term1 '×' Term1 { Language.LambdaPi.Syntax.Abs.Product $1 $3 }
-  | '(' Term ',' Term ')' { Language.LambdaPi.Syntax.Abs.Pair $2 $4 }
-  | 'π₁' '(' Term ')' { Language.LambdaPi.Syntax.Abs.First $3 }
-  | 'π₂' '(' Term ')' { Language.LambdaPi.Syntax.Abs.Second $3 }
-  | '𝕌' { Language.LambdaPi.Syntax.Abs.Universe }
-  | Term1 { $1 }
+  : 'Π' '(' Pattern ':' Term ')' '→' ScopedTerm { (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol $1), Language.LambdaPi.Syntax.Abs.Pi (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol $1)) (snd $3) (snd $5) (snd $8)) }
+  | 'λ' Pattern '.' ScopedTerm { (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol $1), Language.LambdaPi.Syntax.Abs.Lam (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol $1)) (snd $2) (snd $4)) }
+  | Term1 '×' Term1 { (fst $1, Language.LambdaPi.Syntax.Abs.Product (fst $1) (snd $1) (snd $3)) }
+  | '(' Term ',' Term ')' { (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol $1), Language.LambdaPi.Syntax.Abs.Pair (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol $1)) (snd $2) (snd $4)) }
+  | 'π₁' '(' Term ')' { (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol $1), Language.LambdaPi.Syntax.Abs.First (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol $1)) (snd $3)) }
+  | 'π₂' '(' Term ')' { (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol $1), Language.LambdaPi.Syntax.Abs.Second (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol $1)) (snd $3)) }
+  | '𝕌' { (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol $1), Language.LambdaPi.Syntax.Abs.Universe (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol $1))) }
+  | Term1 { (fst $1, (snd $1)) }
 
-Term1 :: { Language.LambdaPi.Syntax.Abs.Term }
+Term1 :: { (Language.LambdaPi.Syntax.Abs.BNFC'Position, Language.LambdaPi.Syntax.Abs.Term) }
 Term1
-  : Term1 Term2 { Language.LambdaPi.Syntax.Abs.App $1 $2 }
-  | Term2 { $1 }
+  : Term1 Term2 { (fst $1, Language.LambdaPi.Syntax.Abs.App (fst $1) (snd $1) (snd $2)) }
+  | Term2 { (fst $1, (snd $1)) }
 
-ScopedTerm :: { Language.LambdaPi.Syntax.Abs.ScopedTerm }
-ScopedTerm : Term { Language.LambdaPi.Syntax.Abs.AScopedTerm $1 }
+ScopedTerm :: { (Language.LambdaPi.Syntax.Abs.BNFC'Position, Language.LambdaPi.Syntax.Abs.ScopedTerm) }
+ScopedTerm
+  : Term { (fst $1, Language.LambdaPi.Syntax.Abs.AScopedTerm (fst $1) (snd $1)) }
 
-Pattern :: { Language.LambdaPi.Syntax.Abs.Pattern }
+Pattern :: { (Language.LambdaPi.Syntax.Abs.BNFC'Position, Language.LambdaPi.Syntax.Abs.Pattern) }
 Pattern
-  : '_' { Language.LambdaPi.Syntax.Abs.PatternWildcard }
-  | VarIdent { Language.LambdaPi.Syntax.Abs.PatternVar $1 }
-  | '(' Pattern ',' Pattern ')' { Language.LambdaPi.Syntax.Abs.PatternPair $2 $4 }
+  : '_' { (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol $1), Language.LambdaPi.Syntax.Abs.PatternWildcard (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol $1))) }
+  | VarIdent { (fst $1, Language.LambdaPi.Syntax.Abs.PatternVar (fst $1) (snd $1)) }
+  | '(' Pattern ',' Pattern ')' { (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol $1), Language.LambdaPi.Syntax.Abs.PatternPair (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol $1)) (snd $2) (snd $4)) }
 
 {
 
@@ -117,5 +120,30 @@ happyError ts = Left $
 myLexer :: String -> [Token]
 myLexer = tokens
 
+-- Entrypoints
+
+pProgram :: [Token] -> Err Language.LambdaPi.Syntax.Abs.Program
+pProgram = fmap snd . pProgram_internal
+
+pCommand :: [Token] -> Err Language.LambdaPi.Syntax.Abs.Command
+pCommand = fmap snd . pCommand_internal
+
+pListCommand :: [Token] -> Err [Language.LambdaPi.Syntax.Abs.Command]
+pListCommand = fmap snd . pListCommand_internal
+
+pTerm2 :: [Token] -> Err Language.LambdaPi.Syntax.Abs.Term
+pTerm2 = fmap snd . pTerm2_internal
+
+pTerm :: [Token] -> Err Language.LambdaPi.Syntax.Abs.Term
+pTerm = fmap snd . pTerm_internal
+
+pTerm1 :: [Token] -> Err Language.LambdaPi.Syntax.Abs.Term
+pTerm1 = fmap snd . pTerm1_internal
+
+pScopedTerm :: [Token] -> Err Language.LambdaPi.Syntax.Abs.ScopedTerm
+pScopedTerm = fmap snd . pScopedTerm_internal
+
+pPattern :: [Token] -> Err Language.LambdaPi.Syntax.Abs.Pattern
+pPattern = fmap snd . pPattern_internal
 }
 

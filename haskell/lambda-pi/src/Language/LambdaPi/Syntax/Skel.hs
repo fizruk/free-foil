@@ -19,33 +19,33 @@ transVarIdent :: Language.LambdaPi.Syntax.Abs.VarIdent -> Result
 transVarIdent x = case x of
   Language.LambdaPi.Syntax.Abs.VarIdent string -> failure x
 
-transProgram :: Language.LambdaPi.Syntax.Abs.Program -> Result
+transProgram :: Show a => Language.LambdaPi.Syntax.Abs.Program' a -> Result
 transProgram x = case x of
-  Language.LambdaPi.Syntax.Abs.AProgram commands -> failure x
+  Language.LambdaPi.Syntax.Abs.AProgram _ commands -> failure x
 
-transCommand :: Language.LambdaPi.Syntax.Abs.Command -> Result
+transCommand :: Show a => Language.LambdaPi.Syntax.Abs.Command' a -> Result
 transCommand x = case x of
-  Language.LambdaPi.Syntax.Abs.CommandCheck term1 term2 -> failure x
-  Language.LambdaPi.Syntax.Abs.CommandCompute term1 term2 -> failure x
+  Language.LambdaPi.Syntax.Abs.CommandCheck _ term1 term2 -> failure x
+  Language.LambdaPi.Syntax.Abs.CommandCompute _ term1 term2 -> failure x
 
-transTerm :: Language.LambdaPi.Syntax.Abs.Term -> Result
+transTerm :: Show a => Language.LambdaPi.Syntax.Abs.Term' a -> Result
 transTerm x = case x of
-  Language.LambdaPi.Syntax.Abs.Var varident -> failure x
-  Language.LambdaPi.Syntax.Abs.Pi pattern_ term scopedterm -> failure x
-  Language.LambdaPi.Syntax.Abs.Lam pattern_ scopedterm -> failure x
-  Language.LambdaPi.Syntax.Abs.App term1 term2 -> failure x
-  Language.LambdaPi.Syntax.Abs.Product term1 term2 -> failure x
-  Language.LambdaPi.Syntax.Abs.Pair term1 term2 -> failure x
-  Language.LambdaPi.Syntax.Abs.First term -> failure x
-  Language.LambdaPi.Syntax.Abs.Second term -> failure x
-  Language.LambdaPi.Syntax.Abs.Universe -> failure x
+  Language.LambdaPi.Syntax.Abs.Var _ varident -> failure x
+  Language.LambdaPi.Syntax.Abs.Pi _ pattern_ term scopedterm -> failure x
+  Language.LambdaPi.Syntax.Abs.Lam _ pattern_ scopedterm -> failure x
+  Language.LambdaPi.Syntax.Abs.App _ term1 term2 -> failure x
+  Language.LambdaPi.Syntax.Abs.Product _ term1 term2 -> failure x
+  Language.LambdaPi.Syntax.Abs.Pair _ term1 term2 -> failure x
+  Language.LambdaPi.Syntax.Abs.First _ term -> failure x
+  Language.LambdaPi.Syntax.Abs.Second _ term -> failure x
+  Language.LambdaPi.Syntax.Abs.Universe _ -> failure x
 
-transScopedTerm :: Language.LambdaPi.Syntax.Abs.ScopedTerm -> Result
+transScopedTerm :: Show a => Language.LambdaPi.Syntax.Abs.ScopedTerm' a -> Result
 transScopedTerm x = case x of
-  Language.LambdaPi.Syntax.Abs.AScopedTerm term -> failure x
+  Language.LambdaPi.Syntax.Abs.AScopedTerm _ term -> failure x
 
-transPattern :: Language.LambdaPi.Syntax.Abs.Pattern -> Result
+transPattern :: Show a => Language.LambdaPi.Syntax.Abs.Pattern' a -> Result
 transPattern x = case x of
-  Language.LambdaPi.Syntax.Abs.PatternWildcard -> failure x
-  Language.LambdaPi.Syntax.Abs.PatternVar varident -> failure x
-  Language.LambdaPi.Syntax.Abs.PatternPair pattern_1 pattern_2 -> failure x
+  Language.LambdaPi.Syntax.Abs.PatternWildcard _ -> failure x
+  Language.LambdaPi.Syntax.Abs.PatternVar _ varident -> failure x
+  Language.LambdaPi.Syntax.Abs.PatternPair _ pattern_1 pattern_2 -> failure x

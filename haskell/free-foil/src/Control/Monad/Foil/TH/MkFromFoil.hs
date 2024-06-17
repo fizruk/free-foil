@@ -10,6 +10,7 @@ import           Language.Haskell.TH
 import Language.Haskell.TH.Syntax (addModFinalizer)
 
 import qualified Control.Monad.Foil  as Foil
+import Control.Monad.Foil.TH.Util
 
 -- | Generate conversion functions from raw to scope-safe representation.
 mkFromFoil
@@ -19,34 +20,41 @@ mkFromFoil
   -> Name -- ^ Type name for raw patterns.
   -> Q [Dec]
 mkFromFoil termT nameT scopeT patternT = do
-  TyConI (DataD _ctx _name _tvars _kind patternCons _deriv) <- reify patternT
-  TyConI (DataD _ctx _name _tvars _kind scopeCons _deriv) <- reify scopeT
-  TyConI (DataD _ctx _name _tvars _kind termCons _deriv) <- reify termT
+  n <- newName "n"
+  let ntype = return (VarT n)
+  l <- newName "l"
+  let ltype = return (VarT l)
+  r <- newName "r"
+  let rtype = return (VarT r)
+  TyConI (DataD _ctx _name patternTVars _kind patternCons _deriv) <- reify patternT
+  TyConI (DataD _ctx _name scopeTVars _kind scopeCons _deriv) <- reify scopeT
+  TyConI (DataD _ctx _name termTVars _kind termCons _deriv) <- reify termT
+
+  let termParams = map (VarT . tvarName) termTVars
+  let scopeParams = map (VarT . tvarName) scopeTVars
+  let patternParams = map (VarT . tvarName) patternTVars
 
   fromFoilTermSignature <-
     SigD fromFoilTermT <$>
-      [t| forall n.
-          [$(return (ConT nameT))]
-          -> Foil.NameMap n $(return (ConT nameT))
-          -> $(return (ConT foilTermT)) n
-          -> $(return (ConT termT))
+      [t| [$(return (ConT nameT))]
+          -> Foil.NameMap $ntype $(return (ConT nameT))
+          -> $(return (PeelConT foilTermT termParams)) $ntype
+          -> $(return (PeelConT termT termParams))
         |]
   fromFoilScopedSignature <-
     SigD fromFoilScopedT <$>
-      [t| forall n.
-          [$(return (ConT nameT))]
-          -> Foil.NameMap n $(return (ConT nameT))
-          -> $(return (ConT foilScopeT)) n
-          -> $(return (ConT scopeT))
+      [t| [$(return (ConT nameT))]
+          -> Foil.NameMap $ntype $(return (ConT nameT))
+          -> $(return (PeelConT foilScopeT scopeParams)) $ntype
+          -> $(return (PeelConT scopeT scopeParams))
         |]
   fromFoilPatternSignature <-
     SigD fromFoilPatternT <$>
-      [t| forall n l r.
-          [$(return (ConT nameT))]
-          -> Foil.NameMap n $(return (ConT nameT))
-          -> $(return (ConT foilPatternT)) n l
-          -> ([$(return (ConT nameT))] -> Foil.NameMap l $(return (ConT nameT)) -> $(return (ConT patternT)) -> r)
-          -> r
+      [t| [$(return (ConT nameT))]
+          -> Foil.NameMap $ntype $(return (ConT nameT))
+          -> $(return (PeelConT foilPatternT patternParams)) $ntype $ltype
+          -> ([$(return (ConT nameT))] -> Foil.NameMap $ltype $(return (ConT nameT)) -> $(return (PeelConT patternT patternParams)) -> $rtype)
+          -> $rtype
         |]
 
   addModFinalizer $ putDoc (DeclDoc fromFoilTermT)
@@ -86,7 +94,7 @@ mkFromFoil termT nameT scopeT patternT = do
             conMatchBody = go 1 (VarE freshVars) (VarE env) (ConE conName) params
 
             go _i _freshVars' _env' p [] = p
-            go i freshVars' env' p ((_bang, ConT tyName) : conParams)
+            go i freshVars' env' p ((_bang, PeelConT tyName _tyParams) : conParams)
               | tyName == nameT =
                   go (i+1) freshVars' env' (AppE p (AppE (AppE (VarE 'Foil.lookupName) (VarE xi)) env')) conParams
               | tyName == termT =
@@ -135,7 +143,7 @@ mkFromFoil termT nameT scopeT patternT = do
             conMatchBody = go 1 (VarE freshVars) (VarE env) (ConE conName) params
 
             go _i freshVars' env' p [] = AppE (AppE (AppE (VarE cont) freshVars') env') p
-            go i freshVars' env' p ((_bang, ConT tyName) : conParams)
+            go i freshVars' env' p ((_bang, PeelConT tyName _tyParams) : conParams)
               | tyName == nameT =
                   CaseE freshVars'
                     [ Match (ListP []) (NormalB (AppE (VarE 'error) (LitE (StringL "not enough fresh variables")))) []
@@ -188,7 +196,7 @@ mkFromFoil termT nameT scopeT patternT = do
             conMatchBody = go 1 (VarE freshVars) (VarE env) (ConE conName) params
 
             go _i _freshVars' _env' p [] = p
-            go i freshVars' env' p ((_bang, ConT tyName) : conParams)
+            go i freshVars' env' p ((_bang, PeelConT tyName _tyParams) : conParams)
               | tyName == nameT =
                   go (i+1) freshVars' env' (AppE p (AppE (AppE (VarE 'Foil.lookupName) (VarE xi)) env')) conParams
               | tyName == termT =
