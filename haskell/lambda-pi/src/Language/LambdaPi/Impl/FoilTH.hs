@@ -1,5 +1,6 @@
 -- {-# OPTIONS_GHC -ddump-splices #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE KindSignatures         #-}
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -46,24 +47,27 @@ import qualified Data.Map as Map
 -- * Generated code
 
 -- ** Scope-safe AST
-mkFoilData ''Raw.Term ''Raw.VarIdent ''Raw.ScopedTerm ''Raw.Pattern
-mkInstancesFoil ''Raw.Term ''Raw.VarIdent ''Raw.ScopedTerm ''Raw.Pattern
+mkFoilData ''Raw.Term' ''Raw.VarIdent ''Raw.ScopedTerm' ''Raw.Pattern'
+mkInstancesFoil ''Raw.Term' ''Raw.VarIdent ''Raw.ScopedTerm' ''Raw.Pattern'
 
 -- ** Conversion from raw to scope-safe AST
-mkToFoil ''Raw.Term ''Raw.VarIdent ''Raw.ScopedTerm ''Raw.Pattern
+mkToFoil ''Raw.Term' ''Raw.VarIdent ''Raw.ScopedTerm' ''Raw.Pattern'
 
 -- ** Conversion from scope-safe to raw AST
-mkFromFoil ''Raw.Term ''Raw.VarIdent ''Raw.ScopedTerm ''Raw.Pattern
+mkFromFoil ''Raw.Term' ''Raw.VarIdent ''Raw.ScopedTerm' ''Raw.Pattern'
+
+type FoilTerm = FoilTerm' Raw.BNFC'Position
+type FoilPattern = FoilPattern' Raw.BNFC'Position
 
 -- | Convert a /closed/ scope-safe term into a raw term.
 fromFoilTermClosed
   :: [Raw.VarIdent]   -- ^ A stream of fresh variable identifiers.
   -> FoilTerm VoidS       -- ^ A scope safe term in scope @n@.
   -> Raw.Term
-fromFoilTermClosed freshVars = fromFoilTerm freshVars emptyNameMap
+fromFoilTermClosed freshVars = fromFoilTerm' freshVars emptyNameMap
 
-instance InjectName FoilTerm where
-  injectName = FoilVar
+instance InjectName (FoilTerm' a) where
+  injectName = FoilVar (error "undefined location")
 
 -- * User-defined
 
@@ -72,24 +76,24 @@ instance InjectName FoilTerm where
 -- | Perform substitution in a \(\lambda\Pi\)-term.
 substitute :: Distinct o => Scope o -> Substitution FoilTerm i o -> FoilTerm i -> FoilTerm o
 substitute scope subst = \case
-    FoilVar name -> lookupSubst subst name
-    FoilApp f x -> FoilApp (substitute scope subst f) (substitute scope subst x)
-    FoilLam pattern (FoilAScopedTerm body) -> withRefreshedFoilPattern scope pattern $ \extendSubst pattern' ->
+    FoilVar _loc name -> lookupSubst subst name
+    FoilApp loc f x -> FoilApp loc (substitute scope subst f) (substitute scope subst x)
+    FoilLam loc1 pattern (FoilAScopedTerm loc2 body) -> withRefreshedFoilPattern' scope pattern $ \extendSubst pattern' ->
       let subst' = extendSubst subst
-          scope' = extendScopeFoilPattern pattern' scope
+          scope' = extendScopeFoilPattern' pattern' scope
           body' = substitute scope' subst' body
-       in FoilLam pattern' (FoilAScopedTerm body')
-    FoilPi pattern a (FoilAScopedTerm b) -> withRefreshedFoilPattern scope pattern $ \extendSubst pattern' ->
+       in FoilLam loc1 pattern' (FoilAScopedTerm loc2 body')
+    FoilPi loc1 pattern a (FoilAScopedTerm loc2 b) -> withRefreshedFoilPattern' scope pattern $ \extendSubst pattern' ->
       let subst' = extendSubst subst
-          scope' = extendScopeFoilPattern pattern' scope
+          scope' = extendScopeFoilPattern' pattern' scope
           a' = substitute scope subst a
           b' = substitute scope' subst' b
-       in FoilPi pattern' a' (FoilAScopedTerm b')
-    FoilPair l r -> FoilPair (substitute scope subst l) (substitute scope subst r)
-    FoilFirst t -> FoilFirst (substitute scope subst t)
-    FoilSecond t -> FoilSecond (substitute scope subst t)
-    FoilProduct l r -> FoilProduct (substitute scope subst l) (substitute scope subst r)
-    FoilUniverse -> FoilUniverse
+       in FoilPi loc1 pattern' a' (FoilAScopedTerm loc2 b')
+    FoilPair loc l r -> FoilPair loc (substitute scope subst l) (substitute scope subst r)
+    FoilFirst loc t -> FoilFirst loc (substitute scope subst t)
+    FoilSecond loc t -> FoilSecond loc (substitute scope subst t)
+    FoilProduct loc l r -> FoilProduct loc (substitute scope subst l) (substitute scope subst r)
+    FoilUniverse loc -> FoilUniverse loc
 
 -- ** Computation
 
@@ -98,42 +102,42 @@ matchPattern :: FoilPattern n l -> FoilTerm n -> Substitution FoilTerm l n
 matchPattern pattern expr = go pattern expr identitySubst
   where
     go :: FoilPattern i l -> FoilTerm n -> Substitution FoilTerm i n -> Substitution FoilTerm l n
-    go FoilPatternWildcard _   = id
-    go (FoilPatternVar x) e    = \subst -> addSubst subst x e
-    go (FoilPatternPair l r) e = go r (FoilSecond e) . go l (FoilFirst e)
+    go FoilPatternWildcard{} _   = id
+    go (FoilPatternVar _loc x) e    = \subst -> addSubst subst x e
+    go (FoilPatternPair loc l r) e = go r (FoilSecond loc e) . go l (FoilFirst loc e)
 
 -- | Compute weak head normal form (WHNF).
 whnf :: Distinct n => Scope n -> FoilTerm n -> FoilTerm n
 whnf scope = \case
-  FoilApp f arg ->
+  FoilApp loc f arg ->
     case whnf scope f of
-      FoilLam pat (FoilAScopedTerm body) ->
+      FoilLam _loc pat (FoilAScopedTerm _loc' body) ->
         let subst = matchPattern pat arg
          in whnf scope (substitute scope subst body)
-      f' -> FoilApp f' arg
-  FoilFirst t ->
+      f' -> FoilApp loc f' arg
+  FoilFirst loc t ->
     case whnf scope t of
-      FoilPair l _r -> whnf scope l
-      t'         -> FoilFirst t'
-  FoilSecond t ->
+      FoilPair _loc l _r -> whnf scope l
+      t'         -> FoilFirst loc t'
+  FoilSecond loc t ->
     case whnf scope t of
-      FoilPair _l r -> whnf scope r
-      t'         -> FoilSecond t'
+      FoilPair _loc _l r -> whnf scope r
+      t'         -> FoilSecond loc t'
   t -> t
 
 -- ** Interpreter
 
 -- | Interpret a λΠ command.
 interpretCommand :: Raw.Command -> IO ()
-interpretCommand (Raw.CommandCompute term _type) =
-  putStrLn ("  ↦ " ++ printFoilTerm (whnf emptyScope (toFoilTerm emptyScope Map.empty term)))
+interpretCommand (Raw.CommandCompute _loc term _type) =
+  putStrLn ("  ↦ " ++ printFoilTerm (whnf emptyScope (toFoilTerm' emptyScope Map.empty term)))
 -- #TODO: add typeCheck
-interpretCommand (Raw.CommandCheck _term _type) =
+interpretCommand (Raw.CommandCheck _loc _term _type) =
   putStrLn "Not yet implemented"
 
 -- | Interpret a λΠ program.
 interpretProgram :: Raw.Program -> IO ()
-interpretProgram (Raw.AProgram typedTerms) = mapM_ interpretCommand typedTerms
+interpretProgram (Raw.AProgram _loc typedTerms) = mapM_ interpretCommand typedTerms
 
 -- | Default interpreter program.
 -- Reads a λΠ program from the standard input and runs the commands.

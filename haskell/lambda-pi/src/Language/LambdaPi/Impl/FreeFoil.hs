@@ -140,13 +140,13 @@ toLambdaPiLam
   -> Raw.Pattern                    -- ^ Raw pattern (argument) of the \(\lambda\)-abstraction.
   -> Raw.ScopedTerm                 -- ^ Raw body of the \(\lambda\)-abstraction.
   -> LambdaPi n
-toLambdaPiLam scope env pat (Raw.AScopedTerm body) =
+toLambdaPiLam scope env pat (Raw.AScopedTerm _loc body) =
   case pat of
-    Raw.PatternWildcard -> Foil.withFresh scope $ \binder ->
+    Raw.PatternWildcard _loc -> Foil.withFresh scope $ \binder ->
       let scope' = Foil.extendScope binder scope
        in Lam binder (toLambdaPi scope' (Foil.sink <$> env) body)
 
-    Raw.PatternVar x -> Foil.withFresh scope $ \binder ->
+    Raw.PatternVar _loc x -> Foil.withFresh scope $ \binder ->
       let scope' = Foil.extendScope binder scope
           env' = Map.insert x (Foil.nameOf binder) (Foil.sink <$> env)
        in Lam binder (toLambdaPi scope' env' body)
@@ -162,13 +162,13 @@ toLambdaPiPi
   -> Raw.Term                       -- ^ Raw argument type of the \(\Pi\)-type.
   -> Raw.ScopedTerm                 -- ^ Raw body (result type family) of the \(\Pi\)-type.
   -> LambdaPi n
-toLambdaPiPi scope env pat a (Raw.AScopedTerm b) =
+toLambdaPiPi scope env pat a (Raw.AScopedTerm _loc b) =
   case pat of
-    Raw.PatternWildcard -> Foil.withFresh scope $ \binder ->
+    Raw.PatternWildcard _loc -> Foil.withFresh scope $ \binder ->
       let scope' = Foil.extendScope binder scope
        in Pi binder (toLambdaPi scope env a) (toLambdaPi scope' (Foil.sink <$> env) b)
 
-    Raw.PatternVar x -> Foil.withFresh scope $ \binder ->
+    Raw.PatternVar _loc x -> Foil.withFresh scope $ \binder ->
       let scope' = Foil.extendScope binder scope
           env' = Map.insert x (Foil.nameOf binder) (Foil.sink <$> env)
        in Pi binder (toLambdaPi scope env a) (toLambdaPi scope' env' b)
@@ -183,23 +183,23 @@ toLambdaPi
   -> Raw.Term                       -- ^ Raw expression or type.
   -> LambdaPi n
 toLambdaPi scope env = \case
-  Raw.Var x ->
+  Raw.Var _loc x ->
     case Map.lookup x env of
       Just name -> Var name
       Nothing   -> error ("unbound variable: " ++ Raw.printTree x)
 
-  Raw.App fun arg ->
+  Raw.App _loc fun arg ->
     App (toLambdaPi scope env fun) (toLambdaPi scope env arg)
 
-  Raw.Lam pat body -> toLambdaPiLam scope env pat body
-  Raw.Pi pat a b -> toLambdaPiPi scope env pat a b
+  Raw.Lam _loc pat body -> toLambdaPiLam scope env pat body
+  Raw.Pi _loc pat a b -> toLambdaPiPi scope env pat a b
 
-  Raw.Pair l r -> Pair (toLambdaPi scope env l) (toLambdaPi scope env r)
-  Raw.First t -> First (toLambdaPi scope env t)
-  Raw.Second t -> Second (toLambdaPi scope env t)
-  Raw.Product l r -> Product (toLambdaPi scope env l) (toLambdaPi scope env r)
+  Raw.Pair _loc l r -> Pair (toLambdaPi scope env l) (toLambdaPi scope env r)
+  Raw.First _loc t -> First (toLambdaPi scope env t)
+  Raw.Second _loc t -> Second (toLambdaPi scope env t)
+  Raw.Product _loc l r -> Product (toLambdaPi scope env l) (toLambdaPi scope env r)
 
-  Raw.Universe -> Universe
+  Raw.Universe _loc -> Universe
 
 -- | Convert a raw expression into a /closed/ scope-safe \(\lambda\Pi\)-term.
 toLambdaPiClosed :: Raw.Term -> LambdaPi Foil.VoidS
@@ -212,25 +212,27 @@ fromLambdaPi
   -> LambdaPi n                   -- ^ A scope-safe \(\lambda\Pi\)-term.
   -> Raw.Term
 fromLambdaPi freshVars env = \case
-  Var name -> Raw.Var (Foil.lookupName name env)
-  App fun arg -> Raw.App (fromLambdaPi freshVars env fun) (fromLambdaPi freshVars env arg)
+  Var name -> Raw.Var loc (Foil.lookupName name env)
+  App fun arg -> Raw.App loc (fromLambdaPi freshVars env fun) (fromLambdaPi freshVars env arg)
   Lam binder body ->
     case freshVars of
       [] -> error "not enough fresh variables"
       x:freshVars' ->
         let env' = Foil.addNameBinder binder x env
-         in Raw.Lam (Raw.PatternVar x) (Raw.AScopedTerm (fromLambdaPi freshVars' env' body))
+         in Raw.Lam loc (Raw.PatternVar loc x) (Raw.AScopedTerm loc (fromLambdaPi freshVars' env' body))
   Pi binder a b ->
     case freshVars of
       [] -> error "not enough fresh variables"
       x:freshVars' ->
         let env' = Foil.addNameBinder binder x env
-         in Raw.Pi (Raw.PatternVar x) (fromLambdaPi freshVars env a) (Raw.AScopedTerm (fromLambdaPi freshVars' env' b))
-  Pair l r -> Raw.Pair (fromLambdaPi freshVars env l) (fromLambdaPi freshVars env r)
-  First t -> Raw.First (fromLambdaPi freshVars env t)
-  Second t -> Raw.Second (fromLambdaPi freshVars env t)
-  Product l r -> Raw.Product (fromLambdaPi freshVars env l) (fromLambdaPi freshVars env r)
-  Universe -> Raw.Universe
+         in Raw.Pi loc (Raw.PatternVar loc x) (fromLambdaPi freshVars env a) (Raw.AScopedTerm loc (fromLambdaPi freshVars' env' b))
+  Pair l r -> Raw.Pair loc (fromLambdaPi freshVars env l) (fromLambdaPi freshVars env r)
+  First t -> Raw.First loc (fromLambdaPi freshVars env t)
+  Second t -> Raw.Second loc (fromLambdaPi freshVars env t)
+  Product l r -> Raw.Product loc (fromLambdaPi freshVars env l) (fromLambdaPi freshVars env r)
+  Universe -> Raw.Universe loc
+  where
+    loc = error "no location info available when converting from an AST"
 
 -- | Pretty-print a /closed/ \(\lambda\Pi\)-term.
 ppLambdaPi :: LambdaPi Foil.VoidS -> String
@@ -238,14 +240,14 @@ ppLambdaPi = Raw.printTree . fromLambdaPi [ Raw.VarIdent ("x" <> show i) | i <- 
 
 -- | Interpret a λΠ command.
 interpretCommand :: Raw.Command -> IO ()
-interpretCommand (Raw.CommandCompute term _type) =
+interpretCommand (Raw.CommandCompute _loc term _type) =
       putStrLn ("  ↦ " ++ ppLambdaPi (whnf Foil.emptyScope (toLambdaPi Foil.emptyScope Map.empty term)))
 -- #TODO: add typeCheck
-interpretCommand (Raw.CommandCheck _term _type) = putStrLn "check is not yet implemented"
+interpretCommand (Raw.CommandCheck _loc _term _type) = putStrLn "check is not yet implemented"
 
 -- | Interpret a λΠ program.
 interpretProgram :: Raw.Program -> IO ()
-interpretProgram (Raw.AProgram typedTerms) = mapM_ interpretCommand typedTerms
+interpretProgram (Raw.AProgram _loc typedTerms) = mapM_ interpretCommand typedTerms
 
 -- | A \(\lambda\Pi\) interpreter implemented via the free foil.
 defaultMain :: IO ()

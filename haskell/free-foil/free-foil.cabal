@@ -36,6 +36,7 @@ library
       Control.Monad.Foil.TH.MkFromFoil
       Control.Monad.Foil.TH.MkInstancesFoil
       Control.Monad.Foil.TH.MkToFoil
+      Control.Monad.Foil.TH.Util
       Control.Monad.Free.Foil
       Control.Monad.Free.Foil.Example
   other-modules:

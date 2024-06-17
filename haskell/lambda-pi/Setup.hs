@@ -35,7 +35,7 @@ main =
                 [ "set -ex" ] <>
                 [ "chcp.com" | isWindows ] <>
                 [ "chcp.com 65001" | isWindows ] <>
-                [ "bnfc --haskell -d -p Language.LambdaPi --generic -o src/ grammar/LambdaPi/Syntax.cf"
+                [ "bnfc --haskell -d -p Language.LambdaPi --functor --generic -o src/ grammar/LambdaPi/Syntax.cf"
                 , "cd src/Language/LambdaPi/Syntax"
                 , "alex Lex.x"
                 , "happy Par.y"

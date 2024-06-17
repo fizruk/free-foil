@@ -199,10 +199,10 @@ toFoilPattern
   -> r
 toFoilPattern scope env pattern cont =
   case pattern of
-    Raw.PatternWildcard -> cont PatternWildcard env
-    Raw.PatternVar x -> withFresh scope $ \binder ->
+    Raw.PatternWildcard _loc -> cont PatternWildcard env
+    Raw.PatternVar _loc x -> withFresh scope $ \binder ->
       cont (PatternVar binder) (Map.insert x (nameOf binder) (sink <$> env))
-    Raw.PatternPair l r ->
+    Raw.PatternPair _loc l r ->
       toFoilPattern scope env l $ \l' env' ->
         let scope' = extendScopePattern l' scope
          in toFoilPattern scope' env' r $ \r' env'' ->
@@ -218,15 +218,17 @@ fromFoilPattern
   -> r
 fromFoilPattern freshVars env pattern cont =
   case pattern of
-    PatternWildcard -> cont freshVars env Raw.PatternWildcard
+    PatternWildcard -> cont freshVars env (Raw.PatternWildcard loc)
     PatternVar z ->
       case freshVars of
         []   -> error "not enough fresh variables!"
-        x:xs -> cont xs (addNameBinder z x env) (Raw.PatternVar x)
+        x:xs -> cont xs (addNameBinder z x env) (Raw.PatternVar loc x)
     PatternPair l r ->
       fromFoilPattern freshVars env l $ \freshVars' env' l' ->
         fromFoilPattern freshVars' env' r $ \freshVars'' env'' r' ->
-          cont freshVars'' env'' (Raw.PatternPair l' r')
+          cont freshVars'' env'' (Raw.PatternPair loc l' r')
+    where
+      loc = error "location information is lost when converting from AST"
 
 -- | Convert a scope-safe term into a raw term.
 fromFoilTerm
@@ -235,19 +237,21 @@ fromFoilTerm
   -> Expr n                 -- ^ A scope safe term in scope @n@.
   -> Raw.Term
 fromFoilTerm freshVars env = \case
-  VarE name -> Raw.Var (lookupName name env)
-  AppE t1 t2 -> Raw.App (fromFoilTerm freshVars env t1) (fromFoilTerm freshVars env t2)
+  VarE name -> Raw.Var loc (lookupName name env)
+  AppE t1 t2 -> Raw.App loc (fromFoilTerm freshVars env t1) (fromFoilTerm freshVars env t2)
   LamE pattern body ->
     fromFoilPattern freshVars env pattern $ \freshVars' env' pattern' ->
-      Raw.Lam pattern' (Raw.AScopedTerm (fromFoilTerm freshVars' env' body))
+      Raw.Lam loc pattern' (Raw.AScopedTerm loc (fromFoilTerm freshVars' env' body))
   PiE pattern a b ->
     fromFoilPattern freshVars env pattern $ \freshVars' env' pattern' ->
-      Raw.Pi pattern' (fromFoilTerm freshVars env a) (Raw.AScopedTerm (fromFoilTerm freshVars' env' b))
-  PairE t1 t2 -> Raw.Pair (fromFoilTerm freshVars env t1) (fromFoilTerm freshVars env t2)
-  FirstE t -> Raw.First (fromFoilTerm freshVars env t)
-  SecondE t -> Raw.Second (fromFoilTerm freshVars env t)
-  ProductE t1 t2 -> Raw.Product (fromFoilTerm freshVars env t1) (fromFoilTerm freshVars env t2)
-  UniverseE -> Raw.Universe
+      Raw.Pi loc pattern' (fromFoilTerm freshVars env a) (Raw.AScopedTerm loc (fromFoilTerm freshVars' env' b))
+  PairE t1 t2 -> Raw.Pair loc (fromFoilTerm freshVars env t1) (fromFoilTerm freshVars env t2)
+  FirstE t -> Raw.First loc (fromFoilTerm freshVars env t)
+  SecondE t -> Raw.Second loc (fromFoilTerm freshVars env t)
+  ProductE t1 t2 -> Raw.Product loc (fromFoilTerm freshVars env t1) (fromFoilTerm freshVars env t2)
+  UniverseE -> Raw.Universe loc
+  where
+    loc = error "location information is lost when converting from AST"
 
 -- | Convert a /closed/ scope-safe term into a raw term.
 fromFoilTermClosed
@@ -264,35 +268,35 @@ toFoilTerm
   -> Raw.Term                   -- ^ A raw term.
   -> Expr n
 toFoilTerm scope env = \case
-  Raw.Var x ->
+  Raw.Var _loc x ->
     case Map.lookup x env of
       Just name -> VarE name
       Nothing   -> error $ "unknown free variable: " <> show x
 
-  Raw.App t1 t2 ->
+  Raw.App _loc t1 t2 ->
     AppE (toFoilTerm scope env t1) (toFoilTerm scope env t2)
 
-  Raw.Lam pattern (Raw.AScopedTerm body) ->
+  Raw.Lam _loc pattern (Raw.AScopedTerm _loc' body) ->
     toFoilPattern scope env pattern $ \pattern' env' ->
       let scope' = extendScopePattern pattern' scope
        in LamE pattern' (toFoilTerm scope' env' body)
 
-  Raw.Pi pattern a (Raw.AScopedTerm b) ->
+  Raw.Pi _loc pattern a (Raw.AScopedTerm _loc' b) ->
     toFoilPattern scope env pattern $ \pattern' env' ->
       let scope' = extendScopePattern pattern' scope
        in PiE pattern' (toFoilTerm scope env a) (toFoilTerm scope' env' b)
 
-  Raw.Pair t1 t2 ->
+  Raw.Pair _loc t1 t2 ->
     PairE (toFoilTerm scope env t1) (toFoilTerm scope env t2)
-  Raw.First t ->
+  Raw.First _loc t ->
     FirstE (toFoilTerm scope env t)
-  Raw.Second t ->
+  Raw.Second _loc t ->
     SecondE (toFoilTerm scope env t)
 
-  Raw.Product t1 t2 ->
+  Raw.Product _loc t1 t2 ->
     ProductE (toFoilTerm scope env t1) (toFoilTerm scope env t2)
 
-  Raw.Universe -> UniverseE
+  Raw.Universe _loc -> UniverseE
 
 -- | Match a pattern against an expression.
 matchPattern :: Pattern n l -> Expr n -> Substitution Expr l n
@@ -324,15 +328,15 @@ whnf scope = \case
 
 -- | Interpret a λΠ command.
 interpretCommand :: Raw.Command -> IO ()
-interpretCommand (Raw.CommandCompute term _type) =
+interpretCommand (Raw.CommandCompute _loc term _type) =
   putStrLn ("  ↦ " ++ printExpr (whnf emptyScope (toFoilTerm emptyScope Map.empty term)))
 -- #TODO: add typeCheck
-interpretCommand (Raw.CommandCheck _term _type) =
+interpretCommand (Raw.CommandCheck _loc _term _type) =
   putStrLn "Not yet implemented"
 
 -- | Interpret a λΠ program.
 interpretProgram :: Raw.Program -> IO ()
-interpretProgram (Raw.AProgram typedTerms) = mapM_ interpretCommand typedTerms
+interpretProgram (Raw.AProgram _loc typedTerms) = mapM_ interpretCommand typedTerms
 
 -- | Default interpreter program.
 -- Reads a λΠ program from the standard input and runs the commands.

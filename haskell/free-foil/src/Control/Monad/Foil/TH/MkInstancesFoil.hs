@@ -8,6 +8,7 @@ module Control.Monad.Foil.TH.MkInstancesFoil (mkInstancesFoil) where
 import           Language.Haskell.TH
 
 import qualified Control.Monad.Foil  as Foil
+import Control.Monad.Foil.TH.Util
 
 -- | Generate 'Foil.Sinkable' and 'Foil.CoSinkable' instances.
 mkInstancesFoil
@@ -17,18 +18,18 @@ mkInstancesFoil
   -> Name -- ^ Type name for raw patterns.
   -> Q [Dec]
 mkInstancesFoil termT nameT scopeT patternT = do
-  TyConI (DataD _ctx _name _tvars _kind patternCons _deriv) <- reify patternT
-  TyConI (DataD _ctx _name _tvars _kind scopeCons _deriv) <- reify scopeT
-  TyConI (DataD _ctx _name _tvars _kind termCons _deriv) <- reify termT
+  TyConI (DataD _ctx _name patternTVars _kind patternCons _deriv) <- reify patternT
+  TyConI (DataD _ctx _name scopeTVars _kind scopeCons _deriv) <- reify scopeT
+  TyConI (DataD _ctx _name termTVars _kind termCons _deriv) <- reify termT
 
   return
-    [ InstanceD Nothing [] (AppT (ConT ''Foil.Sinkable) (ConT foilScopeT))
+    [ InstanceD Nothing [] (AppT (ConT ''Foil.Sinkable) (PeelConT foilScopeT (map (VarT . tvarName) scopeTVars)))
         [ FunD 'Foil.sinkabilityProof (map clauseScopedTerm scopeCons) ]
 
-    , InstanceD Nothing [] (AppT (ConT ''Foil.CoSinkable) (ConT foilPatternT))
+    , InstanceD Nothing [] (AppT (ConT ''Foil.CoSinkable) (PeelConT foilPatternT (map (VarT . tvarName) patternTVars)))
         [ FunD 'Foil.coSinkabilityProof (map clausePattern patternCons) ]
 
-    , InstanceD Nothing [] (AppT (ConT ''Foil.Sinkable) (ConT foilTermT))
+    , InstanceD Nothing [] (AppT (ConT ''Foil.Sinkable) (PeelConT foilTermT (map (VarT . tvarName) termTVars)))
         [ FunD 'Foil.sinkabilityProof (map clauseTerm termCons)]
     ]
 
@@ -58,7 +59,7 @@ mkInstancesFoil termT nameT scopeT patternT = do
         mkConParamPattern _ i = VarP (mkName ("x" ++ show i))
 
         go _i _rename' p [] = p
-        go i rename' p ((_bang, ConT tyName) : conParams)
+        go i rename' p ((_bang, PeelConT tyName _tyParams) : conParams)
           | tyName == nameT =
               go (i + 1) rename' (AppE p (AppE (VarE rename) (VarE xi))) conParams
           | tyName == termT =
@@ -98,7 +99,7 @@ mkInstancesFoil termT nameT scopeT patternT = do
         mkConParamPattern _ i = VarP (mkName ("x" ++ show i))
 
         go _i rename' p [] = AppE (AppE (VarE cont) rename') p
-        go i rename' p ((_bang, ConT tyName) : conParams)
+        go i rename' p ((_bang, PeelConT tyName _tyParams) : conParams)
           | tyName == nameT || tyName == patternT =
               AppE
                 (AppE (AppE (VarE 'Foil.coSinkabilityProof) rename') (VarE xi))

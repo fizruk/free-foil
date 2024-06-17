@@ -29,13 +29,13 @@ import Control.Monad (ap)
 data HappyAbsSyn 
 	= HappyTerminal (Token)
 	| HappyErrorToken Prelude.Int
-	| HappyAbsSyn11 (Language.LambdaPi.Syntax.Abs.VarIdent)
-	| HappyAbsSyn12 (Language.LambdaPi.Syntax.Abs.Program)
-	| HappyAbsSyn13 (Language.LambdaPi.Syntax.Abs.Command)
-	| HappyAbsSyn14 ([Language.LambdaPi.Syntax.Abs.Command])
-	| HappyAbsSyn15 (Language.LambdaPi.Syntax.Abs.Term)
-	| HappyAbsSyn18 (Language.LambdaPi.Syntax.Abs.ScopedTerm)
-	| HappyAbsSyn19 (Language.LambdaPi.Syntax.Abs.Pattern)
+	| HappyAbsSyn11 ((Language.LambdaPi.Syntax.Abs.BNFC'Position, Language.LambdaPi.Syntax.Abs.VarIdent))
+	| HappyAbsSyn12 ((Language.LambdaPi.Syntax.Abs.BNFC'Position, Language.LambdaPi.Syntax.Abs.Program))
+	| HappyAbsSyn13 ((Language.LambdaPi.Syntax.Abs.BNFC'Position, Language.LambdaPi.Syntax.Abs.Command))
+	| HappyAbsSyn14 ((Language.LambdaPi.Syntax.Abs.BNFC'Position, [Language.LambdaPi.Syntax.Abs.Command]))
+	| HappyAbsSyn15 ((Language.LambdaPi.Syntax.Abs.BNFC'Position, Language.LambdaPi.Syntax.Abs.Term))
+	| HappyAbsSyn18 ((Language.LambdaPi.Syntax.Abs.BNFC'Position, Language.LambdaPi.Syntax.Abs.ScopedTerm))
+	| HappyAbsSyn19 ((Language.LambdaPi.Syntax.Abs.BNFC'Position, Language.LambdaPi.Syntax.Abs.Pattern))
 
 {- to allow type-synonyms as our monads (likely
  - with explicitly-specified bind and return)
@@ -168,7 +168,7 @@ happyExpList = Happy_Data_Array.listArray (0,149) ([0,3072,0,32768,1,0,48,0,4,4,
 {-# NOINLINE happyExpListPerState #-}
 happyExpListPerState st =
     token_strs_expected
-  where token_strs = ["error","%dummy","%start_pProgram","%start_pCommand","%start_pListCommand","%start_pTerm2","%start_pTerm","%start_pTerm1","%start_pScopedTerm","%start_pPattern","VarIdent","Program","Command","ListCommand","Term2","Term","Term1","ScopedTerm","Pattern","'('","')'","','","'.'","':'","';'","'_'","'check'","'compute'","'\215'","'\928'","'\955'","'\960\8321'","'\960\8322'","'\8594'","'\120140'","L_VarIdent","%eof"]
+  where token_strs = ["error","%dummy","%start_pProgram_internal","%start_pCommand_internal","%start_pListCommand_internal","%start_pTerm2_internal","%start_pTerm_internal","%start_pTerm1_internal","%start_pScopedTerm_internal","%start_pPattern_internal","VarIdent","Program","Command","ListCommand","Term2","Term","Term1","ScopedTerm","Pattern","'('","')'","','","'.'","':'","';'","'_'","'check'","'compute'","'\215'","'\928'","'\955'","'\960\8321'","'\960\8322'","'\8594'","'\120140'","L_VarIdent","%eof"]
         bit_start = st Prelude.* 37
         bit_end = (st Prelude.+ 1) Prelude.* 37
         read_bit = readArrayBit happyExpList
@@ -577,16 +577,16 @@ action_71 _ = happyFail (happyExpListPerState 71)
 action_72 _ = happyReduce_16
 
 happyReduce_8 = happySpecReduce_1  11 happyReduction_8
-happyReduction_8 (HappyTerminal (PT _ (T_VarIdent happy_var_1)))
+happyReduction_8 (HappyTerminal happy_var_1)
 	 =  HappyAbsSyn11
-		 (Language.LambdaPi.Syntax.Abs.VarIdent happy_var_1
+		 ((uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol happy_var_1), Language.LambdaPi.Syntax.Abs.VarIdent (tokenText happy_var_1))
 	)
 happyReduction_8 _  = notHappyAtAll 
 
 happyReduce_9 = happySpecReduce_1  12 happyReduction_9
 happyReduction_9 (HappyAbsSyn14  happy_var_1)
 	 =  HappyAbsSyn12
-		 (Language.LambdaPi.Syntax.Abs.AProgram happy_var_1
+		 ((fst happy_var_1, Language.LambdaPi.Syntax.Abs.AProgram (fst happy_var_1) (snd happy_var_1))
 	)
 happyReduction_9 _  = notHappyAtAll 
 
@@ -594,25 +594,25 @@ happyReduce_10 = happyReduce 4 13 happyReduction_10
 happyReduction_10 ((HappyAbsSyn15  happy_var_4) `HappyStk`
 	_ `HappyStk`
 	(HappyAbsSyn15  happy_var_2) `HappyStk`
-	_ `HappyStk`
+	(HappyTerminal happy_var_1) `HappyStk`
 	happyRest)
 	 = HappyAbsSyn13
-		 (Language.LambdaPi.Syntax.Abs.CommandCheck happy_var_2 happy_var_4
+		 ((uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol happy_var_1), Language.LambdaPi.Syntax.Abs.CommandCheck (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol happy_var_1)) (snd happy_var_2) (snd happy_var_4))
 	) `HappyStk` happyRest
 
 happyReduce_11 = happyReduce 4 13 happyReduction_11
 happyReduction_11 ((HappyAbsSyn15  happy_var_4) `HappyStk`
 	_ `HappyStk`
 	(HappyAbsSyn15  happy_var_2) `HappyStk`
-	_ `HappyStk`
+	(HappyTerminal happy_var_1) `HappyStk`
 	happyRest)
 	 = HappyAbsSyn13
-		 (Language.LambdaPi.Syntax.Abs.CommandCompute happy_var_2 happy_var_4
+		 ((uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol happy_var_1), Language.LambdaPi.Syntax.Abs.CommandCompute (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol happy_var_1)) (snd happy_var_2) (snd happy_var_4))
 	) `HappyStk` happyRest
 
 happyReduce_12 = happySpecReduce_0  14 happyReduction_12
 happyReduction_12  =  HappyAbsSyn14
-		 ([]
+		 ((Language.LambdaPi.Syntax.Abs.BNFC'NoPosition, [])
 	)
 
 happyReduce_13 = happySpecReduce_3  14 happyReduction_13
@@ -620,23 +620,23 @@ happyReduction_13 (HappyAbsSyn14  happy_var_3)
 	_
 	(HappyAbsSyn13  happy_var_1)
 	 =  HappyAbsSyn14
-		 ((:) happy_var_1 happy_var_3
+		 ((fst happy_var_1, (:) (snd happy_var_1) (snd happy_var_3))
 	)
 happyReduction_13 _ _ _  = notHappyAtAll 
 
 happyReduce_14 = happySpecReduce_1  15 happyReduction_14
 happyReduction_14 (HappyAbsSyn11  happy_var_1)
 	 =  HappyAbsSyn15
-		 (Language.LambdaPi.Syntax.Abs.Var happy_var_1
+		 ((fst happy_var_1, Language.LambdaPi.Syntax.Abs.Var (fst happy_var_1) (snd happy_var_1))
 	)
 happyReduction_14 _  = notHappyAtAll 
 
 happyReduce_15 = happySpecReduce_3  15 happyReduction_15
 happyReduction_15 _
 	(HappyAbsSyn15  happy_var_2)
-	_
+	(HappyTerminal happy_var_1)
 	 =  HappyAbsSyn15
-		 (happy_var_2
+		 ((uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol happy_var_1), (snd happy_var_2))
 	)
 happyReduction_15 _ _ _  = notHappyAtAll 
 
@@ -648,20 +648,20 @@ happyReduction_16 ((HappyAbsSyn18  happy_var_8) `HappyStk`
 	_ `HappyStk`
 	(HappyAbsSyn19  happy_var_3) `HappyStk`
 	_ `HappyStk`
-	_ `HappyStk`
+	(HappyTerminal happy_var_1) `HappyStk`
 	happyRest)
 	 = HappyAbsSyn15
-		 (Language.LambdaPi.Syntax.Abs.Pi happy_var_3 happy_var_5 happy_var_8
+		 ((uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol happy_var_1), Language.LambdaPi.Syntax.Abs.Pi (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol happy_var_1)) (snd happy_var_3) (snd happy_var_5) (snd happy_var_8))
 	) `HappyStk` happyRest
 
 happyReduce_17 = happyReduce 4 16 happyReduction_17
 happyReduction_17 ((HappyAbsSyn18  happy_var_4) `HappyStk`
 	_ `HappyStk`
 	(HappyAbsSyn19  happy_var_2) `HappyStk`
-	_ `HappyStk`
+	(HappyTerminal happy_var_1) `HappyStk`
 	happyRest)
 	 = HappyAbsSyn15
-		 (Language.LambdaPi.Syntax.Abs.Lam happy_var_2 happy_var_4
+		 ((uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol happy_var_1), Language.LambdaPi.Syntax.Abs.Lam (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol happy_var_1)) (snd happy_var_2) (snd happy_var_4))
 	) `HappyStk` happyRest
 
 happyReduce_18 = happySpecReduce_3  16 happyReduction_18
@@ -669,7 +669,7 @@ happyReduction_18 (HappyAbsSyn15  happy_var_3)
 	_
 	(HappyAbsSyn15  happy_var_1)
 	 =  HappyAbsSyn15
-		 (Language.LambdaPi.Syntax.Abs.Product happy_var_1 happy_var_3
+		 ((fst happy_var_1, Language.LambdaPi.Syntax.Abs.Product (fst happy_var_1) (snd happy_var_1) (snd happy_var_3))
 	)
 happyReduction_18 _ _ _  = notHappyAtAll 
 
@@ -678,42 +678,43 @@ happyReduction_19 (_ `HappyStk`
 	(HappyAbsSyn15  happy_var_4) `HappyStk`
 	_ `HappyStk`
 	(HappyAbsSyn15  happy_var_2) `HappyStk`
-	_ `HappyStk`
+	(HappyTerminal happy_var_1) `HappyStk`
 	happyRest)
 	 = HappyAbsSyn15
-		 (Language.LambdaPi.Syntax.Abs.Pair happy_var_2 happy_var_4
+		 ((uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol happy_var_1), Language.LambdaPi.Syntax.Abs.Pair (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol happy_var_1)) (snd happy_var_2) (snd happy_var_4))
 	) `HappyStk` happyRest
 
 happyReduce_20 = happyReduce 4 16 happyReduction_20
 happyReduction_20 (_ `HappyStk`
 	(HappyAbsSyn15  happy_var_3) `HappyStk`
 	_ `HappyStk`
-	_ `HappyStk`
+	(HappyTerminal happy_var_1) `HappyStk`
 	happyRest)
 	 = HappyAbsSyn15
-		 (Language.LambdaPi.Syntax.Abs.First happy_var_3
+		 ((uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol happy_var_1), Language.LambdaPi.Syntax.Abs.First (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol happy_var_1)) (snd happy_var_3))
 	) `HappyStk` happyRest
 
 happyReduce_21 = happyReduce 4 16 happyReduction_21
 happyReduction_21 (_ `HappyStk`
 	(HappyAbsSyn15  happy_var_3) `HappyStk`
 	_ `HappyStk`
-	_ `HappyStk`
+	(HappyTerminal happy_var_1) `HappyStk`
 	happyRest)
 	 = HappyAbsSyn15
-		 (Language.LambdaPi.Syntax.Abs.Second happy_var_3
+		 ((uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol happy_var_1), Language.LambdaPi.Syntax.Abs.Second (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol happy_var_1)) (snd happy_var_3))
 	) `HappyStk` happyRest
 
 happyReduce_22 = happySpecReduce_1  16 happyReduction_22
-happyReduction_22 _
+happyReduction_22 (HappyTerminal happy_var_1)
 	 =  HappyAbsSyn15
-		 (Language.LambdaPi.Syntax.Abs.Universe
+		 ((uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol happy_var_1), Language.LambdaPi.Syntax.Abs.Universe (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol happy_var_1)))
 	)
+happyReduction_22 _  = notHappyAtAll 
 
 happyReduce_23 = happySpecReduce_1  16 happyReduction_23
 happyReduction_23 (HappyAbsSyn15  happy_var_1)
 	 =  HappyAbsSyn15
-		 (happy_var_1
+		 ((fst happy_var_1, (snd happy_var_1))
 	)
 happyReduction_23 _  = notHappyAtAll 
 
@@ -721,34 +722,35 @@ happyReduce_24 = happySpecReduce_2  17 happyReduction_24
 happyReduction_24 (HappyAbsSyn15  happy_var_2)
 	(HappyAbsSyn15  happy_var_1)
 	 =  HappyAbsSyn15
-		 (Language.LambdaPi.Syntax.Abs.App happy_var_1 happy_var_2
+		 ((fst happy_var_1, Language.LambdaPi.Syntax.Abs.App (fst happy_var_1) (snd happy_var_1) (snd happy_var_2))
 	)
 happyReduction_24 _ _  = notHappyAtAll 
 
 happyReduce_25 = happySpecReduce_1  17 happyReduction_25
 happyReduction_25 (HappyAbsSyn15  happy_var_1)
 	 =  HappyAbsSyn15
-		 (happy_var_1
+		 ((fst happy_var_1, (snd happy_var_1))
 	)
 happyReduction_25 _  = notHappyAtAll 
 
 happyReduce_26 = happySpecReduce_1  18 happyReduction_26
 happyReduction_26 (HappyAbsSyn15  happy_var_1)
 	 =  HappyAbsSyn18
-		 (Language.LambdaPi.Syntax.Abs.AScopedTerm happy_var_1
+		 ((fst happy_var_1, Language.LambdaPi.Syntax.Abs.AScopedTerm (fst happy_var_1) (snd happy_var_1))
 	)
 happyReduction_26 _  = notHappyAtAll 
 
 happyReduce_27 = happySpecReduce_1  19 happyReduction_27
-happyReduction_27 _
+happyReduction_27 (HappyTerminal happy_var_1)
 	 =  HappyAbsSyn19
-		 (Language.LambdaPi.Syntax.Abs.PatternWildcard
+		 ((uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol happy_var_1), Language.LambdaPi.Syntax.Abs.PatternWildcard (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol happy_var_1)))
 	)
+happyReduction_27 _  = notHappyAtAll 
 
 happyReduce_28 = happySpecReduce_1  19 happyReduction_28
 happyReduction_28 (HappyAbsSyn11  happy_var_1)
 	 =  HappyAbsSyn19
-		 (Language.LambdaPi.Syntax.Abs.PatternVar happy_var_1
+		 ((fst happy_var_1, Language.LambdaPi.Syntax.Abs.PatternVar (fst happy_var_1) (snd happy_var_1))
 	)
 happyReduction_28 _  = notHappyAtAll 
 
@@ -757,10 +759,10 @@ happyReduction_29 (_ `HappyStk`
 	(HappyAbsSyn19  happy_var_4) `HappyStk`
 	_ `HappyStk`
 	(HappyAbsSyn19  happy_var_2) `HappyStk`
-	_ `HappyStk`
+	(HappyTerminal happy_var_1) `HappyStk`
 	happyRest)
 	 = HappyAbsSyn19
-		 (Language.LambdaPi.Syntax.Abs.PatternPair happy_var_2 happy_var_4
+		 ((uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol happy_var_1), Language.LambdaPi.Syntax.Abs.PatternPair (uncurry Language.LambdaPi.Syntax.Abs.BNFC'Position (tokenLineCol happy_var_1)) (snd happy_var_2) (snd happy_var_4))
 	) `HappyStk` happyRest
 
 happyNewToken action sts stk [] =
@@ -785,7 +787,7 @@ happyNewToken action sts stk (tk:tks) =
 	PT _ (TS _ 14) -> cont 33;
 	PT _ (TS _ 15) -> cont 34;
 	PT _ (TS _ 16) -> cont 35;
-	PT _ (T_VarIdent happy_dollar_dollar) -> cont 36;
+	PT _ (T_VarIdent _) -> cont 36;
 	_ -> happyError' ((tk:tks), [])
 	}
 
@@ -801,28 +803,28 @@ happyReturn1 :: () => a -> b -> Err a
 happyReturn1 = \a tks -> (return) a
 happyError' :: () => ([(Token)], [Prelude.String]) -> Err a
 happyError' = (\(tokens, _) -> happyError tokens)
-pProgram tks = happySomeParser where
+pProgram_internal tks = happySomeParser where
  happySomeParser = happyThen (happyParse action_0 tks) (\x -> case x of {HappyAbsSyn12 z -> happyReturn z; _other -> notHappyAtAll })
 
-pCommand tks = happySomeParser where
+pCommand_internal tks = happySomeParser where
  happySomeParser = happyThen (happyParse action_1 tks) (\x -> case x of {HappyAbsSyn13 z -> happyReturn z; _other -> notHappyAtAll })
 
-pListCommand tks = happySomeParser where
+pListCommand_internal tks = happySomeParser where
  happySomeParser = happyThen (happyParse action_2 tks) (\x -> case x of {HappyAbsSyn14 z -> happyReturn z; _other -> notHappyAtAll })
 
-pTerm2 tks = happySomeParser where
+pTerm2_internal tks = happySomeParser where
  happySomeParser = happyThen (happyParse action_3 tks) (\x -> case x of {HappyAbsSyn15 z -> happyReturn z; _other -> notHappyAtAll })
 
-pTerm tks = happySomeParser where
+pTerm_internal tks = happySomeParser where
  happySomeParser = happyThen (happyParse action_4 tks) (\x -> case x of {HappyAbsSyn15 z -> happyReturn z; _other -> notHappyAtAll })
 
-pTerm1 tks = happySomeParser where
+pTerm1_internal tks = happySomeParser where
  happySomeParser = happyThen (happyParse action_5 tks) (\x -> case x of {HappyAbsSyn15 z -> happyReturn z; _other -> notHappyAtAll })
 
-pScopedTerm tks = happySomeParser where
+pScopedTerm_internal tks = happySomeParser where
  happySomeParser = happyThen (happyParse action_6 tks) (\x -> case x of {HappyAbsSyn18 z -> happyReturn z; _other -> notHappyAtAll })
 
-pPattern tks = happySomeParser where
+pPattern_internal tks = happySomeParser where
  happySomeParser = happyThen (happyParse action_7 tks) (\x -> case x of {HappyAbsSyn19 z -> happyReturn z; _other -> notHappyAtAll })
 
 happySeq = happyDontSeq
@@ -840,6 +842,32 @@ happyError ts = Left $
 
 myLexer :: String -> [Token]
 myLexer = tokens
+
+-- Entrypoints
+
+pProgram :: [Token] -> Err Language.LambdaPi.Syntax.Abs.Program
+pProgram = fmap snd . pProgram_internal
+
+pCommand :: [Token] -> Err Language.LambdaPi.Syntax.Abs.Command
+pCommand = fmap snd . pCommand_internal
+
+pListCommand :: [Token] -> Err [Language.LambdaPi.Syntax.Abs.Command]
+pListCommand = fmap snd . pListCommand_internal
+
+pTerm2 :: [Token] -> Err Language.LambdaPi.Syntax.Abs.Term
+pTerm2 = fmap snd . pTerm2_internal
+
+pTerm :: [Token] -> Err Language.LambdaPi.Syntax.Abs.Term
+pTerm = fmap snd . pTerm_internal
+
+pTerm1 :: [Token] -> Err Language.LambdaPi.Syntax.Abs.Term
+pTerm1 = fmap snd . pTerm1_internal
+
+pScopedTerm :: [Token] -> Err Language.LambdaPi.Syntax.Abs.ScopedTerm
+pScopedTerm = fmap snd . pScopedTerm_internal
+
+pPattern :: [Token] -> Err Language.LambdaPi.Syntax.Abs.Pattern
+pPattern = fmap snd . pPattern_internal
 {-# LINE 1 "templates/GenericTemplate.hs" #-}
 -- $Id: GenericTemplate.hs,v 1.26 2005/01/14 14:47:22 simonmar Exp $
 
