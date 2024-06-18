@@ -8,6 +8,7 @@ copyright: "2023–2024 Nikolai Kudasov, Renata Shakirova, Egor Shalagin, Karina
 
 extra-source-files:
   - README.md
+  - ChangeLog.md
   - LICENSE
 
 synopsis: Efficient Type-Safe Capture-Avoiding Substitution for Free (Scoped Monads)
