@@ -32,10 +32,12 @@ module Language.LambdaPi.Impl.Foil where
 
 import           Control.Monad.Foil
 
+import           Control.Monad                   (join)
 import           Control.Monad.Foil.Relative
 import           Data.Coerce                     (coerce)
 import           Data.Map                        (Map)
 import qualified Data.Map                        as Map
+import           Data.Maybe                      (fromMaybe)
 import           Data.String
 import qualified Language.LambdaPi.Syntax.Abs    as Raw
 import           Language.LambdaPi.Syntax.Layout (resolveLayout)
@@ -48,6 +50,7 @@ import           Unsafe.Coerce                   (unsafeCoerce)
 -- $setup
 -- >>> :set -XOverloadedStrings
 -- >>> :set -XDataKinds
+-- import Control.Monad.Foil
 
 -- | Type of scope-safe \(\lambda\Pi\)-terms with pairs.
 data Expr n where
@@ -474,7 +477,7 @@ matchPattern pattern expr = go pattern expr identitySubst
 --
 -- To compare terms for \(\alpha\)-equivalence, we may use 'alphaEquiv':
 --
--- >>> alphaEquivRefreshed emptyScope (whnf emptyScope "(λx.λy.x)(λx.x)") "λx.λy.y"
+-- >>> alphaEquiv emptyScope (whnf emptyScope "(λx.λy.x)(λx.x)") "λx.λy.y"
 -- True
 --
 -- We may also normalize binders using 'refreshExpr':
@@ -538,6 +541,54 @@ unsafeEqExpr e1 e2 = case (e1, e2) of
   (UniverseE, UniverseE) -> True
   _ -> False
 
+unifyPatterns
+  :: Distinct n
+  => Pattern n l
+  -> Pattern n r
+  -> (forall lr. DExt n lr => (Name l -> Name lr) -> (Name r -> Name lr) -> Pattern n lr -> result)
+  -> Maybe result
+unifyPatterns PatternWildcard PatternWildcard cont =
+  Just (cont id id PatternWildcard)
+unifyPatterns (PatternVar x) (PatternVar x') cont =
+  case unifyNameBinders x x' of
+    SameNameBinders ->
+      case assertDistinct x of
+        Distinct -> case assertExt x of
+          Ext -> Just (cont id id (PatternVar x))
+    RenameLeftNameBinder renameL ->
+      case (assertExt x', assertDistinct x') of
+        (Ext, Distinct) -> Just (cont renameL id (PatternVar x'))
+    RenameRightNameBinder renameR ->
+      case (assertExt x, assertDistinct x) of
+        (Ext, Distinct) -> Just (cont id renameR (PatternVar x))
+unifyPatterns (PatternPair l r) (PatternPair l' r') cont = join $
+  unifyPatterns l l' $ \renameL renameL' l'' ->
+    unifyPatterns (unsafeRenamePattern renameL r) (unsafeRenamePattern renameL' r') $ \renameR renameR' r'' ->
+      cont (renameL `comp` renameR) (renameL' `comp` renameR') (PatternPair l'' r'')
+  where
+    comp :: (Name a -> Name b) -> (Name c -> Name d) -> (Name c -> Name d)
+    comp = unsafeCoerce (.)
+    unsafeRenamePattern :: (Name i -> Name o) -> Pattern i l -> Pattern o l
+    unsafeRenamePattern = unsafeCoerce
+unifyPatterns _ _ _ = Nothing
+
+alphaEquiv :: Distinct n => Scope n -> Expr n -> Expr n -> Bool
+alphaEquiv scope e1 e2 = case (e1, e2) of
+  (VarE x, VarE x') -> x == coerce x'
+  (AppE t1 t2, AppE t1' t2') -> alphaEquiv scope t1 t1' && alphaEquiv scope t2 t2'
+  (LamE x body, LamE x' body') -> fromMaybe False $ unifyPatterns x x' $ \renameL renameR x'' ->
+    let scope' = extendScopePattern x'' scope
+     in alphaEquiv scope' (liftRM scope' renameL body) (liftRM scope' renameR body')
+  (PiE x a b, PiE x' a' b') -> fromMaybe False $ unifyPatterns x x' $ \renameL renameR x'' ->
+    let scope' = extendScopePattern x'' scope
+     in alphaEquiv scope a a' && alphaEquiv scope' (liftRM scope' renameL b) (liftRM scope' renameR b')
+  (PairE l r, PairE l' r') -> alphaEquiv scope l l' && alphaEquiv scope r r'
+  (FirstE t, FirstE t') -> alphaEquiv scope t t'
+  (SecondE t, SecondE t') -> alphaEquiv scope t t'
+  (ProductE l r, ProductE l' r') -> alphaEquiv scope l l' && alphaEquiv scope r r'
+  (UniverseE, UniverseE) -> True
+  _ -> False
+
 -- | Interpret a λΠ command.
 interpretCommand :: Raw.Command -> IO ()
 interpretCommand (Raw.CommandCompute _loc term _type) =
@@ -580,7 +631,7 @@ identity = lam emptyScope $ \_ nx ->
 -- >>> churchN 0
 -- λ x0 . λ x1 . x1
 --
--- >>> F.churchN 3
+-- >>> churchN 3
 -- λ x0 . λ x1 . x0 (x0 (x0 x1))
 churchN :: Int -> Expr VoidS
 churchN n =
