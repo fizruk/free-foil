@@ -134,6 +134,10 @@ unsafeAssertFresh binder cont =
 assertDistinct :: Distinct n => NameBinder n l -> DistinctEvidence l
 assertDistinct _ = unsafeDistinct
 
+-- | A distinct scope extended with a 'NameBinder' is also distinct.
+assertExt :: NameBinder n l -> ExtEvidence n l
+assertExt _ = unsafeExt
+
 -- | Safely rename (if necessary) a given name to extend a given scope.
 -- This is similar to 'withFresh', except if the name does not clash with
 -- the scope, it can be used immediately, without renaming.

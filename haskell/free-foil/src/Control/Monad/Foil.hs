@@ -51,6 +51,7 @@ module Control.Monad.Foil (
   Distinct,
   DistinctEvidence(..),
   assertDistinct,
+  assertExt,
   DExt,
   InjectName(..),
 ) where
