@@ -1,6 +1,4 @@
 {-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleContexts      #-}
@@ -10,6 +8,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE UndecidableInstances  #-}
 -- | This module defines a variation of
@@ -19,13 +18,13 @@
 -- See description of the approach in [«Free Foil: Generating Efficient and Scope-Safe Abstract Syntax»](https://arxiv.org/abs/2405.16384).
 module Control.Monad.Free.Foil where
 
-import Data.Monoid (All(..))
-import Data.Coerce (coerce)
 import           Control.DeepSeq
 import qualified Control.Monad.Foil.Internal as Foil
 import qualified Control.Monad.Foil.Relative as Foil
+import           Data.Bifoldable
 import           Data.Bifunctor
-import Data.Bifoldable
+import           Data.Coerce                 (coerce)
+import           Data.Monoid                 (All (..))
 import           GHC.Generics                (Generic)
 
 -- | Scoped term under a (single) name binder.
@@ -196,13 +195,13 @@ alphaEquivScoped scope
           Foil.Distinct ->
             let scope1 = Foil.extendScope binder1 scope
             in alphaEquiv scope1 body1 body2
-      -- if we can safely rename second binder into first
+      -- if we can safely rename first binder into second
       Foil.RenameLeftNameBinder rename1to2 ->
         case Foil.assertDistinct binder2 of
           Foil.Distinct ->
             let scope2 = Foil.extendScope binder2 scope
             in alphaEquiv scope2 (Foil.liftRM scope2 rename1to2 body1) body2
-      -- if we can safely rename first binder into second
+      -- if we can safely rename second binder into first
       Foil.RenameRightNameBinder rename2to1 ->
         case Foil.assertDistinct binder1 of
           Foil.Distinct ->
