@@ -29,9 +29,9 @@ mkFoilData termT nameT scopeT patternT = do
   let foilTermCons = map (toTermCon termTVars n l) termCons
 
   return
-    [ DataD [] foilTermT (termTVars ++ [KindedTV n () (PromotedT ''Foil.S)]) Nothing foilTermCons []
-    , DataD [] foilScopeT (scopeTVars ++ [KindedTV n () (PromotedT ''Foil.S)]) Nothing foilScopeCons []
-    , DataD [] foilPatternT (patternTVars ++ [KindedTV n () (PromotedT ''Foil.S), KindedTV l () (PromotedT ''Foil.S)]) Nothing foilPatternCons []
+    [ DataD [] foilTermT (termTVars ++ [KindedTV n BndrReq (PromotedT ''Foil.S)]) Nothing foilTermCons []
+    , DataD [] foilScopeT (scopeTVars ++ [KindedTV n BndrReq (PromotedT ''Foil.S)]) Nothing foilScopeCons []
+    , DataD [] foilPatternT (patternTVars ++ [KindedTV n BndrReq (PromotedT ''Foil.S), KindedTV l BndrReq (PromotedT ''Foil.S)]) Nothing foilPatternCons []
     ]
   where
     foilTermT = mkName ("Foil" ++ nameBase termT)
@@ -41,7 +41,7 @@ mkFoilData termT nameT scopeT patternT = do
     -- | Convert a constructor declaration for a raw pattern type
     -- into a constructor for the scope-safe pattern type.
     toPatternCon
-      :: [TyVarBndr ()]
+      :: [TyVarBndr BndrVis]
       -> Name   -- ^ Name for the starting scope type variable.
       -> Con    -- ^ Raw pattern constructor.
       -> Q Con
@@ -82,7 +82,7 @@ mkFoilData termT nameT scopeT patternT = do
 
     -- | Convert a constructor declaration for a raw scoped term
     -- into a constructor for the scope-safe scoped term.
-    toScopeCon :: [TyVarBndr ()] -> Name -> Con -> Con
+    toScopeCon :: [TyVarBndr BndrVis] -> Name -> Con -> Con
     toScopeCon _tvars n (NormalC conName params) =
       NormalC foilConName (map toScopeParam params)
       where
@@ -93,7 +93,7 @@ mkFoilData termT nameT scopeT patternT = do
 
     -- | Convert a constructor declaration for a raw term
     -- into a constructor for the scope-safe term.
-    toTermCon :: [TyVarBndr ()] -> Name -> Name -> Con -> Con
+    toTermCon :: [TyVarBndr BndrVis] -> Name -> Name -> Con -> Con
     toTermCon tvars n l (NormalC conName params) =
       GadtC [foilConName] (map toTermParam params) (PeelConT foilTermT (map (VarT . tvarName) tvars ++ [VarT n]))
       where

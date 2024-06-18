@@ -1,4 +1,4 @@
-resolver: nightly-2023-09-30
+resolver: nightly-2024-06-18
 packages:
   - haskell/free-foil
   - haskell/lambda-pi
