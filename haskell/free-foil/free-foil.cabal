@@ -5,7 +5,7 @@ cabal-version: 1.12
 -- see: https://github.com/sol/hpack
 
 name:           free-foil
-version:        0.0.1
+version:        0.0.2
 synopsis:       Efficient Type-Safe Capture-Avoiding Substitution for Free (Scoped Monads)
 description:    Please see the README on GitHub at <https://github.com/fizruk/free-foil#readme>
 category:       Parsing
@@ -50,7 +50,7 @@ library
     , bifunctors
     , containers
     , deepseq
-    , template-haskell
+    , template-haskell >=2.21.0.0
     , text >=1.2.3.1
   default-language: Haskell2010
 
@@ -69,7 +69,7 @@ test-suite doctests
     , deepseq
     , doctest-parallel
     , free-foil
-    , template-haskell
+    , template-haskell >=2.21.0.0
     , text >=1.2.3.1
   default-language: Haskell2010
 
@@ -88,6 +88,6 @@ test-suite spec
     , containers
     , deepseq
     , free-foil
-    , template-haskell
+    , template-haskell >=2.21.0.0
     , text >=1.2.3.1
   default-language: Haskell2010
