@@ -40,6 +40,7 @@ import           System.Exit                     (exitFailure)
 -- $setup
 -- >>> import qualified Control.Monad.Foil as Foil
 -- >>> :set -XOverloadedStrings
+-- >>> :set -XDataKinds
 
 -- | The signature 'Bifunctor' for the \(\lambda\Pi\).
 data LambdaPiF scope term
