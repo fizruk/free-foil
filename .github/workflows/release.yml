@@ -1,0 +1,30 @@
+name: Release
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  hackage:
+    name: "Upload a new candidate on Hackage"
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🧰 Setup Stack
+        uses: freckle/stack-action@v5
+        with:
+          fast: false
+
+      - name: 🔨 Generate package dist tarball (free-foil)
+        run: stack sdist haskell/free-foil --tar-dir packages/
+
+      - name: 🚀 Upload on Hackage
+        uses: haskell-actions/hackage-publish@v1
+        with:
+          hackageToken: ${{ secrets.HACKAGE_AUTH_TOKEN }}
+          packagesPath: packages
+          publish: false
