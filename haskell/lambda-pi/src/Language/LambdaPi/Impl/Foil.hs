@@ -50,7 +50,7 @@ import           Unsafe.Coerce                   (unsafeCoerce)
 -- $setup
 -- >>> :set -XOverloadedStrings
 -- >>> :set -XDataKinds
--- import Control.Monad.Foil
+-- >>> import Control.Monad.Foil
 
 -- | Type of scope-safe \(\lambda\Pi\)-terms with pairs.
 data Expr n where

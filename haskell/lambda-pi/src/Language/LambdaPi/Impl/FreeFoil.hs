@@ -39,6 +39,7 @@ import           System.Exit                     (exitFailure)
 
 -- $setup
 -- >>> import qualified Control.Monad.Foil as Foil
+-- >>> import Control.Monad.Free.Foil
 -- >>> :set -XOverloadedStrings
 -- >>> :set -XDataKinds
 
