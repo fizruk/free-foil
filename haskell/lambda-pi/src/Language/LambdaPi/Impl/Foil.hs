@@ -36,13 +36,18 @@ import           Control.Monad.Foil.Relative
 import           Data.Coerce                     (coerce)
 import           Data.Map                        (Map)
 import qualified Data.Map                        as Map
+import           Data.String
 import qualified Language.LambdaPi.Syntax.Abs    as Raw
 import           Language.LambdaPi.Syntax.Layout (resolveLayout)
 import           Language.LambdaPi.Syntax.Lex    (tokens)
-import           Language.LambdaPi.Syntax.Par    (pProgram)
+import           Language.LambdaPi.Syntax.Par    (pProgram, pTerm)
 import           Language.LambdaPi.Syntax.Print  (printTree)
 import           System.Exit                     (exitFailure)
 import           Unsafe.Coerce                   (unsafeCoerce)
+
+-- $setup
+-- >>> :set -XOverloadedStrings
+-- >>> :set -XDataKinds
 
 -- | Type of scope-safe \(\lambda\Pi\)-terms with pairs.
 data Expr n where
@@ -69,7 +74,13 @@ data Expr n where
   UniverseE :: Expr n
 
 instance Show (Expr VoidS) where
-  show = ppExpr
+  show = printTree . fromFoilTerm'
+
+instance IsString (Expr VoidS) where
+  fromString input =
+    case pTerm (tokens input) of
+      Left err -> error ("could not parse λΠ-term: " <> input <> "\n  " <> err)
+      Right term -> toFoilTermClosed term
 
 -- | Patterns.
 data Pattern n l where
@@ -203,6 +214,23 @@ extendScopePattern = \case
 
 -- | Refresh (if needed) bound variables introduced in a pattern.
 -- This is a more flexible version of 'withRefreshed'.
+withFreshPattern
+  :: (Distinct o, InjectName e, Sinkable e)
+  => Scope o
+  -> Pattern n l
+  -> (forall o'. DExt o o' => (Substitution e n o -> Substitution e l o') -> Pattern o o' -> r) -> r
+withFreshPattern scope pattern cont =
+  case pattern of
+    PatternWildcard -> cont sink PatternWildcard
+    PatternVar x    -> withFresh scope $ \x' ->
+      cont (\subst -> addRename (sink subst) x (nameOf x')) (PatternVar x')
+    PatternPair l r -> withFreshPattern scope l $ \lsubst l' ->
+      let scope' = extendScopePattern l' scope
+       in withFreshPattern scope' r $ \rsubst r' ->
+            cont (rsubst . lsubst) (PatternPair l' r')
+
+-- | Refresh (if needed) bound variables introduced in a pattern.
+-- This is a more flexible version of 'withRefreshed'.
 withRefreshedPattern
   :: (Distinct o, InjectName e, Sinkable e)
   => Scope o
@@ -229,6 +257,29 @@ substitute scope subst = \case
           body' = substitute scope' subst' body
        in LamE pattern' body'
     PiE pattern a b -> withRefreshedPattern scope pattern $ \extendSubst pattern' ->
+      let subst' = extendSubst subst
+          scope' = extendScopePattern pattern' scope
+          a' = substitute scope subst a
+          b' = substitute scope' subst' b
+       in PiE pattern' a' b'
+    PairE l r -> PairE (substitute scope subst l) (substitute scope subst r)
+    FirstE t -> FirstE (substitute scope subst t)
+    SecondE t -> SecondE (substitute scope subst t)
+    ProductE l r -> ProductE (substitute scope subst l) (substitute scope subst r)
+    UniverseE -> UniverseE
+
+-- | Perform substitution in a \(\lambda\Pi\)-term
+-- and normalize binders in the process.
+substituteRefresh :: Distinct o => Scope o -> Substitution Expr i o -> Expr i -> Expr o
+substituteRefresh scope subst = \case
+    VarE name -> lookupSubst subst name
+    AppE f x -> AppE (substitute scope subst f) (substitute scope subst x)
+    LamE pattern body -> withFreshPattern scope pattern $ \extendSubst pattern' ->
+      let subst' = extendSubst subst
+          scope' = extendScopePattern pattern' scope
+          body' = substitute scope' subst' body
+       in LamE pattern' body'
+    PiE pattern a b -> withFreshPattern scope pattern $ \extendSubst pattern' ->
       let subst' = extendSubst subst
           scope' = extendScopePattern pattern' scope
           a' = substitute scope subst a
@@ -312,6 +363,44 @@ fromFoilTermClosed
   -> Raw.Term
 fromFoilTermClosed freshVars = fromFoilTerm freshVars emptyNameMap
 
+-- | Convert a scope-safe pattern into a raw pattern converting raw
+-- identifiers directly into 'Raw.VarIdent'
+fromFoilPattern'
+  :: Pattern n l  -- ^ A scope-safe pattern that extends scope @n@ into scope @l@.
+  -> Raw.Pattern
+fromFoilPattern' pattern =
+  case pattern of
+    PatternWildcard -> Raw.PatternWildcard loc
+    PatternVar z -> Raw.PatternVar loc (binderToVarIdent z)
+    PatternPair l r ->
+      let l' = fromFoilPattern' l
+          r' = fromFoilPattern' r
+       in Raw.PatternPair loc l' r'
+    where
+      loc = error "location information is lost when converting from AST"
+      binderToVarIdent binder = Raw.VarIdent ("x" ++ show (nameId (nameOf binder)))
+
+-- | Convert a scope-safe term into a raw term converting raw
+-- identifiers directly into 'Raw.VarIdent'.
+fromFoilTerm'
+  :: Expr n                 -- ^ A scope safe term in scope @n@.
+  -> Raw.Term
+fromFoilTerm' = \case
+  VarE name -> Raw.Var loc (nameToVarIdent name)
+  AppE t1 t2 -> Raw.App loc (fromFoilTerm' t1) (fromFoilTerm' t2)
+  LamE pattern body ->
+    Raw.Lam loc (fromFoilPattern' pattern) (Raw.AScopedTerm loc (fromFoilTerm' body))
+  PiE pattern a b ->
+    Raw.Pi loc (fromFoilPattern' pattern) (fromFoilTerm' a) (Raw.AScopedTerm loc (fromFoilTerm' b))
+  PairE t1 t2 -> Raw.Pair loc (fromFoilTerm' t1) (fromFoilTerm' t2)
+  FirstE t -> Raw.First loc (fromFoilTerm' t)
+  SecondE t -> Raw.Second loc (fromFoilTerm' t)
+  ProductE t1 t2 -> Raw.Product loc (fromFoilTerm' t1) (fromFoilTerm' t2)
+  UniverseE -> Raw.Universe loc
+  where
+    loc = error "location information is lost when converting from AST"
+    nameToVarIdent name = Raw.VarIdent ("x" ++ show (nameId name))
+
 -- | Convert a raw term into a scope-safe \(\lambda\Pi\)-term.
 toFoilTerm
   :: Distinct n
@@ -350,6 +439,10 @@ toFoilTerm scope env = \case
 
   Raw.Universe _loc -> UniverseE
 
+-- | Convert a raw term into a closed scope-safe term.
+toFoilTermClosed :: Raw.Term -> Expr VoidS
+toFoilTermClosed = toFoilTerm emptyScope Map.empty
+
 -- | Match a pattern against an expression.
 matchPattern :: Pattern n l -> Expr n -> Substitution Expr l n
 matchPattern pattern expr = go pattern expr identitySubst
@@ -360,6 +453,34 @@ matchPattern pattern expr = go pattern expr identitySubst
     go (PatternPair l r) e = go r (SecondE e) . go l (FirstE e)
 
 -- | Compute weak head normal form (WHNF).
+--
+-- >>> whnf emptyScope "(λx.(λ_.x)(λy.x))(λy.λz.z)"
+-- λ x0 . λ x1 . x1
+--
+-- >>> whnf emptyScope "(λs.λz.s(s(z)))(λs.λz.s(s(z)))"
+-- λ x1 . (λ x0 . λ x1 . x0 (x0 x1)) ((λ x0 . λ x1 . x0 (x0 x1)) x1)
+--
+-- Note that during computation bound variables can become unordered
+-- in the sense that binders may easily repeat or decrease. For example,
+-- in the following expression, inner binder has lower index that the outer one:
+--
+-- >>> whnf emptyScope "(λx.λy.x)(λx.x)"
+-- λ x1 . λ x0 . x0
+--
+-- At the same time, without substitution, we get regular, increasing binder indices:
+--
+-- >>> "λx.λy.y" :: Expr VoidS
+-- λ x0 . λ x1 . x1
+--
+-- To compare terms for \(\alpha\)-equivalence, we may use 'alphaEquiv':
+--
+-- >>> alphaEquivRefreshed emptyScope (whnf emptyScope "(λx.λy.x)(λx.x)") "λx.λy.y"
+-- True
+--
+-- We may also normalize binders using 'refreshExpr':
+--
+-- >>> refreshExpr emptyScope (whnf emptyScope "(λx.λy.x)(λx.x)")
+-- λ x0 . λ x1 . x1
 whnf :: Distinct n => Scope n -> Expr n -> Expr n
 whnf scope = \case
   AppE f arg ->
@@ -377,6 +498,45 @@ whnf scope = \case
       PairE _l r -> whnf scope r
       t'         -> SecondE t'
   t -> t
+
+-- | Normalize all binder identifiers in an expression.
+refreshExpr :: Distinct n => Scope n -> Expr n -> Expr n
+refreshExpr scope = substituteRefresh scope identitySubst
+
+-- | \(\alpha\)-equivalence check for two terms in one scope
+-- via normalization of bound identifiers (via 'refreshExpr').
+--
+-- This function may perform some unnecessary
+-- changes of bound variables when the binders are the same on both sides.
+alphaEquivRefreshed :: Distinct n => Scope n -> Expr n -> Expr n -> Bool
+alphaEquivRefreshed scope e1 e2 =
+  refreshExpr scope e1 `unsafeEqExpr` refreshExpr scope e2
+
+-- | Unsafely check for equality of two 'Pattern's.
+--
+-- This __does not__ include \(\alpha\)-equivalence!
+unsafeEqPattern :: Pattern n l -> Pattern n' l' -> Bool
+unsafeEqPattern PatternWildcard PatternWildcard = True
+unsafeEqPattern (PatternVar x) (PatternVar x')   = x == coerce x'
+unsafeEqPattern (PatternPair l r) (PatternPair l' r') =
+  unsafeEqPattern l l' && unsafeEqPattern r r'
+unsafeEqPattern _ _ = False
+
+-- | Unsafely check for equality of two 'Expr's.
+--
+-- This __does not__ include \(\alpha\)-equivalence!
+unsafeEqExpr :: Expr n -> Expr l -> Bool
+unsafeEqExpr e1 e2 = case (e1, e2) of
+  (VarE x, VarE x')            -> x == coerce x'
+  (AppE t1 t2, AppE t1' t2')   -> unsafeEqExpr t1 t1' && unsafeEqExpr t2 t2'
+  (LamE x body, LamE x' body') -> unsafeEqPattern x x' && unsafeEqExpr body body'
+  (PiE x a b, PiE x' a' b') -> unsafeEqPattern x x' && unsafeEqExpr a a' && unsafeEqExpr b b'
+  (PairE l r, PairE l' r') -> unsafeEqExpr l l' && unsafeEqExpr r r'
+  (FirstE t, FirstE t') -> unsafeEqExpr t t'
+  (SecondE t, SecondE t') -> unsafeEqExpr t t'
+  (ProductE l r, ProductE l' r') -> unsafeEqExpr l l' && unsafeEqExpr r r'
+  (UniverseE, UniverseE) -> True
+  _ -> False
 
 -- | Interpret a λΠ command.
 interpretCommand :: Raw.Command -> IO ()
@@ -410,7 +570,7 @@ lam scope mkBody = withFresh scope $ \x ->
 -- | An identity function as a \(\lambda\)-term:
 --
 -- >>> identity
--- λx0. x0
+-- λ x0 . x0
 identity :: Expr VoidS
 identity = lam emptyScope $ \_ nx ->
   VarE (nameOf nx)
@@ -418,10 +578,10 @@ identity = lam emptyScope $ \_ nx ->
 -- | Church-encoding of a natural number \(n\).
 --
 -- >>> churchN 0
--- λx0. λx1. x1
+-- λ x0 . λ x1 . x1
 --
--- >>> churchN 3
--- λx0. λx1. x0 (x0 (x0 (x1)))
+-- >>> F.churchN 3
+-- λ x0 . λ x1 . x0 (x0 (x0 x1))
 churchN :: Int -> Expr VoidS
 churchN n =
   lam emptyScope $ \sx nx ->
