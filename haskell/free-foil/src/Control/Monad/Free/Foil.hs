@@ -1,4 +1,6 @@
 {-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleContexts      #-}
@@ -146,12 +148,63 @@ unsafeEqScopedAST (ScopedAST binder1 body1) (ScopedAST binder2 body2) = and
   , body1 `unsafeEqAST` body2
   ]
 
--- | \(\alpha\)-equivalence check for two terms
+-- | \(\alpha\)-equivalence check for two terms in one scope
 -- via normalization of bound identifiers (via 'refreshAST').
+--
+-- Compared to 'alphaEquiv', this function may perform some unnecessary
+-- changes of bound variables when the binders are the same on both sides.
+alphaEquivRefreshed
+  :: (Bifunctor sig, Bifoldable sig, ZipMatch sig, Foil.Distinct n)
+  => Foil.Scope n
+  -> AST sig n
+  -> AST sig n
+  -> Bool
+alphaEquivRefreshed scope t1 t2 = refreshAST scope t1 `unsafeEqAST` refreshAST scope t2
+
+-- | \(\alpha\)-equivalence check for two terms in one scope
+-- via unification of bound variables (via 'unifyNameBinders').
+--
+-- Compared to 'alphaEquivRefreshed', this function might skip unnecessary
+-- changes of bound variables when both binders in two matching scoped terms coincide.
 alphaEquiv
   :: (Bifunctor sig, Bifoldable sig, ZipMatch sig, Foil.Distinct n)
   => Foil.Scope n
   -> AST sig n
   -> AST sig n
   -> Bool
-alphaEquiv scope t1 t2 = refreshAST scope t1 `unsafeEqAST` refreshAST scope t2
+alphaEquiv _scope (Var x) (Var y) = x == coerce y
+alphaEquiv scope (Node l) (Node r) =
+  case zipMatch l r of
+    Nothing -> False
+    Just tt -> getAll (bifoldMap (All . uncurry (alphaEquivScoped scope)) (All . uncurry (alphaEquiv scope)) tt)
+alphaEquiv _ _ _ = False
+
+-- | Same as 'alphaEquiv' but for scoped terms.
+alphaEquivScoped
+  :: (Bifunctor sig, Bifoldable sig, ZipMatch sig, Foil.Distinct n)
+  => Foil.Scope n
+  -> ScopedAST sig n
+  -> ScopedAST sig n
+  -> Bool
+alphaEquivScoped scope
+  (ScopedAST binder1 body1)
+  (ScopedAST binder2 body2) =
+    case Foil.unifyNameBinders binder1 binder2 of
+      -- if binders are the same, then we can safely compare bodies
+      Foil.SameNameBinders ->  -- after seeing this we know that body scopes are the same
+        case Foil.assertDistinct binder1 of
+          Foil.Distinct ->
+            let scope1 = Foil.extendScope binder1 scope
+            in alphaEquiv scope1 body1 body2
+      -- if we can safely rename second binder into first
+      Foil.RenameLeftNameBinder rename1to2 ->
+        case Foil.assertDistinct binder2 of
+          Foil.Distinct ->
+            let scope2 = Foil.extendScope binder2 scope
+            in alphaEquiv scope2 (Foil.liftRM scope2 rename1to2 body1) body2
+      -- if we can safely rename first binder into second
+      Foil.RenameRightNameBinder rename2to1 ->
+        case Foil.assertDistinct binder1 of
+          Foil.Distinct ->
+            let scope1 = Foil.extendScope binder1 scope
+            in alphaEquiv scope1 body1 (Foil.liftRM scope1 rename2to1 body2)

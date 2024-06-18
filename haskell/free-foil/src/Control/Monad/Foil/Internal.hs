@@ -155,6 +155,35 @@ unsinkName binder name@(UnsafeName raw)
   | nameOf binder == name = Nothing
   | otherwise = Just (UnsafeName raw)
 
+-- * Unification of binders
+
+-- | Unification result for two binders,
+-- extending some common scope to scopes @l@ and @r@ respectively.
+--
+-- Due to the implementation of the foil,
+data UnifyNameBinders l r where
+  -- | Binders are the same, proving that type parameters @l@ and @r@
+  -- are in fact equivalent.
+  SameNameBinders :: UnifyNameBinders l l
+  -- | It is possible to safely rename the left binder
+  -- to match the right one.
+  RenameLeftNameBinder :: (Name l -> Name r) -> UnifyNameBinders l r
+  -- | It is possible to safely rename the right binder
+  -- to match the left one.
+  RenameRightNameBinder :: (Name r -> Name l) -> UnifyNameBinders l r
+
+unifyNameBinders
+  :: forall i l r.
+     NameBinder i l
+  -> NameBinder i r
+  -> UnifyNameBinders l r
+unifyNameBinders (UnsafeNameBinder (UnsafeName i1)) (UnsafeNameBinder (UnsafeName i2))
+  | i1 == i2  = unsafeCoerce (SameNameBinders @l)  -- equal names extend scopes equally
+  | i1 < i2   = RenameLeftNameBinder $ \(UnsafeName i'') ->
+      if i'' == i2 then UnsafeName i1 else UnsafeName i''
+  | otherwise = RenameRightNameBinder $ \(UnsafeName i') ->
+      if i'  == i1 then UnsafeName i2 else UnsafeName i'
+
 -- * Safe sinking
 
 -- | Sinking an expression from scope @n@ into a (usualy extended) scope @l@,
