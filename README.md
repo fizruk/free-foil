@@ -1,5 +1,10 @@
 # Free Foil
 
+[![Release](https://img.shields.io/github/v/release/fizruk/free-foil.svg)](https://github.com/fizruk/free-foil/releases/latest)
+[![`free-foil` on Hackage](https://img.shields.io/hackage/v/free-foil)](http://hackage.haskell.org/package/free-foil)
+[![`free-foil` on Stackage Nightly](https://stackage.org/package/free-foil/badge/nightly)](http://stackage.org/package/free-foil)
+[![`free-foil` on Stackage LTS](https://stackage.org/package/free-foil/badge/lts)](http://stackage.org/package/free-foil)
+
 [![Haskell (build, test, haddock)](https://github.com/fizruk/free-foil/actions/workflows/haskell.yml/badge.svg)](https://github.com/fizruk/free-foil/actions/workflows/haskell.yml)
 [![Haddock](<https://shields.io/badge/Haddock%20(main)-Code%20documentation-informational>)](https://fizruk.github.io/free-foil/haddock/)
 
