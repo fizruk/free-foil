@@ -179,9 +179,9 @@ unifyNameBinders
   -> UnifyNameBinders l r
 unifyNameBinders (UnsafeNameBinder (UnsafeName i1)) (UnsafeNameBinder (UnsafeName i2))
   | i1 == i2  = unsafeCoerce (SameNameBinders @l)  -- equal names extend scopes equally
-  | i1 < i2   = RenameLeftNameBinder $ \(UnsafeName i'') ->
+  | i1 < i2   = RenameRightNameBinder $ \(UnsafeName i'') ->
       if i'' == i2 then UnsafeName i1 else UnsafeName i''
-  | otherwise = RenameRightNameBinder $ \(UnsafeName i') ->
+  | otherwise = RenameLeftNameBinder $ \(UnsafeName i') ->
       if i'  == i1 then UnsafeName i2 else UnsafeName i'
 
 -- * Safe sinking
