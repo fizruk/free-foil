@@ -9,6 +9,7 @@
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE UndecidableInstances  #-}
 -- | Foil implementation of the \(\lambda\Pi\)-calculus (with pairs).
 --
@@ -17,7 +18,7 @@
 -- 1. Scope-safe AST for \(\lambda\Pi\)-terms.
 -- 2. Correct capture-avoiding substitution (see 'substitute').
 -- 3. Conversion between scope-safe and raw term representation (the latter is generated via BNFC), see 'toFoilTerm' and 'fromFoilTerm'.
--- 4. Helper functions for patterns. See 'extendScopeFoilPattern' and 'withRefreshedFoilPattern'.
+-- 4. Helper functions for patterns. See 'extendScopePattern' and 'withRefreshedPattern'.
 -- 5. Computation of weak head normal form (WHNF) and normal form (NF), see 'whnf' and 'nf'.
 -- 6. Entry point, gluing everything together. See 'defaultMain'.
 --
@@ -31,6 +32,8 @@ module Language.LambdaPi.Impl.Foil where
 
 import           Control.Monad.Foil
 
+import           Control.Monad.Foil.Relative
+import           Data.Coerce                     (coerce)
 import           Data.Map                        (Map)
 import qualified Data.Map                        as Map
 import qualified Language.LambdaPi.Syntax.Abs    as Raw
@@ -39,6 +42,7 @@ import           Language.LambdaPi.Syntax.Lex    (tokens)
 import           Language.LambdaPi.Syntax.Par    (pProgram)
 import           Language.LambdaPi.Syntax.Print  (printTree)
 import           System.Exit                     (exitFailure)
+import           Unsafe.Coerce                   (unsafeCoerce)
 
 -- | Type of scope-safe \(\lambda\Pi\)-terms with pairs.
 data Expr n where
@@ -91,6 +95,54 @@ instance CoSinkable Pattern where
 
 instance InjectName Expr where
   injectName = VarE
+
+-- | Check if a name in the extended context
+-- is introduced in a pattern or comes from the outer scope @n@.
+--
+-- This is a generalization of 'unsinkName' to 'Pattern'.
+unsinkNamePattern
+  :: Pattern n l -> Name l -> Maybe (Name n)
+unsinkNamePattern pattern name =
+  case pattern of
+    PatternWildcard   -> Just (coerce name)
+    PatternVar binder -> unsinkName binder name
+    PatternPair l r   -> unsinkNamePattern r name >>= unsinkNamePattern l
+
+instance RelMonad Name Expr where
+  rreturn = VarE
+  rbind scope e subst = case e of
+    VarE name -> subst name
+    AppE f x -> AppE (rbind scope f subst) (rbind scope x subst)
+    LamE pattern body -> withRefreshedPattern scope pattern $ \extendSubst pattern' ->
+      let subst' x = case unsinkNamePattern pattern x of
+            Nothing ->
+              -- NOTE: unsafeCoerce here is used (safely) as a workaround,
+              -- since withRefreshedPattern works with substitutions,
+              -- not arbitrary functions
+              let impossibleSubst = unsafeCoerce (identitySubst @Expr @VoidS)
+                in lookupSubst (extendSubst impossibleSubst) x
+            Just n  -> sink (subst n)
+          scope' = extendScopePattern pattern' scope
+          body' = rbind scope' body subst'
+      in LamE pattern' body'
+    PiE pattern a b -> withRefreshedPattern scope pattern $ \extendSubst pattern' ->
+      let subst' x = case unsinkNamePattern pattern x of
+            Nothing ->
+              -- NOTE: unsafeCoerce here is used (safely) as a workaround,
+              -- since withRefreshedPattern works with substitutions,
+              -- not arbitrary functions
+              let impossibleSubst = unsafeCoerce (identitySubst @Expr @VoidS)
+                in lookupSubst (extendSubst impossibleSubst) x
+            Just n  -> sink (subst n)
+          scope' = extendScopePattern pattern' scope
+          a' = rbind scope a subst
+          b' = rbind scope' b subst'
+       in PiE pattern' a' b'
+    PairE l r -> PairE (rbind scope l subst) (rbind scope r subst)
+    FirstE t -> FirstE (rbind scope t subst)
+    SecondE t -> SecondE (rbind scope t subst)
+    ProductE l r -> ProductE (rbind scope l subst) (rbind scope r subst)
+    UniverseE -> UniverseE
 
 -- | Default way to print a name using its internal 'Id'.
 ppName :: Name n -> String
