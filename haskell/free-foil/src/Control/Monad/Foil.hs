@@ -40,6 +40,9 @@ module Control.Monad.Foil (
   identitySubst,
   addSubst,
   addRename,
+  -- * Unification of binders
+  UnifyNameBinders(..),
+  unifyNameBinders,
   -- * Name maps
   NameMap,
   emptyNameMap,
