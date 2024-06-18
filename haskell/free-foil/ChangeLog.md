@@ -9,4 +9,4 @@
 
 # 0.0.1 — 2024-06-08
 
-First release, corresponding to
+First release, corresponding to the ICCQ 2024 paper.
