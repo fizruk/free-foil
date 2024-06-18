@@ -1,12 +1,11 @@
-{-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE DeriveFunctor        #-}
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE GADTs                #-}
-{-# LANGUAGE LambdaCase           #-}
-{-# LANGUAGE PatternSynonyms      #-}
-{-# LANGUAGE TemplateHaskell      #-}
-{-# LANGUAGE TypeOperators        #-}
-{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE DeriveFunctor     #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE PatternSynonyms   #-}
+{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE TypeOperators     #-}
 -- | Free foil implementation of the \(\lambda\Pi\)-calculus (with pairs).
 --
 -- Free foil provides the following:
@@ -50,6 +49,14 @@ data LambdaPiF scope term
   | UniverseF             -- ^ Universe (type of types): \(\mathcal{U}\)
   deriving (Eq, Show, Functor)
 deriveBifunctor ''LambdaPiF
+deriveBifoldable ''LambdaPiF
+
+instance ZipMatch LambdaPiF where
+  zipMatch (AppF l r) (AppF l' r') = Just (AppF (l, l') (r, r'))
+  zipMatch (LamF t) (LamF t')      = Just (LamF (t, t'))
+  zipMatch (PiF l r) (PiF l' r')   = Just (PiF (l, l') (r, r'))
+  zipMatch UniverseF UniverseF     = Just UniverseF
+  zipMatch _ _                     = Nothing
 
 -- | The signature 'Bifunctor' for pairs.
 data PairF scope term
@@ -59,6 +66,14 @@ data PairF scope term
   | ProductF term term    -- ^ Product type (non-dependent): \(T_1 \times T_2\)
   deriving (Eq, Show, Functor)
 deriveBifunctor ''PairF
+deriveBifoldable ''PairF
+
+instance ZipMatch PairF where
+  zipMatch (PairF l r) (PairF l' r')       = Just (PairF (l, l') (r, r'))
+  zipMatch (FirstF t) (FirstF t')          = Just (FirstF (t, t'))
+  zipMatch (SecondF t) (SecondF t')        = Just (SecondF (t, t'))
+  zipMatch (ProductF l r) (ProductF l' r') = Just (ProductF (l, l') (r, r'))
+  zipMatch _ _                             = Nothing
 
 -- | Sum of signature bifunctors.
 data (f :+: g) scope term
@@ -66,6 +81,12 @@ data (f :+: g) scope term
   | InR (g scope term)
   deriving (Eq, Show, Functor)
 deriveBifunctor ''(:+:)
+deriveBifoldable ''(:+:)
+
+instance (ZipMatch f, ZipMatch g) => ZipMatch (f :+: g) where
+  zipMatch (InL f) (InL f') = InL <$> zipMatch f f'
+  zipMatch (InR g) (InR g') = InR <$> zipMatch g g'
+  zipMatch _ _              = Nothing
 
 -- | \(\lambda\Pi\)-terms in scope @n@, freely generated from the sum of signatures 'LambdaPiF' and 'PairF'.
 type LambdaPi n = AST (LambdaPiF :+: PairF) n
@@ -110,10 +131,32 @@ instance IsString (LambdaPi Foil.VoidS) where
 -- | Compute weak head normal form (WHNF) of a \(\lambda\Pi\)-term.
 --
 -- >>> whnf Foil.emptyScope "(λx.(λ_.x)(λy.x))(λy.λz.z)"
--- λ x1 . λ x2 . x2
+-- λ x0 . λ x1 . x1
 --
 -- >>> whnf Foil.emptyScope "(λs.λz.s(s(z)))(λs.λz.s(s(z)))"
--- λ x1 . (λ x2 . λ x3 . x2 (x2 x3)) ((λ x2 . λ x3 . x2 (x2 x3)) x1)
+-- λ x1 . (λ x0 . λ x1 . x0 (x0 x1)) ((λ x0 . λ x1 . x0 (x0 x1)) x1)
+--
+-- Note that during computation bound variables can become unordered
+-- in the sense that binders may easily repeat or decrease. For example,
+-- in the following expression, inner binder has lower index that the outer one:
+--
+-- >>> whnf Foil.emptyScope "(λx.λy.x)(λx.x)"
+-- λ x1 . λ x0 . x0
+--
+-- At the same time, without substitution, we get regular, increasing binder indices:
+--
+-- >>> "λx.λy.y" :: LambdaPi Foil.VoidS
+-- λ x0 . λ x1 . x1
+--
+-- To compare terms for \(\alpha\)-equivalence, we may use 'alphaEquiv':
+--
+-- >>> alphaEquiv Foil.emptyScope (whnf Foil.emptyScope "(λx.λy.x)(λx.x)") "λx.λy.y"
+-- True
+--
+-- We may also normalize binders using 'refreshAST':
+--
+-- >>> refreshAST Foil.emptyScope (whnf Foil.emptyScope "(λx.λy.x)(λx.x)")
+-- λ x0 . λ x1 . x1
 whnf :: Foil.Distinct n => Foil.Scope n -> LambdaPi n -> LambdaPi n
 whnf scope = \case
   App fun arg ->
@@ -234,9 +277,34 @@ fromLambdaPi freshVars env = \case
   where
     loc = error "no location info available when converting from an AST"
 
+-- | Convert back from a scope-safe \(\lambda\Pi\)-term into a raw expression or type.
+--
+-- In contrast to 'fromLambdaPi', this function uses the raw foil identifiers (integers)
+-- to generate names for the variables. This makes them transparent when printing.
+fromLambdaPi'
+  :: LambdaPi n                   -- ^ A scope-safe \(\lambda\Pi\)-term.
+  -> Raw.Term
+fromLambdaPi' = \case
+  Var name -> Raw.Var loc (ppName name)
+  App fun arg -> Raw.App loc (fromLambdaPi' fun) (fromLambdaPi' arg)
+  Lam binder body ->
+    let x = ppName (Foil.nameOf binder)
+     in Raw.Lam loc (Raw.PatternVar loc x) (Raw.AScopedTerm loc (fromLambdaPi' body))
+  Pi binder a b ->
+    let x = ppName (Foil.nameOf binder)
+     in Raw.Pi loc (Raw.PatternVar loc x) (fromLambdaPi' a) (Raw.AScopedTerm loc (fromLambdaPi' b))
+  Pair l r -> Raw.Pair loc (fromLambdaPi' l) (fromLambdaPi' r)
+  First t -> Raw.First loc (fromLambdaPi' t)
+  Second t -> Raw.Second loc (fromLambdaPi' t)
+  Product l r -> Raw.Product loc (fromLambdaPi' l) (fromLambdaPi' r)
+  Universe -> Raw.Universe loc
+  where
+    loc = error "no location info available when converting from an AST"
+    ppName name = Raw.VarIdent ("x" ++ show (Foil.nameId name))
+
 -- | Pretty-print a /closed/ \(\lambda\Pi\)-term.
 ppLambdaPi :: LambdaPi Foil.VoidS -> String
-ppLambdaPi = Raw.printTree . fromLambdaPi [ Raw.VarIdent ("x" <> show i) | i <- [1 :: Integer ..] ] Foil.emptyNameMap
+ppLambdaPi = Raw.printTree . fromLambdaPi'
 
 -- | Interpret a λΠ command.
 interpretCommand :: Raw.Command -> IO ()
