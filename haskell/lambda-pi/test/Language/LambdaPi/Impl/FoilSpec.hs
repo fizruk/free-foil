@@ -18,9 +18,17 @@ import Language.LambdaPi.Impl.Foil
 shrinkExprs :: (Expr n, Expr l) -> [(Expr n, Expr l)]
 shrinkExprs = \case
   (AppE t1 t2, AppE t1' t2') -> [(t1, t1'), (t2, t2')]
+  (PairE t1 t2, PairE t1' t2') -> [(t1, t1'), (t2, t2')]
+  (FirstE t, FirstE t') -> [(t, t')]
+  (SecondE t, SecondE t') -> [(t, t')]
+  (ProductE t1 t2, ProductE t1' t2') -> [(t1, t1'), (t2, t2')]
   (LamE x body, LamE x' body') ->
     [ (LamE x t, LamE x' t')
     | (t, t') <- shrinkExprs (body, body')]
+  (PiE x a b, PiE x' a' b') ->
+    [ (PiE x c d, PiE x' c' d')
+    | (c, c') <- shrinkExprs (a, a')
+    , (d, d') <- shrinkExprs (b, b')]
   _ -> []
 
 genExpr :: Distinct n => Scope n -> [Name n] -> Gen (Expr n)
@@ -47,6 +55,28 @@ genAlphaEquivExprs withRefreshed' scope1 scope2 names = sized go
           (f1, f2) <- go (n `div` 2)
           (x1, x2) <- go (n `div` 2)
           return (AppE f1 x1, AppE f2 x2)
+        , do
+          (f1, f2) <- go (n `div` 2)
+          (x1, x2) <- go (n `div` 2)
+          return (PairE f1 x1, PairE f2 x2)
+        , bimap FirstE FirstE <$> go (n - 1)
+        , bimap SecondE SecondE <$> go (n - 1)
+        , do
+          (f1, f2) <- go (n `div` 2)
+          (x1, x2) <- go (n `div` 2)
+          return (ProductE f1 x1, ProductE f2 x2)
+        , pure (UniverseE, UniverseE)
+        , do
+          name1 <- Foil.Internal.UnsafeName <$> choose (1, 1000)
+          name2 <- Foil.Internal.UnsafeName <$> choose (1, 1000)
+          withRefreshed' scope1 name1 $ \binder1 ->
+            withRefreshed' scope2 name2 $ \binder2 -> do
+              let names' = (nameOf binder1, nameOf binder2) : map (bimap sink sink) names
+                  scope1' = extendScope binder1 scope1
+                  scope2' = extendScope binder2 scope2
+              (a1, a2) <- go (n `div` 2)
+              (body1, body2) <- resize (n `div` 2) $ genAlphaEquivExprs withRefreshed' scope1' scope2' names'
+              return (PiE (PatternVar binder1) a1 body1, PiE (PatternVar binder2) a2 body2)
         ]
         -- allow LamE when we do not have any names
       , if n < 1 && not (null names) then [] else [ do
