@@ -117,6 +117,7 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      Language.LambdaPi.Impl.FoilSpec
       Paths_lambda_pi
   hs-source-dirs:
       test
@@ -127,12 +128,15 @@ test-suite spec
   build-tool-depends:
       BNFC:bnfc >=2.9.4.1
   build-depends:
-      array >=0.5.3.0
+      QuickCheck
+    , array >=0.5.3.0
     , base >=4.7 && <5
     , bifunctors
     , containers
     , deepseq
     , free-foil >=0.0.2
+    , hspec
+    , hspec-discover
     , lambda-pi
     , template-haskell
     , text >=1.2.3.1
