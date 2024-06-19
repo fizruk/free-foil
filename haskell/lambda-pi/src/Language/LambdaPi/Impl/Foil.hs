@@ -570,13 +570,13 @@ unifyPatterns (PatternVar x) (PatternVar x') cont =
         (Ext, Distinct) -> Just (cont id renameR (PatternVar x))
 unifyPatterns (PatternPair l r) (PatternPair l' r') cont = join $
   unifyPatterns l l' $ \renameL renameL' l'' ->
-    unifyPatterns (unsafeRenamePattern renameL r) (unsafeRenamePattern renameL' r') $ \renameR renameR' r'' ->
-      cont (renameL `comp` renameR) (renameL' `comp` renameR') (PatternPair l'' r'')
+    extendRenaming renameL r $ \renameLext rext ->
+      extendRenaming renameL' r' $ \renameL'ext r'ext ->
+        unifyPatterns rext r'ext $ \renameR renameR' r'' ->
+          cont (renameL `comp` (renameR . renameLext)) (renameL'ext `comp` (renameR' . renameL'ext)) (PatternPair l'' r'')
   where
     comp :: (Name a -> Name b) -> (Name c -> Name d) -> (Name c -> Name d)
     comp = unsafeCoerce (.)
-    unsafeRenamePattern :: (Name i -> Name o) -> Pattern i l -> Pattern o l
-    unsafeRenamePattern = unsafeCoerce
 unifyPatterns _ _ _ = Nothing
 
 alphaEquiv :: Distinct n => Scope n -> Expr n -> Expr n -> Bool
