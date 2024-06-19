@@ -78,7 +78,11 @@ substitute scope subst = \case
 -- | Substitution for free (scoped monads).
 --
 -- This is a version of 'substitute' that forces refreshing of all name binders,
--- resulting in a term with normalized binders.
+-- resulting in a term with normalized binders:
+--
+-- > substituteRefreshed scope subst = refreshAST scope . subtitute scope subst
+--
+-- In general, 'substitute' is more efficient since it does not always refresh binders.
 substituteRefreshed
   :: (Bifunctor sig, Foil.Distinct o)
   => Foil.Scope o
