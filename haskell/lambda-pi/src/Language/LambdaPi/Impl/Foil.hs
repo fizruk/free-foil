@@ -282,22 +282,22 @@ substitute scope subst = \case
 substituteRefresh :: Distinct o => Scope o -> Substitution Expr i o -> Expr i -> Expr o
 substituteRefresh scope subst = \case
     VarE name -> lookupSubst subst name
-    AppE f x -> AppE (substitute scope subst f) (substitute scope subst x)
+    AppE f x -> AppE (substituteRefresh scope subst f) (substituteRefresh scope subst x)
     LamE pattern body -> withFreshPattern scope pattern $ \extendSubst pattern' ->
       let subst' = extendSubst subst
           scope' = extendScopePattern pattern' scope
-          body' = substitute scope' subst' body
+          body' = substituteRefresh scope' subst' body
        in LamE pattern' body'
     PiE pattern a b -> withFreshPattern scope pattern $ \extendSubst pattern' ->
       let subst' = extendSubst subst
           scope' = extendScopePattern pattern' scope
-          a' = substitute scope subst a
-          b' = substitute scope' subst' b
+          a' = substituteRefresh scope subst a
+          b' = substituteRefresh scope' subst' b
        in PiE pattern' a' b'
-    PairE l r -> PairE (substitute scope subst l) (substitute scope subst r)
-    FirstE t -> FirstE (substitute scope subst t)
-    SecondE t -> SecondE (substitute scope subst t)
-    ProductE l r -> ProductE (substitute scope subst l) (substitute scope subst r)
+    PairE l r -> PairE (substituteRefresh scope subst l) (substituteRefresh scope subst r)
+    FirstE t -> FirstE (substituteRefresh scope subst t)
+    SecondE t -> SecondE (substituteRefresh scope subst t)
+    ProductE l r -> ProductE (substituteRefresh scope subst l) (substituteRefresh scope subst r)
     UniverseE -> UniverseE
 
 -- | Convert a raw pattern into a scope-safe one.
