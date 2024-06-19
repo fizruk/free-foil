@@ -118,6 +118,7 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
       Language.LambdaPi.Impl.FoilSpec
+      Language.LambdaPi.Impl.FreeFoilSpec
       Paths_lambda_pi
   hs-source-dirs:
       test
