@@ -27,6 +27,7 @@ module Language.LambdaPi.Impl.FreeFoil where
 import qualified Control.Monad.Foil              as Foil
 import           Control.Monad.Free.Foil
 import           Data.Bifunctor.TH
+import           Data.Bifunctor.Sum
 import           Data.Map                        (Map)
 import qualified Data.Map                        as Map
 import           Data.String                     (IsString (..))
@@ -80,45 +81,34 @@ instance ZipMatch PairF where
   zipMatch _ _                             = Nothing
 
 -- | Sum of signature bifunctors.
-data (f :+: g) scope term
-  = InL (f scope term)
-  | InR (g scope term)
-  deriving (Eq, Show, Functor, Foldable, Traversable)
-deriveBifunctor ''(:+:)
-deriveBifoldable ''(:+:)
-deriveBitraversable ''(:+:)
-
-instance (ZipMatch f, ZipMatch g) => ZipMatch (f :+: g) where
-  zipMatch (InL f) (InL f') = InL <$> zipMatch f f'
-  zipMatch (InR g) (InR g') = InR <$> zipMatch g g'
-  zipMatch _ _              = Nothing
+type (:+:) = Sum
 
 -- | \(\lambda\Pi\)-terms in scope @n@, freely generated from the sum of signatures 'LambdaPiF' and 'PairF'.
 type LambdaPi n = AST (LambdaPiF :+: PairF) n
 
 pattern App :: LambdaPi n -> LambdaPi n -> LambdaPi n
-pattern App fun arg = Node (InL (AppF fun arg))
+pattern App fun arg = Node (L2 (AppF fun arg))
 
 pattern Lam :: Foil.NameBinder n l -> LambdaPi l -> LambdaPi n
-pattern Lam binder body = Node (InL (LamF (ScopedAST binder body)))
+pattern Lam binder body = Node (L2 (LamF (ScopedAST binder body)))
 
 pattern Pi :: Foil.NameBinder n l -> LambdaPi n -> LambdaPi l -> LambdaPi n
-pattern Pi binder a b = Node (InL (PiF a (ScopedAST binder b)))
+pattern Pi binder a b = Node (L2 (PiF a (ScopedAST binder b)))
 
 pattern Pair :: LambdaPi n -> LambdaPi n -> LambdaPi n
-pattern Pair l r = Node (InR (PairF l r))
+pattern Pair l r = Node (R2 (PairF l r))
 
 pattern First :: LambdaPi n -> LambdaPi n
-pattern First t = Node (InR (FirstF t))
+pattern First t = Node (R2 (FirstF t))
 
 pattern Second :: LambdaPi n -> LambdaPi n
-pattern Second t = Node (InR (SecondF t))
+pattern Second t = Node (R2 (SecondF t))
 
 pattern Product :: LambdaPi n -> LambdaPi n -> LambdaPi n
-pattern Product l r = Node (InR (ProductF l r))
+pattern Product l r = Node (R2 (ProductF l r))
 
 pattern Universe :: LambdaPi n
-pattern Universe = Node (InL UniverseF)
+pattern Universe = Node (L2 UniverseF)
 
 {-# COMPLETE Var, App, Lam, Pi, Pair, First, Second, Product, Universe #-}
 

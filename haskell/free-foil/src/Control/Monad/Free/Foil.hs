@@ -22,6 +22,7 @@ import           Control.DeepSeq
 import qualified Control.Monad.Foil.Internal as Foil
 import qualified Control.Monad.Foil.Relative as Foil
 import           Data.Bifoldable
+import           Data.Bifunctor.Sum
 import           Data.Bifunctor
 import           Data.Coerce                 (coerce)
 import           Data.Monoid                 (All (..))
@@ -144,6 +145,11 @@ class ZipMatch sig where
     :: sig scope term
     -> sig scope' term'
     -> Maybe (sig (scope, scope') (term, term'))
+
+instance (ZipMatch f, ZipMatch g) => ZipMatch (Sum f g) where
+  zipMatch (L2 f) (L2 f') = L2 <$> zipMatch f f'
+  zipMatch (R2 g) (R2 g') = R2 <$> zipMatch g g'
+  zipMatch _ _ = Nothing
 
 -- | /Unsafe/ equality check for two terms.
 -- This check ignores the possibility that two terms might have different
