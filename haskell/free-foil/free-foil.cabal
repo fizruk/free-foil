@@ -40,6 +40,8 @@ library
       Control.Monad.Foil.TH.Util
       Control.Monad.Free.Foil
       Control.Monad.Free.Foil.Example
+      Control.Monad.Free.Foil.TH
+      Control.Monad.Free.Foil.TH.Signature
   other-modules:
       Paths_free_foil
   hs-source-dirs:
