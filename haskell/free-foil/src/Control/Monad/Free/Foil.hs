@@ -75,6 +75,27 @@ substitute scope subst = \case
             body' = substitute scope' subst' body
         in ScopedAST binder' body'
 
+-- | Substitution for free (scoped monads).
+--
+-- This is a version of 'substitute' that forces refreshing of all name binders,
+-- resulting in a term with normalized binders.
+substituteRefreshed
+  :: (Bifunctor sig, Foil.Distinct o)
+  => Foil.Scope o
+  -> Foil.Substitution (AST sig) i o
+  -> AST sig i
+  -> AST sig o
+substituteRefreshed scope subst = \case
+  Var name -> Foil.lookupSubst subst name
+  Node node -> Node (bimap f (substituteRefreshed scope subst) node)
+  where
+    f (ScopedAST binder body) =
+      Foil.withFresh scope $ \binder' ->
+        let subst' = Foil.addRename (Foil.sink subst) binder (Foil.nameOf binder')
+            scope' = Foil.extendScope binder' scope
+            body' = substituteRefreshed scope' subst' body
+        in ScopedAST binder' body'
+
 -- | @'AST' sig@ is a monad relative to 'Foil.Name'.
 instance Bifunctor sig => Foil.RelMonad Foil.Name (AST sig) where
   rreturn = Var
@@ -111,7 +132,7 @@ refreshScopedAST scope (ScopedAST binder body) =
   Foil.withFresh scope $ \binder' ->
     let scope' = Foil.extendScope binder' scope
         subst = Foil.addRename (Foil.sink Foil.identitySubst) binder (Foil.nameOf binder')
-    in ScopedAST binder' (substitute scope' subst body)
+    in ScopedAST binder' (substituteRefreshed scope' subst body)
 
 -- | Perform one-level matching for the two terms.
 class ZipMatch sig where
