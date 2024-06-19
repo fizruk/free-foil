@@ -18,6 +18,14 @@ import Control.Monad.Foil
 import Control.Monad.Free.Foil
 import Language.LambdaPi.Impl.FreeFoil
 
+shrinkLambdaPis :: (LambdaPi n, LambdaPi l) -> [(LambdaPi n, LambdaPi l)]
+shrinkLambdaPis = \case
+  (App t1 t2, App t1' t2') -> [(t1, t1'), (t2, t2')]
+  (Lam x body, Lam x' body') ->
+    [ (Lam x t, Lam x' t')
+    | (t, t') <- shrinkLambdaPis (body, body')]
+  _ -> []
+
 genLambdaPi :: Distinct n => Scope n -> [Name n] -> Gen (LambdaPi n)
 genLambdaPi scope names = go
   where
@@ -96,6 +104,15 @@ instance Arbitrary AlphaEquiv where
     (alt, n) <- runStateT (alterNames emptyScope [] t) 1
     return (AlphaEquiv (n == 1) alt t')
 
+  -- cannot shrink non-equivalent pair
+  -- since we do not know which subterm contains non-equivalent part
+  shrink (AlphaEquiv False _ _) = []
+  -- if terms are equivalent, then we can shrink
+  shrink (AlphaEquiv True t t') =
+    [ AlphaEquiv True s s'
+    | (s, s') <- shrinkLambdaPis (t, t')
+    ]
+
 newtype AlphaEquivRefreshed = AlphaEquivRefreshed AlphaEquiv
   deriving (Arbitrary)
 
@@ -113,6 +130,11 @@ instance Arbitrary LambdaPiWithFresh where
   arbitrary = do
     (t, t') <- genAlphaEquivLambdaPis (\s _ -> withFresh s) emptyScope emptyScope []
     return (LambdaPiWithFresh t t')
+
+  shrink (LambdaPiWithFresh t t') =
+    [ LambdaPiWithFresh s s'
+    | (s, s') <- shrinkLambdaPis (t, t')
+    ]
 
 instance Show LambdaPiWithFresh where
   show (LambdaPiWithFresh t t') = unlines
