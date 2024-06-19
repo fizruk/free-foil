@@ -32,16 +32,23 @@ shrinkExprs = \case
   _ -> []
 
 genExpr :: Distinct n => Scope n -> [Name n] -> Gen (Expr n)
-genExpr scope names = go
+genExpr scope names = fst <$> genAlphaEquivExprs withRefreshed scope scope (zip names names)
+
+-- | Generate a term that contains /approximately/ @n@ redexes for WHNF to deal with.
+genNonWHNF :: Distinct n => Int -> Scope n -> [Name n] -> Gen (Expr n)
+genNonWHNF n scope names = oneof
+  [ withFresh scope $ \binder -> do
+      body <- genNonWHNF n2 (extendScope binder scope) (nameOf binder : map sink names)
+      AppE (LamE (PatternVar binder) body) <$> go n2
+  , FirstE <$> (PairE <$> go (n - 1) <*> go n)
+  , SecondE <$> (PairE <$> go n <*> go (n - 1))
+  , go (n - 1)
+  ]
   where
-    go = oneof $
-      map (pure . VarE) names ++
-      [ AppE <$> go <*> go
-      , do
-          name <- Foil.Internal.UnsafeName <$> choose (1, 1000)
-          withRefreshed scope name $ \binder ->
-            LamE (PatternVar binder) <$> genExpr (extendScope binder scope) (nameOf binder : map sink names)
-      ]
+    n2 = n `div` 2
+    go k
+      | k < 1 = genExpr scope names
+      | otherwise = genNonWHNF k scope names
 
 genAlphaEquivExprs
   :: (Distinct n, Distinct l)
@@ -197,3 +204,7 @@ spec = do
       alphaEquiv emptyScope t t' `shouldBe` equiv
     it "alphaEquivRefreshed is correct" $ property $ \(AlphaEquivRefreshed (AlphaEquiv equiv t t')) ->
       alphaEquivRefreshed emptyScope t t' `shouldBe` equiv
+  describe "weak head normal form (WHNF)" $ do
+    it "whnf is idempotent (strictly, not just up to α-equivalence)" $ property $ forAll (genNonWHNF 10 emptyScope []) $ \t ->
+      let t' = whnf emptyScope t
+       in whnf emptyScope t' `unsafeEqExpr` t'
