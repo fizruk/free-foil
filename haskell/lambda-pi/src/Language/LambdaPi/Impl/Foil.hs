@@ -192,6 +192,32 @@ instance Sinkable Expr where
   sinkabilityProof rename (ProductE l r) = ProductE (sinkabilityProof rename l) (sinkabilityProof rename r)
   sinkabilityProof _ UniverseE = UniverseE
 
+assertExtPattern :: Pattern n l -> ExtEvidence n l
+assertExtPattern = \case
+  PatternWildcard -> Ext
+  PatternVar x -> assertExt x
+  PatternPair l r ->
+    case assertExtPattern l of
+      Ext -> case assertExtPattern r of
+        Ext -> Ext
+
+assertDistinctPattern :: Distinct n => Pattern n l -> DistinctEvidence l
+assertDistinctPattern = \case
+  PatternWildcard -> Distinct
+  PatternVar x -> assertDistinct x
+  PatternPair l r ->
+    case assertDistinctPattern l of
+      Distinct -> case assertDistinctPattern r of
+        Distinct -> Distinct
+
+namesOfPattern :: Distinct n => Pattern n l -> [Name l]
+namesOfPattern PatternWildcard = []
+namesOfPattern (PatternVar x) = [nameOf x]
+namesOfPattern (PatternPair l r) =
+  case (assertExtPattern l, assertDistinctPattern l) of
+    (Ext, Distinct) -> case (assertExtPattern r, assertDistinctPattern r) of
+       (Ext, Distinct) -> map sink (namesOfPattern l) ++ namesOfPattern r
+
 -- | Extend scope with variables inside a pattern.
 -- This is a more flexible version of 'extendScope'.
 extendScopePattern :: Pattern n l -> Scope n -> Scope l
