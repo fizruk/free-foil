@@ -45,7 +45,6 @@ import           Language.LambdaPi.Syntax.Lex    (tokens)
 import           Language.LambdaPi.Syntax.Par    (pProgram, pTerm)
 import           Language.LambdaPi.Syntax.Print  (printTree)
 import           System.Exit                     (exitFailure)
-import           Unsafe.Coerce                   (unsafeCoerce)
 
 -- $setup
 -- >>> :set -XOverloadedStrings
@@ -552,7 +551,7 @@ unifyPatterns
   :: Distinct n
   => Pattern n l
   -> Pattern n r
-  -> (forall lr. DExt n lr => (Name l -> Name lr) -> (Name r -> Name lr) -> Pattern n lr -> result)
+  -> (forall lr. DExt n lr => (NameBinder n l -> NameBinder n lr) -> (NameBinder n r -> NameBinder n lr) -> Pattern n lr -> result)
   -> Maybe result
 unifyPatterns PatternWildcard PatternWildcard cont =
   Just (cont id id PatternWildcard)
@@ -570,13 +569,12 @@ unifyPatterns (PatternVar x) (PatternVar x') cont =
         (Ext, Distinct) -> Just (cont id renameR (PatternVar x))
 unifyPatterns (PatternPair l r) (PatternPair l' r') cont = join $
   unifyPatterns l l' $ \renameL renameL' l'' ->
-    extendRenaming renameL r $ \renameLext rext ->
-      extendRenaming renameL' r' $ \renameL'ext r'ext ->
+    extendNameBinderRenaming renameL r $ \renameLext rext ->
+      extendNameBinderRenaming renameL' r' $ \renameL'ext r'ext ->
         unifyPatterns rext r'ext $ \renameR renameR' r'' ->
-          cont (renameL `comp` (renameR . renameLext)) (renameL'ext `comp` (renameR' . renameL'ext)) (PatternPair l'' r'')
-  where
-    comp :: (Name a -> Name b) -> (Name c -> Name d) -> (Name c -> Name d)
-    comp = unsafeCoerce (.)
+          let rename = renameL `composeNameBinderRenamings` (renameR . renameLext)
+              rename' = renameL' `composeNameBinderRenamings` (renameR' . renameL'ext)
+           in cont rename rename' (PatternPair l'' r'')
 unifyPatterns _ _ _ = Nothing
 
 alphaEquiv :: Distinct n => Scope n -> Expr n -> Expr n -> Bool
@@ -585,10 +583,10 @@ alphaEquiv scope e1 e2 = case (e1, e2) of
   (AppE t1 t2, AppE t1' t2') -> alphaEquiv scope t1 t1' && alphaEquiv scope t2 t2'
   (LamE x body, LamE x' body') -> fromMaybe False $ unifyPatterns x x' $ \renameL renameR x'' ->
     let scope' = extendScopePattern x'' scope
-     in alphaEquiv scope' (liftRM scope' renameL body) (liftRM scope' renameR body')
+     in alphaEquiv scope' (liftRM scope' (fromNameBinderRenaming renameL) body) (liftRM scope' (fromNameBinderRenaming renameR) body')
   (PiE x a b, PiE x' a' b') -> fromMaybe False $ unifyPatterns x x' $ \renameL renameR x'' ->
     let scope' = extendScopePattern x'' scope
-     in alphaEquiv scope a a' && alphaEquiv scope' (liftRM scope' renameL b) (liftRM scope' renameR b')
+     in alphaEquiv scope a a' && alphaEquiv scope' (liftRM scope' (fromNameBinderRenaming renameL) b) (liftRM scope' (fromNameBinderRenaming renameR) b')
   (PairE l r, PairE l' r') -> alphaEquiv scope l l' && alphaEquiv scope r r'
   (FirstE t, FirstE t') -> alphaEquiv scope t t'
   (SecondE t, SecondE t') -> alphaEquiv scope t t'
