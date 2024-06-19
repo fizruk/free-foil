@@ -127,27 +127,13 @@ instance RelMonad Name Expr where
   rbind scope e subst = case e of
     VarE name -> subst name
     AppE f x -> AppE (rbind scope f subst) (rbind scope x subst)
-    LamE pattern body -> withRefreshedPattern scope pattern $ \extendSubst pattern' ->
-      let subst' x = case unsinkNamePattern pattern x of
-            Nothing ->
-              -- NOTE: unsafeCoerce here is used (safely) as a workaround,
-              -- since withRefreshedPattern works with substitutions,
-              -- not arbitrary functions
-              let impossibleSubst = unsafeCoerce (identitySubst @Expr @VoidS)
-                in lookupSubst (extendSubst impossibleSubst) x
-            Just n  -> sink (subst n)
+    LamE pattern body -> withRefreshedPattern' scope pattern $ \extendSubst pattern' ->
+      let subst' = extendSubst subst
           scope' = extendScopePattern pattern' scope
           body' = rbind scope' body subst'
       in LamE pattern' body'
-    PiE pattern a b -> withRefreshedPattern scope pattern $ \extendSubst pattern' ->
-      let subst' x = case unsinkNamePattern pattern x of
-            Nothing ->
-              -- NOTE: unsafeCoerce here is used (safely) as a workaround,
-              -- since withRefreshedPattern works with substitutions,
-              -- not arbitrary functions
-              let impossibleSubst = unsafeCoerce (identitySubst @Expr @VoidS)
-                in lookupSubst (extendSubst impossibleSubst) x
-            Just n  -> sink (subst n)
+    PiE pattern a b -> withRefreshedPattern' scope pattern $ \extendSubst pattern' ->
+      let subst' = extendSubst subst
           scope' = extendScopePattern pattern' scope
           a' = rbind scope a subst
           b' = rbind scope' b subst'
@@ -247,6 +233,27 @@ withRefreshedPattern scope pattern cont =
     PatternPair l r -> withRefreshedPattern scope l $ \lsubst l' ->
       let scope' = extendScopePattern l' scope
        in withRefreshedPattern scope' r $ \rsubst r' ->
+            cont (rsubst . lsubst) (PatternPair l' r')
+
+-- | Refresh (if needed) bound variables introduced in a pattern.
+--
+-- This is a version of 'withRefreshedPattern' that uses functional renamings instead of 'Substitution'.
+withRefreshedPattern'
+  :: (Distinct o, InjectName e, Sinkable e)
+  => Scope o
+  -> Pattern n l
+  -> (forall o'. DExt o o' => ((Name n -> e o) -> Name l -> e o') -> Pattern o o' -> r) -> r
+withRefreshedPattern' scope pattern cont =
+  case pattern of
+    PatternWildcard -> cont id PatternWildcard
+    PatternVar x    -> withRefreshed scope (nameOf x) $ \x' ->
+      let k subst name = case unsinkName x name of
+            Nothing    -> injectName (nameOf x')
+            Just name' -> sink (subst name')
+       in cont k (PatternVar x')
+    PatternPair l r -> withRefreshedPattern' scope l $ \lsubst l' ->
+      let scope' = extendScopePattern l' scope
+       in withRefreshedPattern' scope' r $ \rsubst r' ->
             cont (rsubst . lsubst) (PatternPair l' r')
 
 -- | Perform substitution in a \(\lambda\Pi\)-term.
