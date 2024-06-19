@@ -21,22 +21,21 @@ import Language.LambdaPi.Impl.FreeFoil
 shrinkLambdaPis :: (LambdaPi n, LambdaPi l) -> [(LambdaPi n, LambdaPi l)]
 shrinkLambdaPis = \case
   (App t1 t2, App t1' t2') -> [(t1, t1'), (t2, t2')]
+  (Pair t1 t2, Pair t1' t2') -> [(t1, t1'), (t2, t2')]
+  (First t, First t') -> [(t, t')]
+  (Second t, Second t') -> [(t, t')]
+  (Product t1 t2, Product t1' t2') -> [(t1, t1'), (t2, t2')]
   (Lam x body, Lam x' body') ->
     [ (Lam x t, Lam x' t')
     | (t, t') <- shrinkLambdaPis (body, body')]
+  (Pi x a b, Pi x' a' b') ->
+    [ (Pi x c d, Pi x' c' d')
+    | (c, c') <- shrinkLambdaPis (a, a')
+    , (d, d') <- shrinkLambdaPis (b, b')]
   _ -> []
 
 genLambdaPi :: Distinct n => Scope n -> [Name n] -> Gen (LambdaPi n)
-genLambdaPi scope names = go
-  where
-    go = oneof $
-      map (pure . Var) names ++
-      [ App <$> go <*> go
-      , do
-          name <- Foil.Internal.UnsafeName <$> choose (1, 1000)
-          withRefreshed scope name $ \binder ->
-            Lam binder <$> genLambdaPi (extendScope binder scope) (nameOf binder : map sink names)
-      ]
+genLambdaPi scope names = fst <$> genAlphaEquivLambdaPis withRefreshed scope scope (zip names names)
 
 genAlphaEquivLambdaPis
   :: (Distinct n, Distinct l)
@@ -50,6 +49,28 @@ genAlphaEquivLambdaPis withRefreshed' scope1 scope2 names = sized go
           (f1, f2) <- go (n `div` 2)
           (x1, x2) <- go (n `div` 2)
           return (App f1 x1, App f2 x2)
+        , do
+          (f1, f2) <- go (n `div` 2)
+          (x1, x2) <- go (n `div` 2)
+          return (Pair f1 x1, Pair f2 x2)
+        , bimap First First <$> go (n - 1)
+        , bimap Second Second <$> go (n - 1)
+        , do
+          (f1, f2) <- go (n `div` 2)
+          (x1, x2) <- go (n `div` 2)
+          return (Product f1 x1, Product f2 x2)
+        , pure (Universe, Universe)
+        , do
+          name1 <- Foil.Internal.UnsafeName <$> choose (1, 1000)
+          name2 <- Foil.Internal.UnsafeName <$> choose (1, 1000)
+          withRefreshed' scope1 name1 $ \binder1 ->
+            withRefreshed' scope2 name2 $ \binder2 -> do
+              let names' = (nameOf binder1, nameOf binder2) : map (bimap sink sink) names
+                  scope1' = extendScope binder1 scope1
+                  scope2' = extendScope binder2 scope2
+              (a1, a2) <- go (n `div` 2)
+              (body1, body2) <- resize (n `div` 2) $ genAlphaEquivLambdaPis withRefreshed' scope1' scope2' names'
+              return (Pi binder1 a1 body1, Pi binder2 a2 body2)
         ]
       , if n < 1 && not (null names) then [] else [ do
           name1 <- Foil.Internal.UnsafeName <$> choose (1, 1000)
