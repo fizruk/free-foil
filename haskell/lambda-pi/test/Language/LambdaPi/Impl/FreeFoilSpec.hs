@@ -1,5 +1,7 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
@@ -28,8 +30,11 @@ genLambdaPi scope names = go
             Lam binder <$> genLambdaPi (extendScope binder scope) (nameOf binder : map sink names)
       ]
 
-genAlphaEquivLambdaPis :: (Distinct n, Distinct l) => Scope n -> Scope l -> [(Name n, Name l)] -> Gen (LambdaPi n, LambdaPi l)
-genAlphaEquivLambdaPis scope1 scope2 names = sized go
+genAlphaEquivLambdaPis
+  :: (Distinct n, Distinct l)
+  => (forall x y r. Distinct x => Scope x -> Name y -> (forall o'. DExt x o' => NameBinder x o' -> r) -> r)
+  -> Scope n -> Scope l -> [(Name n, Name l)] -> Gen (LambdaPi n, LambdaPi l)
+genAlphaEquivLambdaPis withRefreshed' scope1 scope2 names = sized go
   where
     go n = oneof $
       map (pure . bimap Var Var) names ++ concat
@@ -41,12 +46,12 @@ genAlphaEquivLambdaPis scope1 scope2 names = sized go
       , if n < 1 && not (null names) then [] else [ do
           name1 <- Foil.Internal.UnsafeName <$> choose (1, 1000)
           name2 <- Foil.Internal.UnsafeName <$> choose (1, 1000)
-          withRefreshed scope1 name1 $ \binder1 ->
-            withRefreshed scope2 name2 $ \binder2 -> do
+          withRefreshed' scope1 name1 $ \binder1 ->
+            withRefreshed' scope2 name2 $ \binder2 -> do
               let names' = (nameOf binder1, nameOf binder2) : map (bimap sink sink) names
                   scope1' = extendScope binder1 scope1
                   scope2' = extendScope binder2 scope2
-              (body1, body2) <- resize (max 0 (n - 1)) $ genAlphaEquivLambdaPis scope1' scope2' names'
+              (body1, body2) <- resize (max 0 (n - 1)) $ genAlphaEquivLambdaPis withRefreshed' scope1' scope2' names'
               return (Lam binder1 body1, Lam binder2 body2)
         ]
       ]
@@ -87,7 +92,7 @@ instance Show AlphaEquiv where
 
 instance Arbitrary AlphaEquiv where
   arbitrary = do
-    (t, t') <- genAlphaEquivLambdaPis emptyScope emptyScope []
+    (t, t') <- genAlphaEquivLambdaPis withRefreshed emptyScope emptyScope []
     (alt, n) <- runStateT (alterNames emptyScope [] t) 1
     return (AlphaEquiv (n == 1) alt t')
 
@@ -102,10 +107,26 @@ instance Show AlphaEquivRefreshed where
     , "alphaEquivRefreshed _ t1 t2 = " <> show (alphaEquivRefreshed emptyScope t1 t2)
     ]
 
+data LambdaPiWithFresh = LambdaPiWithFresh (LambdaPi VoidS) (LambdaPi VoidS)
+
+instance Arbitrary LambdaPiWithFresh where
+  arbitrary = do
+    (t, t') <- genAlphaEquivLambdaPis (\s _ -> withFresh s) emptyScope emptyScope []
+    return (LambdaPiWithFresh t t')
+
+instance Show LambdaPiWithFresh where
+  show (LambdaPiWithFresh t t') = unlines
+    [ "             t = " <> show t
+    , "       fresh t = " <> show t'
+    , "refreshAST _ t = " <> show (refreshAST emptyScope t)
+    ]
+
 spec :: Spec
 spec = do
   describe "α-equivalence" $ do
-    it "alphaEquiv is correct" $ property $ forAll (genAlphaEquivLambdaPis emptyScope emptyScope []) $ \(t, t') ->
-      within 100000 $ alphaEquiv emptyScope t t'
+    it "refreshAST is correct" $ property $ \(LambdaPiWithFresh t t') ->
+      refreshAST emptyScope t `unsafeEqAST` t'
+    it "alphaEquiv is correct" $ property $ \(AlphaEquiv equiv t t') ->
+      within 100000 $ alphaEquiv emptyScope t t' `shouldBe` equiv
     it "alphaEquivRefreshed is correct" $ property $ \(AlphaEquivRefreshed (AlphaEquiv equiv t t')) ->
       within 100000 $ alphaEquivRefreshed emptyScope t t' `shouldBe` equiv
