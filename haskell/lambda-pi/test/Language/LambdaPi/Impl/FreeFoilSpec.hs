@@ -149,6 +149,6 @@ spec = do
     it "refreshAST is correct" $ property $ \(LambdaPiWithFresh t t') ->
       refreshAST emptyScope t `unsafeEqAST` t'
     it "alphaEquiv is correct" $ property $ \(AlphaEquiv equiv t t') ->
-      within 100000 $ alphaEquiv emptyScope t t' `shouldBe` equiv
+      alphaEquiv emptyScope t t' `shouldBe` equiv
     it "alphaEquivRefreshed is correct" $ property $ \(AlphaEquivRefreshed (AlphaEquiv equiv t t')) ->
-      within 100000 $ alphaEquivRefreshed emptyScope t t' `shouldBe` equiv
+      alphaEquivRefreshed emptyScope t t' `shouldBe` equiv
