@@ -58,6 +58,8 @@ instance Bifunctor sig => Foil.Sinkable (AST sig) where
 instance Foil.InjectName (AST sig) where
   injectName = Var
 
+-- * Substitution
+
 -- | Substitution for free (scoped monads).
 substitute
   :: (Bifunctor sig, Foil.Distinct o)
@@ -118,6 +120,8 @@ instance Bifunctor sig => Foil.RelMonad Foil.Name (AST sig) where
                           Just n  -> Foil.sink (subst n)
            in ScopedAST binder' (Foil.rbind scope' body subst')
 
+-- * \(\alpha\)-equivalence
+
 -- | Refresh (force) all binders in a term, minimizing the used indices.
 refreshAST
   :: (Bifunctor sig, Foil.Distinct n)
@@ -138,45 +142,6 @@ refreshScopedAST scope (ScopedAST binder body) =
     let scope' = Foil.extendScope binder' scope
         subst = Foil.addRename (Foil.sink Foil.identitySubst) binder (Foil.nameOf binder')
     in ScopedAST binder' (substituteRefreshed scope' subst body)
-
--- | Perform one-level matching for the two terms.
-class ZipMatch sig where
-  zipMatch
-    :: sig scope term
-    -> sig scope' term'
-    -> Maybe (sig (scope, scope') (term, term'))
-
-instance (ZipMatch f, ZipMatch g) => ZipMatch (Sum f g) where
-  zipMatch (L2 f) (L2 f') = L2 <$> zipMatch f f'
-  zipMatch (R2 g) (R2 g') = R2 <$> zipMatch g g'
-  zipMatch _ _ = Nothing
-
--- | /Unsafe/ equality check for two terms.
--- This check ignores the possibility that two terms might have different
--- scope extensions under binders (which might happen due to substitution
--- under a binder in absence of name conflicts).
-unsafeEqAST
-  :: (Bifoldable sig, ZipMatch sig)
-  => AST sig n
-  -> AST sig l
-  -> Bool
-unsafeEqAST (Var x) (Var y) = x == coerce y
-unsafeEqAST (Node t1) (Node t2) =
-  case zipMatch t1 t2 of
-    Nothing -> False
-    Just tt -> getAll (bifoldMap (All . uncurry unsafeEqScopedAST) (All . uncurry unsafeEqAST) tt)
-unsafeEqAST _ _ = False
-
--- | A version of 'unsafeEqAST' for scoped terms.
-unsafeEqScopedAST
-  :: (Bifoldable sig, ZipMatch sig)
-  => ScopedAST sig n
-  -> ScopedAST sig l
-  -> Bool
-unsafeEqScopedAST (ScopedAST binder1 body1) (ScopedAST binder2 body2) = and
-  [ binder1 == coerce binder2
-  , body1 `unsafeEqAST` body2
-  ]
 
 -- | \(\alpha\)-equivalence check for two terms in one scope
 -- via normalization of bound identifiers (via 'refreshAST').
@@ -238,3 +203,46 @@ alphaEquivScoped scope
           Foil.Distinct ->
             let scope1 = Foil.extendScope binder1 scope
             in alphaEquiv scope1 body1 (Foil.liftRM scope1 (Foil.fromNameBinderRenaming rename2to1) body2)
+
+-- ** Unsafe equality checks
+
+-- | /Unsafe/ equality check for two terms.
+-- This check ignores the possibility that two terms might have different
+-- scope extensions under binders (which might happen due to substitution
+-- under a binder in absence of name conflicts).
+unsafeEqAST
+  :: (Bifoldable sig, ZipMatch sig)
+  => AST sig n
+  -> AST sig l
+  -> Bool
+unsafeEqAST (Var x) (Var y) = x == coerce y
+unsafeEqAST (Node t1) (Node t2) =
+  case zipMatch t1 t2 of
+    Nothing -> False
+    Just tt -> getAll (bifoldMap (All . uncurry unsafeEqScopedAST) (All . uncurry unsafeEqAST) tt)
+unsafeEqAST _ _ = False
+
+-- | A version of 'unsafeEqAST' for scoped terms.
+unsafeEqScopedAST
+  :: (Bifoldable sig, ZipMatch sig)
+  => ScopedAST sig n
+  -> ScopedAST sig l
+  -> Bool
+unsafeEqScopedAST (ScopedAST binder1 body1) (ScopedAST binder2 body2) = and
+  [ binder1 == coerce binder2
+  , body1 `unsafeEqAST` body2
+  ]
+
+-- ** Syntactic matching (unification)
+
+-- | Perform one-level matching for the two (non-variable) terms.
+class ZipMatch sig where
+  zipMatch
+    :: sig scope term     -- ^ Left non-variable term.
+    -> sig scope' term'   -- ^ Right non-variable term.
+    -> Maybe (sig (scope, scope') (term, term'))
+
+instance (ZipMatch f, ZipMatch g) => ZipMatch (Sum f g) where
+  zipMatch (L2 f) (L2 f') = L2 <$> zipMatch f f'
+  zipMatch (R2 g) (R2 g') = R2 <$> zipMatch g g'
+  zipMatch _ _ = Nothing

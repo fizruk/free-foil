@@ -177,6 +177,8 @@ data UnifyNameBinders n l r where
   -- to match the left one.
   RenameRightNameBinder :: (NameBinder n r -> NameBinder n l) -> UnifyNameBinders n l r
 
+-- | Unify binders either by asserting that they are the same,
+-- or by providing a /safe/ renaming function to convert one binder to another.
 unifyNameBinders
   :: forall i l r.
      NameBinder i l
