@@ -48,13 +48,13 @@ mkSignature termT nameT scopeT patternT = do
         where
           conName' = mkName (nameBase conName ++ "---")
       ForallC params ctx con -> fmap (ForallC params ctx) <$> toSignatureCons scope term con
-      GadtC params argTypes retType -> Just <$> (GadtC params <$> (catMaybes <$> mapM toSignatureParam argTypes) <*> retType')
+      GadtC conNames argTypes retType -> Just <$> (GadtC conNames <$> (catMaybes <$> mapM toSignatureParam argTypes) <*> retType')
         where
           retType' = case retType of
             PeelConT typeName typeParams
               | typeName == termT -> return (PeelConT signatureT (typeParams ++ [VarT scope, VarT term]))
             _ -> fail "unexpected return type in a GADT constructor"
-      RecGadtC params argTypes retType -> Just <$> (RecGadtC params <$> (catMaybes <$> mapM toSignatureParam' argTypes) <*> retType')
+      RecGadtC conNames argTypes retType -> Just <$> (RecGadtC conNames <$> (catMaybes <$> mapM toSignatureParam' argTypes) <*> retType')
         where
           retType' = case retType of
             PeelConT typeName typeParams
