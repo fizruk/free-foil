@@ -200,10 +200,10 @@ alphaEquivScoped scope
         case Foil.assertDistinct binder2 of
           Foil.Distinct ->
             let scope2 = Foil.extendScope binder2 scope
-            in alphaEquiv scope2 (Foil.liftRM scope2 rename1to2 body1) body2
+            in alphaEquiv scope2 (Foil.liftRM scope2 (Foil.fromNameBinderRenaming rename1to2) body1) body2
       -- if we can safely rename second binder into first
       Foil.RenameRightNameBinder rename2to1 ->
         case Foil.assertDistinct binder1 of
           Foil.Distinct ->
             let scope1 = Foil.extendScope binder1 scope
-            in alphaEquiv scope1 body1 (Foil.liftRM scope1 rename2to1 body2)
+            in alphaEquiv scope1 body1 (Foil.liftRM scope1 (Foil.fromNameBinderRenaming rename2to1) body2)

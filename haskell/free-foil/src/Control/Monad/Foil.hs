@@ -33,6 +33,9 @@ module Control.Monad.Foil (
   CoSinkable(..),
   sink,
   extendRenaming,
+  extendNameBinderRenaming,
+  composeNameBinderRenamings,
+  fromNameBinderRenaming,
   extendRenamingNameBinder,
   -- * Safe substitutions
   Substitution,
