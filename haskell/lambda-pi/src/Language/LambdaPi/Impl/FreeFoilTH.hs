@@ -26,6 +26,7 @@ mkPatternSynonyms ''Term'Sig
 -- ** Conversion
 
 mkConvertToFreeFoil ''Raw.Term' ''Raw.VarIdent ''Raw.ScopedTerm' ''Raw.Pattern'
+mkConvertFromFreeFoil ''Raw.Term' ''Raw.VarIdent ''Raw.ScopedTerm' ''Raw.Pattern'
 
 -- * User-defined code
 
@@ -33,3 +34,17 @@ mkConvertToFreeFoil ''Raw.Term' ''Raw.VarIdent ''Raw.ScopedTerm' ''Raw.Pattern'
 -- This is a special case of 'convertToAST'.
 toTerm' :: Foil.Distinct n => Foil.Scope n -> Map Raw.VarIdent (Foil.Name n) -> Raw.Term' a -> AST (Term'Sig a) n
 toTerm' = convertToAST convertToTerm'Sig getPattern'Binder getTerm'FromScopedTerm'
+
+-- | Convert a scope-safe representation back into 'Raw.Term''.
+-- This is a special case of 'convertFromAST'.
+--
+-- 'Raw.VarIdent' names are generated based on the raw identifiers in the underlying foil representation.
+--
+-- This function does not recover location information for variables, patterns, or scoped terms.
+fromTerm' :: AST (Term'Sig a) n -> Raw.Term' a
+fromTerm' = convertFromAST
+  convertFromTerm'Sig
+  (Raw.Var (error "location missing"))
+  (Raw.PatternVar (error "location missing"))
+  (Raw.AScopedTerm (error "location missing"))
+  (\n -> Raw.VarIdent ("x" ++ show n))

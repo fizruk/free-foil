@@ -20,6 +20,16 @@ mkConvertToFreeFoil termT nameT scopeT patternT = concat <$> sequence
   , mkGetScopedTerm termT scopeT
   ]
 
+mkConvertFromFreeFoil
+  :: Name -- ^ Type name for raw terms.
+  -> Name -- ^ Type name for raw variable identifiers.
+  -> Name -- ^ Type name for raw scoped terms.
+  -> Name -- ^ Type name for raw patterns.
+  -> Q [Dec]
+mkConvertFromFreeFoil termT nameT scopeT patternT = concat <$> sequence
+  [ mkConvertFromSig termT nameT scopeT patternT
+  ]
+
 mkConvertToSig
   :: Name -- ^ Type name for raw terms.
   -> Name -- ^ Type name for raw variable identifiers.
@@ -85,6 +95,65 @@ mkConvertToSig termT nameT scopeT patternT = do
                 | typeName == patternT -> (VarP p, [])
                 | typeName == scopeT -> (VarP x, [TupE [Just (VarE p), Just (VarE x)]])
               _ -> (VarP x, [VarE x])
+          | (i, (_bang, type_)) <- zip [0..] types
+          , let x = mkName ("x" ++ show i)
+          ]
+
+mkConvertFromSig
+  :: Name -- ^ Type name for raw terms.
+  -> Name -- ^ Type name for raw variable identifiers.
+  -> Name -- ^ Type name for raw scoped terms.
+  -> Name -- ^ Type name for raw patterns.
+  -> Q [Dec]
+mkConvertFromSig termT nameT scopeT patternT = do
+  TyConI (DataD _ctx _name termTVars _kind termCons _deriv) <- reify termT
+  TyConI (NewtypeD _ctx _name _nameTVars _kind _nameCons _deriv) <- reify nameT
+
+  convertTermFromSigClauses <- concat <$> mapM toClause termCons
+
+  let params = map (VarT . tvarName) termTVars
+      termType = return $ PeelConT termT params
+      scopeType = return $ PeelConT scopeT params
+      patternType = return $ PeelConT patternT params
+      signatureType = return $ PeelConT signatureT params
+  convertTermFromSigClausesType <-
+    [t| $signatureType ($patternType, $scopeType) $termType -> $termType |]
+
+  addModFinalizer $ putDoc (DeclDoc convertTermFromSigT)
+    ("/Generated/ with '" ++ show 'mkConvertToFreeFoil ++ "'. Perform one step of converting '" ++ show termT ++ "', peeling off one node of type '" ++ show signatureT ++ "'.")
+  return
+    [ SigD convertTermFromSigT convertTermFromSigClausesType
+    , FunD convertTermFromSigT convertTermFromSigClauses
+    ]
+  where
+    signatureT = mkName (nameBase termT ++ "Sig")
+    convertTermFromSigT = mkName ("convertFrom" ++ nameBase signatureT)
+
+    toClause :: Con -> Q [Clause]
+    toClause = \case
+      NormalC _conName types | or [ typeName == nameT | (_bang, PeelConT typeName _typeParams) <- types ]
+        -> pure []
+      NormalC conName types -> mkClause conName conName' types
+        where
+          conName' = mkName (nameBase conName ++ "Sig")
+      RecC conName types -> toClause (NormalC conName (map removeName types))
+      InfixC l conName r -> mkClause conName conName' [l, r]
+        where
+          conName' = mkName (nameBase conName ++ "---")
+      ForallC _ _ con -> toClause con
+      GadtC conNames types _retType -> concat <$> mapM (\conName -> toClause (NormalC conName types)) conNames
+      RecGadtC conNames types retType -> toClause (GadtC conNames (map removeName types) retType)
+
+    mkClause conName conName' types = return
+      [ Clause [ConP conName' [] (concat pats)] (NormalB (foldl AppE (ConE conName) args)) [] ]
+      where
+        p = mkName "p"
+        (args, pats) = unzip
+          [ case type_ of
+              PeelConT typeName _
+                | typeName == patternT -> (VarE p, [])
+                | typeName == scopeT -> (VarE x, [TupP [VarP p, VarP x]])
+              _ -> (VarE x, [VarP x])
           | (i, (_bang, type_)) <- zip [0..] types
           , let x = mkName ("x" ++ show i)
           ]
