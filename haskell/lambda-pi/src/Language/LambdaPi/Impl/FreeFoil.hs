@@ -1,5 +1,5 @@
 {-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE DeriveFunctor     #-}
+{-# LANGUAGE DeriveTraversable     #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE LambdaCase        #-}
@@ -49,9 +49,10 @@ data LambdaPiF scope term
   | LamF scope            -- ^ Abstraction: \(\lambda x. t\)
   | PiF term scope        -- ^ Dependent function type: \(\prod_{x : T_1} T_2\)
   | UniverseF             -- ^ Universe (type of types): \(\mathcal{U}\)
-  deriving (Eq, Show, Functor)
+  deriving (Eq, Show, Functor, Foldable, Traversable)
 deriveBifunctor ''LambdaPiF
 deriveBifoldable ''LambdaPiF
+deriveBitraversable ''LambdaPiF
 
 instance ZipMatch LambdaPiF where
   zipMatch (AppF l r) (AppF l' r') = Just (AppF (l, l') (r, r'))
@@ -66,9 +67,10 @@ data PairF scope term
   | FirstF term           -- ^ First projection: \(\pi_1(t)\)
   | SecondF term          -- ^ Second projection: \(\pi_2(t)\)
   | ProductF term term    -- ^ Product type (non-dependent): \(T_1 \times T_2\)
-  deriving (Eq, Show, Functor)
+  deriving (Eq, Show, Functor, Foldable, Traversable)
 deriveBifunctor ''PairF
 deriveBifoldable ''PairF
+deriveBitraversable ''PairF
 
 instance ZipMatch PairF where
   zipMatch (PairF l r) (PairF l' r')       = Just (PairF (l, l') (r, r'))
@@ -81,9 +83,10 @@ instance ZipMatch PairF where
 data (f :+: g) scope term
   = InL (f scope term)
   | InR (g scope term)
-  deriving (Eq, Show, Functor)
+  deriving (Eq, Show, Functor, Foldable, Traversable)
 deriveBifunctor ''(:+:)
 deriveBifoldable ''(:+:)
+deriveBitraversable ''(:+:)
 
 instance (ZipMatch f, ZipMatch g) => ZipMatch (f :+: g) where
   zipMatch (InL f) (InL f') = InL <$> zipMatch f f'
