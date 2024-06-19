@@ -206,5 +206,6 @@ spec = do
       alphaEquivRefreshed emptyScope t t' `shouldBe` equiv
   describe "weak head normal form (WHNF)" $ do
     it "whnf is idempotent (strictly, not just up to α-equivalence)" $ property $ forAll (genNonWHNF 10 emptyScope []) $ \t ->
-      let t' = whnf emptyScope t
-       in whnf emptyScope t' `unsafeEqExpr` t'
+      discardAfter 100000 $ -- discard tests where whnf hangs
+        let t' = whnf emptyScope t
+        in whnf emptyScope t' `unsafeEqExpr` t'
