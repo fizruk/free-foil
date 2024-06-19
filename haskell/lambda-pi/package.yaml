@@ -83,6 +83,10 @@ tests:
       - -with-rtsopts=-N
     dependencies:
       - lambda-pi
+      - QuickCheck
+      - hspec
+      - hspec-discover
+      - mtl
 
   doctests:
     source-dirs:

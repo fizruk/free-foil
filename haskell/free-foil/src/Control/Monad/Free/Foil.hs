@@ -8,6 +8,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE UndecidableInstances  #-}
 -- | This module defines a variation of
@@ -20,7 +21,11 @@ module Control.Monad.Free.Foil where
 import           Control.DeepSeq
 import qualified Control.Monad.Foil.Internal as Foil
 import qualified Control.Monad.Foil.Relative as Foil
+import           Data.Bifoldable
+import           Data.Bifunctor.Sum
 import           Data.Bifunctor
+import           Data.Coerce                 (coerce)
+import           Data.Monoid                 (All (..))
 import           GHC.Generics                (Generic)
 
 -- | Scoped term under a (single) name binder.
@@ -53,6 +58,8 @@ instance Bifunctor sig => Foil.Sinkable (AST sig) where
 instance Foil.InjectName (AST sig) where
   injectName = Var
 
+-- * Substitution
+
 -- | Substitution for free (scoped monads).
 substitute
   :: (Bifunctor sig, Foil.Distinct o)
@@ -71,6 +78,31 @@ substitute scope subst = \case
             body' = substitute scope' subst' body
         in ScopedAST binder' body'
 
+-- | Substitution for free (scoped monads).
+--
+-- This is a version of 'substitute' that forces refreshing of all name binders,
+-- resulting in a term with normalized binders:
+--
+-- > substituteRefreshed scope subst = refreshAST scope . subtitute scope subst
+--
+-- In general, 'substitute' is more efficient since it does not always refresh binders.
+substituteRefreshed
+  :: (Bifunctor sig, Foil.Distinct o)
+  => Foil.Scope o
+  -> Foil.Substitution (AST sig) i o
+  -> AST sig i
+  -> AST sig o
+substituteRefreshed scope subst = \case
+  Var name -> Foil.lookupSubst subst name
+  Node node -> Node (bimap f (substituteRefreshed scope subst) node)
+  where
+    f (ScopedAST binder body) =
+      Foil.withFresh scope $ \binder' ->
+        let subst' = Foil.addRename (Foil.sink subst) binder (Foil.nameOf binder')
+            scope' = Foil.extendScope binder' scope
+            body' = substituteRefreshed scope' subst' body
+        in ScopedAST binder' body'
+
 -- | @'AST' sig@ is a monad relative to 'Foil.Name'.
 instance Bifunctor sig => Foil.RelMonad Foil.Name (AST sig) where
   rreturn = Var
@@ -87,3 +119,130 @@ instance Bifunctor sig => Foil.RelMonad Foil.Name (AST sig) where
                           Nothing -> Foil.rreturn (Foil.nameOf binder')
                           Just n  -> Foil.sink (subst n)
            in ScopedAST binder' (Foil.rbind scope' body subst')
+
+-- * \(\alpha\)-equivalence
+
+-- | Refresh (force) all binders in a term, minimizing the used indices.
+refreshAST
+  :: (Bifunctor sig, Foil.Distinct n)
+  => Foil.Scope n
+  -> AST sig n
+  -> AST sig n
+refreshAST scope = \case
+  t@Var{} -> t
+  Node t -> Node (bimap (refreshScopedAST scope) (refreshAST scope) t)
+
+-- | Similar to `refreshAST`, but for scoped terms.
+refreshScopedAST :: (Bifunctor sig, Foil.Distinct n)
+  => Foil.Scope n
+  -> ScopedAST sig n
+  -> ScopedAST sig n
+refreshScopedAST scope (ScopedAST binder body) =
+  Foil.withFresh scope $ \binder' ->
+    let scope' = Foil.extendScope binder' scope
+        subst = Foil.addRename (Foil.sink Foil.identitySubst) binder (Foil.nameOf binder')
+    in ScopedAST binder' (substituteRefreshed scope' subst body)
+
+-- | \(\alpha\)-equivalence check for two terms in one scope
+-- via normalization of bound identifiers (via 'refreshAST').
+--
+-- Compared to 'alphaEquiv', this function may perform some unnecessary
+-- changes of bound variables when the binders are the same on both sides.
+alphaEquivRefreshed
+  :: (Bifunctor sig, Bifoldable sig, ZipMatch sig, Foil.Distinct n)
+  => Foil.Scope n
+  -> AST sig n
+  -> AST sig n
+  -> Bool
+alphaEquivRefreshed scope t1 t2 = refreshAST scope t1 `unsafeEqAST` refreshAST scope t2
+
+-- | \(\alpha\)-equivalence check for two terms in one scope
+-- via unification of bound variables (via 'unifyNameBinders').
+--
+-- Compared to 'alphaEquivRefreshed', this function might skip unnecessary
+-- changes of bound variables when both binders in two matching scoped terms coincide.
+alphaEquiv
+  :: (Bifunctor sig, Bifoldable sig, ZipMatch sig, Foil.Distinct n)
+  => Foil.Scope n
+  -> AST sig n
+  -> AST sig n
+  -> Bool
+alphaEquiv _scope (Var x) (Var y) = x == coerce y
+alphaEquiv scope (Node l) (Node r) =
+  case zipMatch l r of
+    Nothing -> False
+    Just tt -> getAll (bifoldMap (All . uncurry (alphaEquivScoped scope)) (All . uncurry (alphaEquiv scope)) tt)
+alphaEquiv _ _ _ = False
+
+-- | Same as 'alphaEquiv' but for scoped terms.
+alphaEquivScoped
+  :: (Bifunctor sig, Bifoldable sig, ZipMatch sig, Foil.Distinct n)
+  => Foil.Scope n
+  -> ScopedAST sig n
+  -> ScopedAST sig n
+  -> Bool
+alphaEquivScoped scope
+  (ScopedAST binder1 body1)
+  (ScopedAST binder2 body2) =
+    case Foil.unifyNameBinders binder1 binder2 of
+      -- if binders are the same, then we can safely compare bodies
+      Foil.SameNameBinders ->  -- after seeing this we know that body scopes are the same
+        case Foil.assertDistinct binder1 of
+          Foil.Distinct ->
+            let scope1 = Foil.extendScope binder1 scope
+            in alphaEquiv scope1 body1 body2
+      -- if we can safely rename first binder into second
+      Foil.RenameLeftNameBinder rename1to2 ->
+        case Foil.assertDistinct binder2 of
+          Foil.Distinct ->
+            let scope2 = Foil.extendScope binder2 scope
+            in alphaEquiv scope2 (Foil.liftRM scope2 (Foil.fromNameBinderRenaming rename1to2) body1) body2
+      -- if we can safely rename second binder into first
+      Foil.RenameRightNameBinder rename2to1 ->
+        case Foil.assertDistinct binder1 of
+          Foil.Distinct ->
+            let scope1 = Foil.extendScope binder1 scope
+            in alphaEquiv scope1 body1 (Foil.liftRM scope1 (Foil.fromNameBinderRenaming rename2to1) body2)
+
+-- ** Unsafe equality checks
+
+-- | /Unsafe/ equality check for two terms.
+-- This check ignores the possibility that two terms might have different
+-- scope extensions under binders (which might happen due to substitution
+-- under a binder in absence of name conflicts).
+unsafeEqAST
+  :: (Bifoldable sig, ZipMatch sig)
+  => AST sig n
+  -> AST sig l
+  -> Bool
+unsafeEqAST (Var x) (Var y) = x == coerce y
+unsafeEqAST (Node t1) (Node t2) =
+  case zipMatch t1 t2 of
+    Nothing -> False
+    Just tt -> getAll (bifoldMap (All . uncurry unsafeEqScopedAST) (All . uncurry unsafeEqAST) tt)
+unsafeEqAST _ _ = False
+
+-- | A version of 'unsafeEqAST' for scoped terms.
+unsafeEqScopedAST
+  :: (Bifoldable sig, ZipMatch sig)
+  => ScopedAST sig n
+  -> ScopedAST sig l
+  -> Bool
+unsafeEqScopedAST (ScopedAST binder1 body1) (ScopedAST binder2 body2) = and
+  [ binder1 == coerce binder2
+  , body1 `unsafeEqAST` body2
+  ]
+
+-- ** Syntactic matching (unification)
+
+-- | Perform one-level matching for the two (non-variable) terms.
+class ZipMatch sig where
+  zipMatch
+    :: sig scope term     -- ^ Left non-variable term.
+    -> sig scope' term'   -- ^ Right non-variable term.
+    -> Maybe (sig (scope, scope') (term, term'))
+
+instance (ZipMatch f, ZipMatch g) => ZipMatch (Sum f g) where
+  zipMatch (L2 f) (L2 f') = L2 <$> zipMatch f f'
+  zipMatch (R2 g) (R2 g') = R2 <$> zipMatch g g'
+  zipMatch _ _ = Nothing

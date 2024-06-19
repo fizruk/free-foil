@@ -28,11 +28,14 @@ module Control.Monad.Foil (
   withFresh,
   withRefreshed,
   unsinkName,
-  -- * Safe (co)sinking
+  -- * Safe (co)sinking and renaming
   Sinkable(..),
   CoSinkable(..),
   sink,
   extendRenaming,
+  extendNameBinderRenaming,
+  composeNameBinderRenamings,
+  fromNameBinderRenaming,
   extendRenamingNameBinder,
   -- * Safe substitutions
   Substitution,
@@ -40,6 +43,9 @@ module Control.Monad.Foil (
   identitySubst,
   addSubst,
   addRename,
+  -- * Unification of binders
+  UnifyNameBinders(..),
+  unifyNameBinders,
   -- * Name maps
   NameMap,
   emptyNameMap,
@@ -51,6 +57,7 @@ module Control.Monad.Foil (
   Distinct,
   DistinctEvidence(..),
   assertDistinct,
+  assertExt,
   DExt,
   InjectName(..),
 ) where

@@ -40,6 +40,7 @@ import           Data.IntSet
 import qualified Data.IntSet     as IntSet
 import           Data.Kind       (Type)
 import           Unsafe.Coerce
+import Data.Coerce (coerce)
 
 -- * Safe types and operations
 
@@ -134,6 +135,10 @@ unsafeAssertFresh binder cont =
 assertDistinct :: Distinct n => NameBinder n l -> DistinctEvidence l
 assertDistinct _ = unsafeDistinct
 
+-- | A distinct scope extended with a 'NameBinder' is also distinct.
+assertExt :: NameBinder n l -> ExtEvidence n l
+assertExt _ = unsafeExt
+
 -- | Safely rename (if necessary) a given name to extend a given scope.
 -- This is similar to 'withFresh', except if the name does not clash with
 -- the scope, it can be used immediately, without renaming.
@@ -154,6 +159,37 @@ unsinkName :: NameBinder n l -> Name l -> Maybe (Name n)
 unsinkName binder name@(UnsafeName raw)
   | nameOf binder == name = Nothing
   | otherwise = Just (UnsafeName raw)
+
+-- * Unification of binders
+
+-- | Unification result for two binders,
+-- extending some common scope to scopes @l@ and @r@ respectively.
+--
+-- Due to the implementation of the foil,
+data UnifyNameBinders n l r where
+  -- | Binders are the same, proving that type parameters @l@ and @r@
+  -- are in fact equivalent.
+  SameNameBinders :: UnifyNameBinders n l l
+  -- | It is possible to safely rename the left binder
+  -- to match the right one.
+  RenameLeftNameBinder :: (NameBinder n l -> NameBinder n r) -> UnifyNameBinders n l r
+  -- | It is possible to safely rename the right binder
+  -- to match the left one.
+  RenameRightNameBinder :: (NameBinder n r -> NameBinder n l) -> UnifyNameBinders n l r
+
+-- | Unify binders either by asserting that they are the same,
+-- or by providing a /safe/ renaming function to convert one binder to another.
+unifyNameBinders
+  :: forall i l r.
+     NameBinder i l
+  -> NameBinder i r
+  -> UnifyNameBinders i l r
+unifyNameBinders (UnsafeNameBinder (UnsafeName i1)) (UnsafeNameBinder (UnsafeName i2))
+  | i1 == i2  = unsafeCoerce (SameNameBinders @l)  -- equal names extend scopes equally
+  | i1 < i2   = RenameRightNameBinder $ \(UnsafeNameBinder (UnsafeName i'')) ->
+      if i'' == i2 then UnsafeNameBinder (UnsafeName i1) else UnsafeNameBinder (UnsafeName i'')
+  | otherwise = RenameLeftNameBinder $ \(UnsafeNameBinder (UnsafeName i')) ->
+      if i'  == i1 then UnsafeNameBinder (UnsafeName i2) else UnsafeNameBinder (UnsafeName i')
 
 -- * Safe sinking
 
@@ -195,6 +231,31 @@ extendRenaming
   -> r
 extendRenaming _ pattern cont =
   cont unsafeCoerce (unsafeCoerce pattern)
+
+-- | Extend renaming of binders when going under a 'CoSinkable' pattern (generalized binder).
+-- Note that the scope under pattern is independent of the codomain of the renaming.
+extendNameBinderRenaming
+  :: CoSinkable pattern
+  => (NameBinder i n -> NameBinder i n')  -- ^ Map names from scope @n@ to a (possibly larger) scope @n'@.
+  -> pattern n l          -- ^ A pattern that extends scope @n@ to another scope @l@.
+  -> (forall l'. (NameBinder n' l -> NameBinder n' l') -> pattern n' l' -> r )
+  -- ^ A continuation, accepting an extended renaming from @l@ to @l'@ (which itself extends @n'@)
+  -- and a (possibly refreshed) pattern that extends @n'@ to @l'@.
+  -> r
+extendNameBinderRenaming _ pattern cont =
+  cont unsafeCoerce (unsafeCoerce pattern)
+
+-- | Safely compose renamings of name binders.
+-- The underlying implementation is
+composeNameBinderRenamings
+  :: (NameBinder n i -> NameBinder n i')    -- ^ Rename binders extending scope @n@ from @i@ to @i'@.
+  -> (NameBinder i' l -> NameBinder i' l')  -- ^ Rename binders extending scope @i'@ from @l@ to @l'@.
+  -> (NameBinder n l -> NameBinder n l')
+composeNameBinderRenamings = unsafeCoerce (flip (.))
+
+-- | Convert renaming of name binders into renaming of names in the inner scopes.
+fromNameBinderRenaming :: (NameBinder n l -> NameBinder n l') -> Name l -> Name l'
+fromNameBinderRenaming = coerce
 
 -- | Extend renaming when going under a 'NameBinder'.
 -- Note that the scope under binder is independent of the codomain of the renaming.
