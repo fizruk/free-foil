@@ -29,15 +29,16 @@ genLambdaPi scope names = go
       ]
 
 genAlphaEquivLambdaPis :: (Distinct n, Distinct l) => Scope n -> Scope l -> [(Name n, Name l)] -> Gen (LambdaPi n, LambdaPi l)
-genAlphaEquivLambdaPis scope1 scope2 names = go
+genAlphaEquivLambdaPis scope1 scope2 names = sized go
   where
-    go = oneof $
-      map (pure . bimap Var Var) names ++
-      [ do
-          (f1, f2) <- go
-          (x1, x2) <- go
+    go n = oneof $
+      map (pure . bimap Var Var) names ++ concat
+      [ if n < 1 then [] else [ do
+          (f1, f2) <- go (n `div` 2)
+          (x1, x2) <- go (n `div` 2)
           return (App f1 x1, App f2 x2)
-      , do
+        ]
+      , if n < 1 && not (null names) then [] else [ do
           name1 <- Foil.Internal.UnsafeName <$> choose (1, 1000)
           name2 <- Foil.Internal.UnsafeName <$> choose (1, 1000)
           withRefreshed scope1 name1 $ \binder1 ->
@@ -45,8 +46,9 @@ genAlphaEquivLambdaPis scope1 scope2 names = go
               let names' = (nameOf binder1, nameOf binder2) : map (bimap sink sink) names
                   scope1' = extendScope binder1 scope1
                   scope2' = extendScope binder2 scope2
-              (body1, body2) <- genAlphaEquivLambdaPis scope1' scope2' names'
+              (body1, body2) <- resize (max 0 (n - 1)) $ genAlphaEquivLambdaPis scope1' scope2' names'
               return (Lam binder1 body1, Lam binder2 body2)
+        ]
       ]
 
 -- | Alter at most @n@ names in a given expression.
@@ -104,6 +106,6 @@ spec :: Spec
 spec = do
   describe "α-equivalence" $ do
     it "alphaEquiv is correct" $ property $ forAll (genAlphaEquivLambdaPis emptyScope emptyScope []) $ \(t, t') ->
-      alphaEquiv emptyScope t t'
+      within 100000 $ alphaEquiv emptyScope t t'
     it "alphaEquivRefreshed is correct" $ property $ \(AlphaEquivRefreshed (AlphaEquiv equiv t t')) ->
-      alphaEquivRefreshed emptyScope t t' `shouldBe` equiv
+      within 100000 $ alphaEquivRefreshed emptyScope t t' `shouldBe` equiv

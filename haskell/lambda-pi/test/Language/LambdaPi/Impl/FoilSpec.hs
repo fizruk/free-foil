@@ -1,4 +1,6 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE MonoLocalBinds #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
@@ -33,25 +35,31 @@ genExpr scope names = go
             LamE (PatternVar binder) <$> genExpr (extendScope binder scope) (nameOf binder : map sink names)
       ]
 
-genAlphaEquivExprs :: (Distinct n, Distinct l) => Scope n -> Scope l -> [(Name n, Name l)] -> Gen (Expr n, Expr l)
-genAlphaEquivExprs scope1 scope2 names = go
+genAlphaEquivExprs
+  :: (Distinct n, Distinct l)
+  => (forall x y r. Distinct x => Scope x -> Name y -> (forall o'. DExt x o' => NameBinder x o' -> r) -> r)
+  -> Scope n -> Scope l -> [(Name n, Name l)] -> Gen (Expr n, Expr l)
+genAlphaEquivExprs withRefreshed' scope1 scope2 names = sized go
   where
-    go = oneof $
-      map (pure . bimap VarE VarE) names ++
-      [ do
-          (f1, f2) <- go
-          (x1, x2) <- go
+    go n = oneof $
+      map (pure . bimap VarE VarE) names ++ concat
+      [ if n < 1 then [] else [ do
+          (f1, f2) <- go (n `div` 2)
+          (x1, x2) <- go (n `div` 2)
           return (AppE f1 x1, AppE f2 x2)
-      , do
+        ]
+        -- allow LamE when we do not have any names
+      , if n < 1 && not (null names) then [] else [ do
           name1 <- Foil.Internal.UnsafeName <$> choose (1, 1000)
           name2 <- Foil.Internal.UnsafeName <$> choose (1, 1000)
-          withRefreshed scope1 name1 $ \binder1 ->
-            withRefreshed scope2 name2 $ \binder2 -> do
+          withRefreshed' scope1 name1 $ \binder1 ->
+            withRefreshed' scope2 name2 $ \binder2 -> do
               let names' = (nameOf binder1, nameOf binder2) : map (bimap sink sink) names
                   scope1' = extendScope binder1 scope1
                   scope2' = extendScope binder2 scope2
-              (body1, body2) <- genAlphaEquivExprs scope1' scope2' names'
+              (body1, body2) <- resize (max 0 (n - 1)) $ genAlphaEquivExprs withRefreshed' scope1' scope2' names'
               return (LamE (PatternVar binder1) body1, LamE (PatternVar binder2) body2)
+        ]
       ]
 
 -- | Alter at most @n@ names in a given expression.
@@ -105,7 +113,7 @@ instance Show AlphaEquiv where
 
 instance Arbitrary AlphaEquiv where
   arbitrary = do
-    (t, t') <- genAlphaEquivExprs emptyScope emptyScope []
+    (t, t') <- genAlphaEquivExprs withRefreshed emptyScope emptyScope []
     (n, alt) <- alterNames emptyScope [] 1 t
     return (AlphaEquiv (n == 1) alt t')
 
@@ -130,24 +138,7 @@ instance Show AlphaEquivRefreshed where
     ]
 
 genExprWithFresh :: (Distinct n, Distinct l) => Scope n -> Scope l -> [(Name n, Name l)] -> Gen (Expr n, Expr l)
-genExprWithFresh scope1 scope2 names = go
-  where
-    go = oneof $
-      map (pure . bimap VarE VarE) names ++
-      [ do
-          (f1, f2) <- go
-          (x1, x2) <- go
-          return (AppE f1 x1, AppE f2 x2)
-      , do
-          name1 <- Foil.Internal.UnsafeName <$> choose (1, 1000)
-          withRefreshed scope1 name1 $ \binder1 ->
-            withFresh scope2 $ \binder2 -> do
-              let names' = (nameOf binder1, nameOf binder2) : map (bimap sink sink) names
-                  scope1' = extendScope binder1 scope1
-                  scope2' = extendScope binder2 scope2
-              (body1, body2) <- genExprWithFresh scope1' scope2' names'
-              return (LamE (PatternVar binder1) body1, LamE (PatternVar binder2) body2)
-      ]
+genExprWithFresh = genAlphaEquivExprs (\s _ -> withFresh s)
 
 data ExprWithFresh = ExprWithFresh (Expr VoidS) (Expr VoidS)
 
