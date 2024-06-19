@@ -3,7 +3,9 @@
 module Control.Monad.Free.Foil.TH.Signature where
 
 import           Language.Haskell.TH
+import           Language.Haskell.TH.Syntax
 
+import Control.Monad (forM_)
 import Control.Monad.Foil.TH.Util
 import Data.Maybe (catMaybes)
 
@@ -24,6 +26,8 @@ mkSignature termT nameT scopeT patternT = do
 
   signatureCons <- catMaybes <$> mapM (toSignatureCons scope term) termCons
 
+  addModFinalizer $ putDoc (DeclDoc signatureT)
+    ("/Generated/ with '" ++ show 'mkSignature ++ "'. A signature bifunctor, specifying the nodes of a syntax tree corresponding to '" ++ show termT ++ "'.")
   return
     [ DataD [] signatureT (termTVars ++ [PlainTV scope BndrReq, PlainTV term BndrReq]) Nothing signatureCons []
     ]
@@ -38,23 +42,37 @@ mkSignature termT nameT scopeT patternT = do
       RecC _conName types | or [ typeName == nameT | (_name, _bang, PeelConT typeName _typeParams) <- types ]
         -> pure Nothing
 
-      NormalC conName params -> Just . NormalC conName' . catMaybes <$> mapM toSignatureParam params
+      NormalC conName params -> do
+        addModFinalizer $ putDoc (DeclDoc conName') ("Corresponds to '" ++ show conName ++ "'.")
+        Just . NormalC conName' . catMaybes <$> mapM toSignatureParam params
         where
           conName' = mkName (nameBase conName ++ "Sig")
-      RecC conName params -> Just . RecC conName' . catMaybes <$> mapM toSignatureParam' params
+      RecC conName params -> do
+        addModFinalizer $ putDoc (DeclDoc conName') ("Corresponds to '" ++ show conName ++ "'.")
+        Just . RecC conName' . catMaybes <$> mapM toSignatureParam' params
         where
           conName' = mkName (nameBase conName ++ "Sig")
-      InfixC l conName r -> Just <$> (flip InfixC conName' <$> toInfixParam l <*> toInfixParam r)
+      InfixC l conName r -> do
+        addModFinalizer $ putDoc (DeclDoc conName') ("Corresponds to '" ++ show conName ++ "'.")
+        Just <$> (flip InfixC conName' <$> toInfixParam l <*> toInfixParam r)
         where
           conName' = mkName (nameBase conName ++ "---")
       ForallC params ctx con -> fmap (ForallC params ctx) <$> toSignatureCons scope term con
-      GadtC conNames argTypes retType -> Just <$> (GadtC conNames <$> (catMaybes <$> mapM toSignatureParam argTypes) <*> retType')
+      GadtC conNames argTypes retType -> do
+        let conNames' = map (\conName -> mkName (nameBase conName ++ "---")) conNames
+        forM_ (zip conNames conNames') $ \(conName, conName') ->
+          addModFinalizer $ putDoc (DeclDoc conName') ("Corresponds to '" ++ show conName ++ "'.")
+        Just <$> (GadtC conNames' <$> (catMaybes <$> mapM toSignatureParam argTypes) <*> retType')
         where
           retType' = case retType of
             PeelConT typeName typeParams
               | typeName == termT -> return (PeelConT signatureT (typeParams ++ [VarT scope, VarT term]))
             _ -> fail "unexpected return type in a GADT constructor"
-      RecGadtC conNames argTypes retType -> Just <$> (RecGadtC conNames <$> (catMaybes <$> mapM toSignatureParam' argTypes) <*> retType')
+      RecGadtC conNames argTypes retType -> do
+        let conNames' = map (\conName -> mkName (nameBase conName ++ "---")) conNames
+        forM_ (zip conNames conNames') $ \(conName, conName') ->
+          addModFinalizer $ putDoc (DeclDoc conName') ("Corresponds to '" ++ show conName ++ "'.")
+        Just <$> (RecGadtC conNames' <$> (catMaybes <$> mapM toSignatureParam' argTypes) <*> retType')
         where
           retType' = case retType of
             PeelConT typeName typeParams

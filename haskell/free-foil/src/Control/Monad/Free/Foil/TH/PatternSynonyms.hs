@@ -5,10 +5,12 @@
 {-# LANGUAGE ViewPatterns    #-}
 module Control.Monad.Free.Foil.TH.PatternSynonyms where
 
+import Control.Monad (forM_)
 import qualified Control.Monad.Foil         as Foil
 import           Control.Monad.Foil.TH.Util
 import           Control.Monad.Free.Foil
 import           Language.Haskell.TH
+import           Language.Haskell.TH.Syntax
 
 -- | Generate helpful pattern synonyms given a signature bifunctor.
 mkPatternSynonyms
@@ -44,6 +46,9 @@ mkPatternSynonym signatureType scope term = \case
         pats   = map toArg argsWithTypes
         args  = map fst argsWithTypes'
         types' = map snd argsWithTypes'
+    forM_ conNames $ \conName ->
+      addModFinalizer $ putDoc (DeclDoc (mkPatternName conName))
+        ("/Generated/ with '" ++ show 'mkPatternSynonyms ++ "'. Pattern synonym for an '" ++ show ''AST ++ "' node of type '" ++ show conName ++ "'.")
     return $ concat
       [ [ PatSynSigD patternName (foldr (AppT . AppT ArrowT) termType types')
         , PatSynD  patternName (PrefixPatSyn args) ImplBidir (ConP 'Node [] [ConP conName [] pats])
