@@ -24,3 +24,6 @@ tvarName :: TyVarBndr a -> Name
 tvarName = \case
   PlainTV name _ -> name
   KindedTV name _ _ -> name
+
+removeName :: VarBangType -> BangType
+removeName (_name, bang_, type_) = (bang_, type_)

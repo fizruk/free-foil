@@ -81,8 +81,6 @@ mkPatternSynonym signatureType scope term = \case
     mkPatternName conName = mkName (dropEnd (length "Sig") (nameBase conName))
     dropEnd k = reverse . drop k . reverse
 
-    removeName (_name, bang_, type_) = (bang_, type_)
-
     collapse = \case
       Left (x, y) -> [x, y]
       Right x -> [x]

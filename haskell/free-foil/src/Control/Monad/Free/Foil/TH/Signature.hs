@@ -1,13 +1,13 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE LambdaCase      #-}
 {-# LANGUAGE TemplateHaskell #-}
 module Control.Monad.Free.Foil.TH.Signature where
 
 import           Language.Haskell.TH
 import           Language.Haskell.TH.Syntax
 
-import Control.Monad (forM_)
-import Control.Monad.Foil.TH.Util
-import Data.Maybe (catMaybes)
+import           Control.Monad              (forM_)
+import           Control.Monad.Foil.TH.Util
+import           Data.Maybe                 (catMaybes)
 
 -- | Generate a signature for the free foil (or free scoped monads)
 -- based on a naïve recursive abstract syntax representation,
@@ -29,7 +29,8 @@ mkSignature termT nameT scopeT patternT = do
   addModFinalizer $ putDoc (DeclDoc signatureT)
     ("/Generated/ with '" ++ show 'mkSignature ++ "'. A signature bifunctor, specifying the nodes of a syntax tree corresponding to '" ++ show termT ++ "'.")
   return
-    [ DataD [] signatureT (termTVars ++ [PlainTV scope BndrReq, PlainTV term BndrReq]) Nothing signatureCons []
+    [ DataD [] signatureT (termTVars ++ [PlainTV scope BndrReq, PlainTV term BndrReq]) Nothing signatureCons
+      [DerivClause Nothing [ConT ''Functor, ConT ''Foldable, ConT ''Traversable]]
     ]
   where
     signatureT = mkName (nameBase termT ++ "Sig")
