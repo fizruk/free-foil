@@ -4,7 +4,7 @@
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE QuasiQuotes           #-}
 {-# LANGUAGE TemplateHaskellQuotes #-}
-module Control.Monad.Foil.TH.MkToFoil (mkToFoil) where
+module Control.Monad.Foil.TH.MkToFoil where
 
 import           Language.Haskell.TH
 import Language.Haskell.TH.Syntax (addModFinalizer)
@@ -451,6 +451,92 @@ mkToFoilTerm termT nameT scopeT patternT = do
             mkConParamVar :: BangType -> Int -> Name
             mkConParamVar _ty i = mkName ("x" <> show i)
 
+        toMatch RecC{} = error "Record constructors (RecC) are not supported yet!"
+        toMatch InfixC{} = error "Infix constructors (InfixC) are not supported yet!"
+        toMatch ForallC{} = error "Existential constructors (ForallC) are not supported yet!"
+        toMatch GadtC{} = error "GADT constructors (GadtC) are not supported yet!"
+        toMatch RecGadtC{} = error "Record GADT constructors (RecGadtC) are not supported yet!"
+
+-- | Generate a conversion function from raw terms to scope-safe terms.
+mkToFoilPattern
+  :: Name -- ^ Type name for raw variable identifiers.
+  -> Name -- ^ Type name for raw patterns.
+  -> Q [Dec]
+mkToFoilPattern nameT patternT = do
+  n <- newName "n"
+  let ntype = return (VarT n)
+  r <- newName "r"
+  let rtype = return (VarT r)
+  TyConI (DataD _ctx _name patternTVars _kind patternCons _deriv) <- reify patternT
+
+  toFoilPatternSignature <-
+    SigD toFoilPatternT <$>
+      [t| Foil.Distinct $ntype
+          => Foil.Scope $ntype
+          -> Map $(return (ConT nameT)) (Foil.Name $ntype)
+          -> $(return (PeelConT patternT (map (VarT . tvarName) patternTVars)))
+          -> (forall l. Foil.DExt $ntype l => $(return (PeelConT foilPatternT (map (VarT . tvarName) patternTVars))) $ntype l -> Map $(return (ConT nameT)) (Foil.Name l) -> $rtype)
+          -> $rtype
+        |]
+
+  addModFinalizer $ putDoc (DeclDoc toFoilPatternT)
+    "Convert a raw pattern into a scope-safe pattern."
+
+  return
+    [ toFoilPatternSignature
+    , toFoilPatternBody patternCons
+    ]
+  where
+    foilPatternT = mkName ("Foil" ++ nameBase patternT)
+    toFoilPatternT = mkName ("toFoil" ++ nameBase patternT)
+
+    toFoilPatternBody patternCons = FunD toFoilPatternT
+      [Clause [VarP scope, VarP env, VarP pattern, VarP cont] (NormalB (CaseE (VarE pattern) (map toMatch patternCons))) []]
+      where
+        scope = mkName "scope"
+        env = mkName "env"
+        pattern = mkName "pattern"
+        cont = mkName "cont"
+
+        toMatch (NormalC conName params) =
+          Match (ConP conName [] conParamPatterns) (NormalB conMatchBody) []
+          where
+            conMatchBody = go 1 (VarE scope) (VarE env) (ConE foilConName) params
+
+            go _i _scope' env' p [] = AppE (AppE (VarE cont) p) env'
+            go i scope' env' p ((_bang, PeelConT tyName _tyParams) : conParams)
+              | tyName == nameT =
+                  AppE (AppE (VarE 'Foil.withFresh) scope')
+                    (LamE [VarP xi']
+                      (LetE [ ValD (VarP scopei) (NormalB (AppE (AppE (VarE 'Foil.extendScope) (VarE xi')) scope')) []
+                            , ValD (VarP envi) (NormalB
+                                (AppE (AppE (AppE (VarE 'Map.insert) (VarE xi))
+                                  (AppE (VarE 'Foil.nameOf) (VarE xi')))
+                                  (InfixE (Just (VarE 'Foil.sink)) (VarE '(<$>)) (Just (VarE envi))))) []]
+                        (go (i+1) (VarE scopei) (VarE envi) (AppE p (VarE xi')) conParams)))
+              | tyName == patternT =
+                  AppE
+                    (AppE (AppE (AppE (VarE toFoilPatternT) scope') env') (VarE xi))
+                    (LamE [VarP xi', VarP envi]
+                      (LetE [ValD (VarP scopei) (NormalB (AppE (AppE (VarE 'Foil.extendScopePattern) (VarE xi')) scope')) []]
+                        (go (i+1) (VarE scopei) (VarE envi) (AppE p (VarE xi')) conParams)))
+              where
+                xi = mkName ("x" <> show i)
+                xi' = mkName ("x" <> show i <> "'")
+                scopei = mkName ("_scope" <> show i)
+                envi = mkName ("env" <> show i)
+            go i scope' env' p (_ : conParams) =
+              go (i + 1) scope' env' (AppE p (VarE xi)) conParams
+              where
+                xi = mkName ("x" <> show i)
+
+            foilConName = mkName ("Foil" ++ nameBase conName)
+            conParamPatterns = map VarP conParamVars
+
+            conParamVars = zipWith mkConParamVar params [1..]
+
+            mkConParamVar :: BangType -> Int -> Name
+            mkConParamVar _ i = mkName ("x" <> show i)
         toMatch RecC{} = error "Record constructors (RecC) are not supported yet!"
         toMatch InfixC{} = error "Infix constructors (InfixC) are not supported yet!"
         toMatch ForallC{} = error "Existential constructors (ForallC) are not supported yet!"

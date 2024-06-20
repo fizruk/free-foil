@@ -1,4 +1,5 @@
 {-# LANGUAGE BlockArguments             #-}
+{-# LANGUAGE EmptyCase             #-}
 {-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE FlexibleInstances          #-}
@@ -327,30 +328,52 @@ unsinkNamePattern pat = withPattern @_ @n
 -- extending some common scope to scopes @l@ and @r@ respectively.
 --
 -- Due to the implementation of the foil,
-data UnifyNameBinders n l r where
+data UnifyNameBinders pattern n l r where
   -- | Binders are the same, proving that type parameters @l@ and @r@
   -- are in fact equivalent.
-  SameNameBinders :: UnifyNameBinders n l l
+  SameNameBinders :: UnifyNameBinders pattern n l l
   -- | It is possible to safely rename the left binder
   -- to match the right one.
-  RenameLeftNameBinder :: (NameBinder n l -> NameBinder n r) -> UnifyNameBinders n l r
+  RenameLeftNameBinder :: (NameBinder n l -> NameBinder n r) -> UnifyNameBinders pattern n l r
   -- | It is possible to safely rename the right binder
   -- to match the left one.
-  RenameRightNameBinder :: (NameBinder n r -> NameBinder n l) -> UnifyNameBinders n l r
+  RenameRightNameBinder :: (NameBinder n r -> NameBinder n l) -> UnifyNameBinders pattern n l r
+  -- | It is necessary to rename both binders.
+  RenameBothBinders :: pattern n lr -> (NameBinder n l -> NameBinder n lr) -> (NameBinder n r -> NameBinder n lr) -> UnifyNameBinders pattern n l r
 
 -- | Unify binders either by asserting that they are the same,
 -- or by providing a /safe/ renaming function to convert one binder to another.
 unifyNameBinders
-  :: forall i l r.
+  :: forall i l r pattern.
      NameBinder i l
   -> NameBinder i r
-  -> UnifyNameBinders i l r
+  -> UnifyNameBinders pattern i l r
 unifyNameBinders (UnsafeNameBinder (UnsafeName i1)) (UnsafeNameBinder (UnsafeName i2))
-  | i1 == i2  = unsafeCoerce (SameNameBinders @l)  -- equal names extend scopes equally
+  | i1 == i2  = unsafeCoerce (SameNameBinders @_ @l)  -- equal names extend scopes equally
   | i1 < i2   = RenameRightNameBinder $ \(UnsafeNameBinder (UnsafeName i'')) ->
       if i'' == i2 then UnsafeNameBinder (UnsafeName i1) else UnsafeNameBinder (UnsafeName i'')
   | otherwise = RenameLeftNameBinder $ \(UnsafeNameBinder (UnsafeName i')) ->
       if i'  == i1 then UnsafeNameBinder (UnsafeName i2) else UnsafeNameBinder (UnsafeName i')
+
+data V2 (n :: S) (l :: S)
+
+absurd2 :: V2 n l -> a
+absurd2 v2 = case v2 of {}
+
+class CoSinkable pattern => UnifiablePattern pattern where
+  unifyPatterns
+    :: pattern i l
+    -> pattern i r
+    -> UnifyNameBinders pattern i l r
+
+instance UnifiablePattern NameBinder where
+  unifyPatterns = unifyNameBinders
+
+unsafeEqPattern :: UnifiablePattern pattern => pattern n l -> pattern n' l' -> Bool
+unsafeEqPattern l r =
+  case unifyPatterns l (unsafeCoerce r) of
+    SameNameBinders -> True
+    _ -> False
 
 -- * Safe sinking
 

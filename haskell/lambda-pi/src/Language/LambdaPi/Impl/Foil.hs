@@ -1,4 +1,5 @@
 {-# LANGUAGE BlockArguments        #-}
+{-# LANGUAGE EmptyCase        #-}
 {-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleInstances     #-}
@@ -504,6 +505,7 @@ unifyPatterns (PatternVar x) (PatternVar x') cont =
     RenameRightNameBinder renameR ->
       case (assertExt x, assertDistinct x) of
         (Ext, Distinct) -> Just (cont id renameR (PatternVar x))
+    RenameBothBinders v2 _ _ -> absurd2 v2
 unifyPatterns (PatternPair l r) (PatternPair l' r') cont = join $
   unifyPatterns l l' $ \renameL renameL' l'' ->
     extendNameBinderRenaming renameL r $ \renameLext rext ->

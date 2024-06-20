@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE RankNTypes         #-}
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -73,22 +74,25 @@ mkConvertFromFreeFoil ''Raw.Term' ''Raw.VarIdent ''Raw.ScopedTerm' ''Raw.Pattern
 
 mkFoilPattern ''Raw.VarIdent ''Raw.Pattern'
 deriveCoSinkable ''Raw.VarIdent ''Raw.Pattern'
+mkToFoilPattern ''Raw.VarIdent ''Raw.Pattern'
+mkFromFoilPattern ''Raw.VarIdent ''Raw.Pattern'
 
 -- * User-defined code
 
-type Term' a = AST (Term'Sig a)
+type Term' a = AST (FoilPattern' a) (Term'Sig a)
 type Term = Term' Raw.BNFC'Position
+type FoilPattern = FoilPattern' Raw.BNFC'Position
 
 -- ** Conversion helpers
 
 -- | Convert 'Raw.Term'' into a scope-safe term.
 -- This is a special case of 'convertToAST'.
-toTerm' :: Foil.Distinct n => Foil.Scope n -> Map Raw.VarIdent (Foil.Name n) -> Raw.Term' a -> AST (Term'Sig a) n
-toTerm' = convertToAST convertToTerm'Sig getPattern'Binder getTerm'FromScopedTerm'
+toTerm' :: Foil.Distinct n => Foil.Scope n -> Map Raw.VarIdent (Foil.Name n) -> Raw.Term' a -> Term' a n
+toTerm' = convertToAST convertToTerm'Sig toFoilPattern' getTerm'FromScopedTerm'
 
 -- | Convert 'Raw.Term'' into a closed scope-safe term.
 -- This is a special case of 'toTerm''.
-toTerm'Closed :: Raw.Term' a -> AST (Term'Sig a) Foil.VoidS
+toTerm'Closed :: Raw.Term' a -> Term' a Foil.VoidS
 toTerm'Closed = toTerm' Foil.emptyScope Map.empty
 
 -- | Convert a scope-safe representation back into 'Raw.Term''.
@@ -97,11 +101,11 @@ toTerm'Closed = toTerm' Foil.emptyScope Map.empty
 -- 'Raw.VarIdent' names are generated based on the raw identifiers in the underlying foil representation.
 --
 -- This function does not recover location information for variables, patterns, or scoped terms.
-fromTerm' :: AST (Term'Sig a) n -> Raw.Term' a
+fromTerm' :: Term' a n -> Raw.Term' a
 fromTerm' = convertFromAST
   convertFromTerm'Sig
   (Raw.Var (error "location missing"))
-  (Raw.PatternVar (error "location missing"))
+  fromFoilPattern'
   (Raw.AScopedTerm (error "location missing"))
   (\n -> Raw.VarIdent ("x" ++ show n))
 
@@ -109,16 +113,23 @@ fromTerm' = convertFromAST
 --
 -- >>> fromString "λx.λy.λx.x" :: Term Foil.VoidS
 -- λ x0 . λ x1 . λ x2 . x2
-instance IsString (AST (Term'Sig Raw.BNFC'Position) Foil.VoidS) where
+instance IsString (AST FoilPattern (Term'Sig Raw.BNFC'Position) Foil.VoidS) where
   fromString input = case Raw.pTerm (Raw.tokens input) of
     Left err   -> error ("could not parse λΠ-term: " <> input <> "\n  " <> err)
     Right term -> toTerm'Closed term
 
 -- | Pretty-print scope-safe terms via raw representation.
-instance Show (AST (Term'Sig a) Foil.VoidS) where
+instance Show (AST (FoilPattern' a) (Term'Sig a) Foil.VoidS) where
   show = Raw.printTree . fromTerm'
 
 -- ** Evaluation
+
+matchPattern
+  :: Foil.Scope n
+  -> FoilPattern n l
+  -> Term n
+  -> Foil.Substitution Term l n
+matchPattern = undefined
 
 -- | Compute weak head normal form (WHNF) of a λΠ-term.
 --
@@ -154,7 +165,7 @@ whnf scope = \case
   App loc f x ->
     case whnf scope f of
       Lam _loc binder body ->
-        let subst = Foil.addSubst Foil.identitySubst binder x
+        let subst = matchPattern scope binder x
          in whnf scope (substitute scope subst body)
       f' -> App loc f' x
   First loc t ->
@@ -166,9 +177,6 @@ whnf scope = \case
       Pair _loc _l r -> whnf scope r
       t'             -> Second loc t'
   t -> t
-
--- ** Type checking
-
 
 -- ** λΠ-interpreter
 

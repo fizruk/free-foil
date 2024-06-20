@@ -89,7 +89,7 @@ instance ZipMatch PairF where
 type (:+:) = Sum
 
 -- | \(\lambda\Pi\)-terms in scope @n@, freely generated from the sum of signatures 'LambdaPiF' and 'PairF'.
-type LambdaPi n = AST (LambdaPiF :+: PairF) n
+type LambdaPi n = AST Foil.NameBinder (LambdaPiF :+: PairF) n
 
 pattern App :: LambdaPi n -> LambdaPi n -> LambdaPi n
 pattern App fun arg = Node (L2 (AppF fun arg))

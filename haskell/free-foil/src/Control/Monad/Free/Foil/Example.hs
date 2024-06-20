@@ -25,15 +25,15 @@ data ExprF scope term
   deriving (Functor)
 deriveBifunctor ''ExprF
 
-pattern AppE :: AST ExprF n -> AST ExprF n -> AST ExprF n
+pattern AppE :: AST binder ExprF n -> AST binder ExprF n -> AST binder ExprF n
 pattern AppE x y = Node (AppF x y)
 
-pattern LamE :: NameBinder n l -> AST ExprF l -> AST ExprF n
+pattern LamE :: binder n l -> AST binder ExprF l -> AST binder ExprF n
 pattern LamE binder body = Node (LamF (ScopedAST binder body))
 
 {-# COMPLETE Var, AppE, LamE #-}
 
-type Expr = AST ExprF
+type Expr = AST NameBinder ExprF
 
 -- | Use 'ppExpr' to show \(\lambda\)-terms.
 instance Show (Expr n) where
