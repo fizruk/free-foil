@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE GADTs             #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE KindSignatures    #-}
@@ -31,6 +32,7 @@ module Language.LambdaPi.Impl.FreeFoilTH where
 
 import qualified Control.Monad.Foil              as Foil
 import           Control.Monad.Free.Foil
+import           Control.Monad.Foil.TH
 import           Control.Monad.Free.Foil.TH
 import           Data.Bifunctor.TH
 import           Data.Map                        (Map)
@@ -66,6 +68,11 @@ mkPatternSynonyms ''Term'Sig
 
 mkConvertToFreeFoil ''Raw.Term' ''Raw.VarIdent ''Raw.ScopedTerm' ''Raw.Pattern'
 mkConvertFromFreeFoil ''Raw.Term' ''Raw.VarIdent ''Raw.ScopedTerm' ''Raw.Pattern'
+
+-- ** Scope-safe patterns
+
+mkFoilPattern ''Raw.VarIdent ''Raw.Pattern'
+deriveCoSinkable ''Raw.VarIdent ''Raw.Pattern'
 
 -- * User-defined code
 

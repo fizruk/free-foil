@@ -12,8 +12,6 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeApplications           #-}
-{-# OPTIONS_GHC -fno-warn-unused-binds  #-}
-{-# OPTIONS_GHC -fno-warn-unused-matches  #-}
 -- | Foil implementation of the \(\lambda\Pi\)-calculus (with pairs)
 -- using Template Haskell to reduce boilerplate.
 --

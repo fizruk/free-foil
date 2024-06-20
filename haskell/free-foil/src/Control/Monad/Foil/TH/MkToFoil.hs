@@ -189,7 +189,7 @@ mkWithRefreshedFoilPattern nameT patternT = do
               where
                 xi = mkName ("x" <> show i)
                 xi' = mkName ("x" <> show i <> "'")
-                scopei = mkName ("scope" <> show i)
+                scopei = mkName ("_scope" <> show i)
                 xsubst = mkName ("subst" <> show i)
                 subst = mkName "subst"
                 fi = LamE [VarP subst]
@@ -295,7 +295,7 @@ mkToFoilTerm termT nameT scopeT patternT = do
         toMatch (NormalC conName params) =
           Match (ConP conName [] conParamPatterns) (NormalB conMatchBody) [toFoilVarD]
           where
-            toFoilVarFunName = mkName "lookupRawVar"
+            toFoilVarFunName = mkName "_lookupRawVar"
             toFoilVarFun = VarE toFoilVarFunName
             x = mkName "x"
             name = mkName "name"
@@ -324,7 +324,7 @@ mkToFoilTerm termT nameT scopeT patternT = do
               where
                 xi = mkName ("x" <> show i)
                 xi' = mkName ("x" <> show i <> "'")
-                scopei = mkName ("scope" <> show i)
+                scopei = mkName ("_scope" <> show i)
                 envi = mkName ("env" <> show i)
             go i scope' env' p (_ : conParams) =
               go (i + 1) scope' env' (AppE p (VarE xi)) conParams
@@ -377,7 +377,7 @@ mkToFoilTerm termT nameT scopeT patternT = do
               where
                 xi = mkName ("x" <> show i)
                 xi' = mkName ("x" <> show i <> "'")
-                scopei = mkName ("scope" <> show i)
+                scopei = mkName ("_scope" <> show i)
                 envi = mkName ("env" <> show i)
             go i scope' env' p (_ : conParams) =
               go (i + 1) scope' env' (AppE p (VarE xi)) conParams
@@ -407,7 +407,7 @@ mkToFoilTerm termT nameT scopeT patternT = do
         toMatch (NormalC conName params) =
           Match (ConP conName [] conParamPatterns) (NormalB conMatchBody) [toFoilVarD]
           where
-            toFoilVarFunName = mkName "lookupRawVar"
+            toFoilVarFunName = mkName "_lookupRawVar"
             toFoilVarFun = VarE toFoilVarFunName
             x = mkName "x"
             name = mkName "name"
@@ -436,7 +436,7 @@ mkToFoilTerm termT nameT scopeT patternT = do
               where
                 xi = mkName ("x" <> show i)
                 xi' = mkName ("x" <> show i <> "'")
-                scopei = mkName ("scope" <> show i)
+                scopei = mkName ("_scope" <> show i)
                 envi = mkName ("env" <> show i)
             go i scope' env' p (_ : conParams) =
               go (i + 1) scope' env' (AppE p (VarE xi)) conParams
