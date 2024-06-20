@@ -7,6 +7,7 @@
 {-# LANGUAGE TemplateHaskell   #-}
 module Language.LambdaPi.Impl.FreeFoilTH where
 
+import System.Exit (exitFailure)
 import Data.String (IsString(..))
 import qualified Control.Monad.Foil           as Foil
 import           Control.Monad.Free.Foil
@@ -17,6 +18,7 @@ import qualified Data.Map as Map
 import qualified Language.LambdaPi.Syntax.Abs as Raw
 import qualified Language.LambdaPi.Syntax.Par as Raw
 import qualified Language.LambdaPi.Syntax.Lex as Raw
+import qualified Language.LambdaPi.Syntax.Layout as Raw
 import qualified Language.LambdaPi.Syntax.Print as Raw
 
 -- $setup
@@ -89,7 +91,7 @@ instance Show (AST (Term'Sig a) Foil.VoidS) where
 
 -- ** Evaluation
 
--- | Compute weak head normal form (WHNF) of a \(\lambda\Pi\)-term.
+-- | Compute weak head normal form (WHNF) of a λΠ-term.
 --
 -- >>> whnf Foil.emptyScope "(λx.(λ_.x)(λy.x))(λy.λz.z)"
 -- λ x0 . λ x1 . x1
@@ -135,3 +137,26 @@ whnf scope = \case
       Pair _loc _l r -> whnf scope r
       t' -> Second loc t'
   t -> t
+
+-- ** λΠ-interpreter
+
+-- | Interpret a λΠ command.
+interpretCommand :: Raw.Command -> IO ()
+interpretCommand (Raw.CommandCompute _loc term _type) =
+      putStrLn ("  ↦ " ++ show (whnf Foil.emptyScope (toTerm'Closed term)))
+-- #TODO: add typeCheck
+interpretCommand (Raw.CommandCheck _loc _term _type) = putStrLn "check is not yet implemented"
+
+-- | Interpret a λΠ program.
+interpretProgram :: Raw.Program -> IO ()
+interpretProgram (Raw.AProgram _loc typedTerms) = mapM_ interpretCommand typedTerms
+
+-- | A λΠ interpreter implemented via the free foil.
+defaultMain :: IO ()
+defaultMain = do
+  input <- getContents
+  case Raw.pProgram (Raw.resolveLayout True (Raw.tokens input)) of
+    Left err -> do
+      putStrLn err
+      exitFailure
+    Right program -> interpretProgram program
