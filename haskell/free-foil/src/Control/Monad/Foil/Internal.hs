@@ -76,6 +76,33 @@ extendScope :: NameBinder n l -> Scope n -> Scope l
 extendScope (UnsafeNameBinder (UnsafeName name)) (UnsafeScope scope) =
   UnsafeScope (IntSet.insert name scope)
 
+newtype ExtendScope n l (o :: S) (o' :: S) = ExtendScope (Scope n -> Scope l)
+
+idExtendScope :: ExtendScope n n o o'
+idExtendScope = ExtendScope id
+
+compExtendScope
+  :: ExtendScope n i o o'
+  -> ExtendScope i l o' o''
+  -> ExtendScope n l o o''
+compExtendScope (ExtendScope f) (ExtendScope g)
+  = ExtendScope (g . f)
+
+-- | Extend scope with variables inside a pattern.
+-- This is a more flexible version of 'extendScope'.
+extendScopePattern
+  :: (Distinct n, CoSinkable pattern)
+  => pattern n l -> Scope n -> Scope l
+extendScopePattern pat scope = withPattern
+  (\_scope' binder k ->
+    unsafeAssertFresh binder $ \binder' ->
+      k (ExtendScope (extendScope binder)) binder')
+  idExtendScope
+  compExtendScope
+  scope
+  pat
+  (\(ExtendScope extend) _ -> extend scope)
+
 -- | A runtime check for potential name capture.
 member :: Name l -> Scope n -> Bool
 member (UnsafeName name) (UnsafeScope s) = rawMember name s

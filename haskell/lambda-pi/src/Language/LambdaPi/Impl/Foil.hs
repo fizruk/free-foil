@@ -230,14 +230,6 @@ namesOfPattern (PatternPair l r) =
     (Ext, Distinct) -> case (assertExtPattern r, assertDistinctPattern r) of
        (Ext, Distinct) -> map sink (namesOfPattern l) ++ namesOfPattern r
 
--- | Extend scope with variables inside a pattern.
--- This is a more flexible version of 'extendScope'.
-extendScopePattern :: Pattern n l -> Scope n -> Scope l
-extendScopePattern = \case
-  PatternWildcard -> id
-  PatternVar binder -> extendScope binder
-  PatternPair l r -> extendScopePattern r . extendScopePattern l
-
 -- | Perform substitution in a \(\lambda\Pi\)-term.
 substitute :: Distinct o => Scope o -> Substitution Expr i o -> Expr i -> Expr o
 substitute scope subst = \case
