@@ -292,6 +292,35 @@ unsinkName binder name@(UnsafeName raw)
   | nameOf binder == name = Nothing
   | otherwise = Just (UnsafeName raw)
 
+newtype UnsinkName n l (o :: S) (o' :: S) = UnsinkName (Name l -> Maybe (Name n))
+
+idUnsinkName :: UnsinkName n n o o'
+idUnsinkName = UnsinkName Just
+
+compUnsinkName
+  :: UnsinkName n i o o'
+  -> UnsinkName i l o' o''
+  -> UnsinkName n l o o''
+compUnsinkName (UnsinkName f) (UnsinkName g)
+  = UnsinkName (\name -> g name >>= f)
+
+-- | Check if a name in the extended context
+-- is introduced in a pattern or comes from the outer scope @n@.
+--
+-- This is a generalization of 'unsinkName'.
+unsinkNamePattern
+  :: forall pattern n l. (Distinct n, CoSinkable pattern)
+  => pattern n l -> Name l -> Maybe (Name n)
+unsinkNamePattern pat = withPattern @_ @n
+  (\_scope' binder k ->
+      unsafeAssertFresh binder $ \binder' ->
+        k (UnsinkName (unsinkName binder)) binder')
+  idUnsinkName
+  compUnsinkName
+  (error "impossible")
+  pat
+  (\(UnsinkName unsink) _ -> unsink)
+
 -- * Unification of binders
 
 -- | Unification result for two binders,

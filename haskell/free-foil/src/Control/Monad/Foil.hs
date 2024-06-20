@@ -33,6 +33,7 @@ module Control.Monad.Foil (
   withRefreshedPattern,
   withRefreshedPattern',
   unsinkName,
+  unsinkNamePattern,
   -- * Safe (co)sinking and renaming
   Sinkable(..),
   CoSinkable(..),

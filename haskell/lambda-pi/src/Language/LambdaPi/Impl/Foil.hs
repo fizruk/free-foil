@@ -121,18 +121,6 @@ instance CoSinkable Pattern where
 instance InjectName Expr where
   injectName = VarE
 
--- | Check if a name in the extended context
--- is introduced in a pattern or comes from the outer scope @n@.
---
--- This is a generalization of 'unsinkName' to 'Pattern'.
-unsinkNamePattern
-  :: Pattern n l -> Name l -> Maybe (Name n)
-unsinkNamePattern pattern name =
-  case pattern of
-    PatternWildcard   -> Just (coerce name)
-    PatternVar binder -> unsinkName binder name
-    PatternPair l r   -> unsinkNamePattern r name >>= unsinkNamePattern l
-
 instance RelMonad Name Expr where
   rreturn = VarE
   rbind scope e subst = case e of
