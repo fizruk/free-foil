@@ -366,7 +366,7 @@ mkToFoilTerm termT nameT scopeT patternT = do
                             , ValD (VarP envi) (NormalB
                                 (AppE (AppE (AppE (VarE 'Map.insert) (VarE xi))
                                   (AppE (VarE 'Foil.nameOf) (VarE xi')))
-                                  (InfixE (Just (VarE 'Foil.sink)) (VarE '(<$>)) (Just (VarE envi))))) []]
+                                  (InfixE (Just (VarE 'Foil.sink)) (VarE '(<$>)) (Just env')))) []]
                         (go (i+1) (VarE scopei) (VarE envi) (AppE p (VarE xi')) conParams)))
               | tyName == patternT =
                   AppE
@@ -512,7 +512,7 @@ mkToFoilPattern nameT patternT = do
                             , ValD (VarP envi) (NormalB
                                 (AppE (AppE (AppE (VarE 'Map.insert) (VarE xi))
                                   (AppE (VarE 'Foil.nameOf) (VarE xi')))
-                                  (InfixE (Just (VarE 'Foil.sink)) (VarE '(<$>)) (Just (VarE envi))))) []]
+                                  (InfixE (Just (VarE 'Foil.sink)) (VarE '(<$>)) (Just env')))) []]
                         (go (i+1) (VarE scopei) (VarE envi) (AppE p (VarE xi')) conParams)))
               | tyName == patternT =
                   AppE
