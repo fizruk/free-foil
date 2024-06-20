@@ -253,13 +253,22 @@ instance (ZipMatch f, ZipMatch g) => ZipMatch (Sum f g) where
 
 -- ** Convert to free foil
 
+-- | Convert a raw term into a scope-safe term.
 convertToAST
   :: (Foil.Distinct n, Bifunctor sig, Ord rawIdent)
   => (rawTerm -> Either rawIdent (sig (rawPattern, rawScopedTerm) rawTerm))
+  -- ^ Unpeel one syntax node (or a variable) from a raw term.
   -> (rawPattern -> Maybe rawIdent)
+  -- ^ Extract at most one binder from a pattern (or crash).
   -> (rawScopedTerm -> rawTerm)
+  -- ^ Extract a term from a scoped term (or crash).
   -> Foil.Scope n
-  -> Map rawIdent (Foil.Name n) -> rawTerm -> AST sig n
+  -- ^ Resulting scope of the constructed term.
+  -> Map rawIdent (Foil.Name n)
+  -- ^ Known names of free variables in scope @n@.
+  -> rawTerm
+  -- ^ Raw term.
+  -> AST sig n
 convertToAST toSig getPatternBinder getScopedTerm scope names t =
   case toSig t of
     Left x ->
@@ -272,14 +281,21 @@ convertToAST toSig getPatternBinder getScopedTerm scope names t =
         (convertToAST toSig getPatternBinder getScopedTerm scope names)
         node
 
+-- | Same as 'convertToAST' but for scoped terms.
 convertToScopedAST
   :: (Foil.Distinct n, Bifunctor sig, Ord rawIdent)
   => (rawTerm -> Either rawIdent (sig (rawPattern, rawScopedTerm) rawTerm))
+  -- ^ Unpeel one syntax node (or a variable) from a raw term.
   -> (rawPattern -> Maybe rawIdent)
+  -- ^ Extract at most one binder from a pattern (or crash).
   -> (rawScopedTerm -> rawTerm)
+  -- ^ Extract a term from a scoped term (or crash).
   -> Foil.Scope n
+  -- ^ Resulting scope of the constructed term.
   -> Map rawIdent (Foil.Name n)
+  -- ^ Known names of free variables in scope @n@.
   -> (rawPattern, rawScopedTerm)
+  -- ^ A pair of a pattern and a corresponding scoped term.
   -> ScopedAST sig n
 convertToScopedAST toSig getPatternBinder getScopedTerm scope names (pat, scopedTerm) =
   Foil.withFresh scope $ \binder ->
@@ -292,13 +308,22 @@ convertToScopedAST toSig getPatternBinder getScopedTerm scope names (pat, scoped
 
 -- ** Convert from free foil
 
+-- | Convert a scope-safe term back into a raw term.
 convertFromAST
   :: Bifunctor sig
   => (sig (rawPattern, rawScopedTerm) rawTerm -> rawTerm)
+  -- ^ Peel back one layer of syntax.
   -> (rawIdent -> rawTerm)
+  -- ^ Convert identifier into a raw variable term.
   -> (rawIdent -> rawPattern)
+  -- ^ Convert identifier into a raw variable pattern.
   -> (rawTerm -> rawScopedTerm)
-  -> (Int -> rawIdent) -> AST sig n -> rawTerm
+  -- ^ Wrap raw term into a scoped term.
+  -> (Int -> rawIdent)
+  -- ^ Convert underlying integer identifier of a bound variable into a raw identifier.
+  -> AST sig n
+  -- ^ Scope-safe term.
+  -> rawTerm
 convertFromAST fromSig fromVar makePattern makeScoped f = \case
   Var x -> fromVar (f (Foil.nameId x))
   Node node -> fromSig $
@@ -307,13 +332,22 @@ convertFromAST fromSig fromVar makePattern makeScoped f = \case
       (convertFromAST fromSig fromVar makePattern makeScoped f)
       node
 
+-- | Same as 'convertFromAST' but for scoped terms.
 convertFromScopedAST
   :: Bifunctor sig
   => (sig (rawPattern, rawScopedTerm) rawTerm -> rawTerm)
+  -- ^ Peel back one layer of syntax.
   -> (rawIdent -> rawTerm)
+  -- ^ Convert identifier into a raw variable term.
   -> (rawIdent -> rawPattern)
+  -- ^ Convert identifier into a raw variable pattern.
   -> (rawTerm -> rawScopedTerm)
-  -> (Int -> rawIdent) -> ScopedAST sig n -> (rawPattern, rawScopedTerm)
+  -- ^ Wrap raw term into a scoped term.
+  -> (Int -> rawIdent)
+  -- ^ Convert underlying integer identifier of a bound variable into a raw identifier.
+  -> ScopedAST sig n
+  -- ^ Scope-safe scoped term.
+  -> (rawPattern, rawScopedTerm)
 convertFromScopedAST fromSig fromVar makePattern makeScoped f = \case
   ScopedAST binder body ->
     ( makePattern (f (Foil.nameId (Foil.nameOf binder)))
