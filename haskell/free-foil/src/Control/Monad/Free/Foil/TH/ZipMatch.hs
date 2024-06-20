@@ -1,7 +1,7 @@
-{-# LANGUAGE LambdaCase      #-}
 {-# OPTIONS_GHC -fno-warn-type-defaults      #-}
-{-# LANGUAGE ViewPatterns      #-}
+{-# LANGUAGE LambdaCase      #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE ViewPatterns    #-}
 module Control.Monad.Free.Foil.TH.ZipMatch where
 
 import           Language.Haskell.TH

@@ -1,5 +1,5 @@
-{-# LANGUAGE LambdaCase      #-}
 {-# OPTIONS_GHC -fno-warn-type-defaults      #-}
+{-# LANGUAGE LambdaCase      #-}
 {-# LANGUAGE TemplateHaskell #-}
 module Control.Monad.Free.Foil.TH.Convert where
 
@@ -77,11 +77,11 @@ mkConvertToSig termT nameT scopeT patternT = do
         where
           x = mkName "x"
           isVarP VarP{} = True
-          isVarP _ = False
+          isVarP _      = False
           pats =
             [ case type_ of
                 PeelConT typeName _ | typeName == nameT -> VarP x
-                _ -> WildP
+                _                                       -> WildP
             | (_bang, type_) <- types ]
       NormalC conName types -> mkClause conName conName' types
         where
@@ -205,9 +205,9 @@ mkGetPatternBinder nameT patternT = do
     mkClause :: Name -> [BangType] -> Q [Clause]
     mkClause conName types = do
       body <- case concat vars of
-        [] -> [e| Nothing |]
+        []       -> [e| Nothing |]
         [Just y] -> [e| Just $y |]
-        _ -> [e| error "complex patterns are not supported" |]
+        _        -> [e| error "complex patterns are not supported" |]
       return [ Clause [ConP conName [] pats] (NormalB body) [] ]
       where
         x = mkName "x"
@@ -259,7 +259,7 @@ mkGetScopedTerm termT scopeT = do
     mkClause conName types = do
       body <- case concat vars of
         [y] -> [e| $y |]
-        _ -> [e| error "complex patterns are not supported" |]
+        _   -> [e| error "complex patterns are not supported" |]
       return [ Clause [ConP conName [] pats] (NormalB body) [] ]
       where
         x = mkName "x"

@@ -1,10 +1,9 @@
--- {-# OPTIONS_GHC -ddump-splices #-}
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DerivingStrategies         #-}
-{-# LANGUAGE KindSignatures         #-}
-{-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs               #-}
+{-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE LiberalTypeSynonyms        #-}
 {-# LANGUAGE OverloadedStrings          #-}
@@ -40,13 +39,13 @@ module Language.LambdaPi.Impl.FoilTH where
 
 import           Control.Monad.Foil
 import           Control.Monad.Foil.TH
-import qualified Language.LambdaPi.Syntax.Abs as Raw
-import qualified Language.LambdaPi.Syntax.Print as Raw
-import qualified Language.LambdaPi.Syntax.Par as Raw
+import qualified Data.Map                        as Map
+import qualified Language.LambdaPi.Syntax.Abs    as Raw
 import qualified Language.LambdaPi.Syntax.Layout as Raw
-import qualified Language.LambdaPi.Syntax.Lex as Raw
-import System.Exit (exitFailure)
-import qualified Data.Map as Map
+import qualified Language.LambdaPi.Syntax.Lex    as Raw
+import qualified Language.LambdaPi.Syntax.Par    as Raw
+import qualified Language.LambdaPi.Syntax.Print  as Raw
+import           System.Exit                     (exitFailure)
 
 -- * Generated code
 
@@ -122,11 +121,11 @@ whnf scope = \case
   FoilFirst loc t ->
     case whnf scope t of
       FoilPair _loc l _r -> whnf scope l
-      t'         -> FoilFirst loc t'
+      t'                 -> FoilFirst loc t'
   FoilSecond loc t ->
     case whnf scope t of
       FoilPair _loc _l r -> whnf scope r
-      t'         -> FoilSecond loc t'
+      t'                 -> FoilSecond loc t'
   t -> t
 
 -- ** Interpreter

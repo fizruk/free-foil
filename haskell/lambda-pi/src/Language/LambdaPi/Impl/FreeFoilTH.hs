@@ -1,6 +1,6 @@
+{-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE KindSignatures    #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE PatternSynonyms   #-}
@@ -29,19 +29,19 @@
 -- so only wildcard patterns and variable patterns are handled in this implementation.
 module Language.LambdaPi.Impl.FreeFoilTH where
 
-import System.Exit (exitFailure)
-import Data.String (IsString(..))
-import qualified Control.Monad.Foil           as Foil
+import qualified Control.Monad.Foil              as Foil
 import           Control.Monad.Free.Foil
 import           Control.Monad.Free.Foil.TH
 import           Data.Bifunctor.TH
-import           Data.Map                     (Map)
-import qualified Data.Map as Map
-import qualified Language.LambdaPi.Syntax.Abs as Raw
-import qualified Language.LambdaPi.Syntax.Par as Raw
-import qualified Language.LambdaPi.Syntax.Lex as Raw
+import           Data.Map                        (Map)
+import qualified Data.Map                        as Map
+import           Data.String                     (IsString (..))
+import qualified Language.LambdaPi.Syntax.Abs    as Raw
 import qualified Language.LambdaPi.Syntax.Layout as Raw
-import qualified Language.LambdaPi.Syntax.Print as Raw
+import qualified Language.LambdaPi.Syntax.Lex    as Raw
+import qualified Language.LambdaPi.Syntax.Par    as Raw
+import qualified Language.LambdaPi.Syntax.Print  as Raw
+import           System.Exit                     (exitFailure)
 
 -- $setup
 -- >>> :set -XOverloadedStrings
@@ -104,7 +104,7 @@ fromTerm' = convertFromAST
 -- λ x0 . λ x1 . λ x2 . x2
 instance IsString (AST (Term'Sig Raw.BNFC'Position) Foil.VoidS) where
   fromString input = case Raw.pTerm (Raw.tokens input) of
-    Left err -> error ("could not parse λΠ-term: " <> input <> "\n  " <> err)
+    Left err   -> error ("could not parse λΠ-term: " <> input <> "\n  " <> err)
     Right term -> toTerm'Closed term
 
 -- | Pretty-print scope-safe terms via raw representation.
@@ -153,12 +153,15 @@ whnf scope = \case
   First loc t ->
     case whnf scope t of
       Pair _loc l _r -> whnf scope l
-      t' -> First loc t'
+      t'             -> First loc t'
   Second loc t ->
     case whnf scope t of
       Pair _loc _l r -> whnf scope r
-      t' -> Second loc t'
+      t'             -> Second loc t'
   t -> t
+
+-- ** Type checking
+
 
 -- ** λΠ-interpreter
 

@@ -1,5 +1,5 @@
 {-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE DeriveTraversable     #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE LambdaCase        #-}
@@ -31,8 +31,8 @@ module Language.LambdaPi.Impl.FreeFoil where
 
 import qualified Control.Monad.Foil              as Foil
 import           Control.Monad.Free.Foil
-import           Data.Bifunctor.TH
 import           Data.Bifunctor.Sum
+import           Data.Bifunctor.TH
 import           Data.Map                        (Map)
 import qualified Data.Map                        as Map
 import           Data.String                     (IsString (..))

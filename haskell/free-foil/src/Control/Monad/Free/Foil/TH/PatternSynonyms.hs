@@ -5,7 +5,7 @@
 {-# LANGUAGE ViewPatterns    #-}
 module Control.Monad.Free.Foil.TH.PatternSynonyms where
 
-import Control.Monad (forM_)
+import           Control.Monad              (forM_)
 import qualified Control.Monad.Foil         as Foil
 import           Control.Monad.Foil.TH.Util
 import           Control.Monad.Free.Foil
