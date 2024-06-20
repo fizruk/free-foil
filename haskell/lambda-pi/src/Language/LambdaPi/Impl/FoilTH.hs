@@ -18,17 +18,21 @@
 -- | Foil implementation of the \(\lambda\Pi\)-calculus (with pairs)
 -- using Template Haskell to reduce boilerplate.
 --
--- Template Haskell generation provides the following:
+-- Template Haskell helpers __generate__ the following:
 --
 -- 1. Scope-safe AST, generated from a raw definition. See 'FoilTerm', 'FoilScopedTerm', and 'FoilPattern'.
 -- 2. Conversion between scope-safe and raw term representation (the latter is generated via BNFC), see 'toFoilTerm' and 'fromFoilTerm'.
 -- 3. Helper functions for patterns. See 'extendScopeFoilPattern' and 'withRefreshedFoilPattern'.
 --
--- The following is implemented manually in this module:
+-- The following is implemented __manually__ in this module:
 --
 -- 1. Correct capture-avoiding substitution (see 'substitute').
 -- 2. Computation of weak head normal form (WHNF), see 'whnf'.
 -- 3. Entry point, gluing everything together. See 'defaultMain'.
+--
+-- The following is __not implemented__:
+--
+-- 1. α-equivalence checks and α-normalization helpers.
 --
 -- This implementation supports (nested) patterns for pairs.
 module Language.LambdaPi.Impl.FoilTH where

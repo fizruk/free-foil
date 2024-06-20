@@ -8,6 +8,10 @@ import           Language.Haskell.TH.Syntax
 
 import           Control.Monad.Foil.TH.Util
 
+-- * Bulk generators
+
+-- | Generate helpers for conversion to scope-safe representation.
+-- Includes 'mkConvertToSig', 'mkGetPatternBinder', and 'mkGetScopedTerm'.
 mkConvertToFreeFoil
   :: Name -- ^ Type name for raw terms.
   -> Name -- ^ Type name for raw variable identifiers.
@@ -20,6 +24,8 @@ mkConvertToFreeFoil termT nameT scopeT patternT = concat <$> sequence
   , mkGetScopedTerm termT scopeT
   ]
 
+-- | Generate helpers for conversion from scope-safe representation.
+-- Includes 'mkConvertFromSig'.
 mkConvertFromFreeFoil
   :: Name -- ^ Type name for raw terms.
   -> Name -- ^ Type name for raw variable identifiers.
@@ -30,6 +36,9 @@ mkConvertFromFreeFoil termT nameT scopeT patternT = concat <$> sequence
   [ mkConvertFromSig termT nameT scopeT patternT
   ]
 
+-- * Individual generators
+
+-- | Generate conversion helper that goes unpeels one node from a raw term.
 mkConvertToSig
   :: Name -- ^ Type name for raw terms.
   -> Name -- ^ Type name for raw variable identifiers.
@@ -99,6 +108,7 @@ mkConvertToSig termT nameT scopeT patternT = do
           , let x = mkName ("x" ++ show i)
           ]
 
+-- | Generate conversion helper that peels back one node to a raw term.
 mkConvertFromSig
   :: Name -- ^ Type name for raw terms.
   -> Name -- ^ Type name for raw variable identifiers.
@@ -158,6 +168,7 @@ mkConvertFromSig termT nameT scopeT patternT = do
           , let x = mkName ("x" ++ show i)
           ]
 
+-- | Generate a helper that extracts at most one binder from a pattern.
 mkGetPatternBinder
   :: Name -- ^ Type name for raw variable identifiers.
   -> Name -- ^ Type name for raw patterns.
@@ -209,6 +220,7 @@ mkGetPatternBinder nameT patternT = do
           | (_bang, type_) <- types
           ]
 
+-- | Generate a helper that extracts a term from a scoped term.
 mkGetScopedTerm
   :: Name -- ^ Type name for raw terms.
   -> Name -- ^ Type name for raw scoped terms.

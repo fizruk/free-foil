@@ -13,21 +13,23 @@
 {-# LANGUAGE UndecidableInstances  #-}
 -- | Foil implementation of the \(\lambda\Pi\)-calculus (with pairs).
 --
--- The following is implemented manually in this module:
+-- The following is implemented __manually__ in this module:
 --
 -- 1. Scope-safe AST for \(\lambda\Pi\)-terms.
 -- 2. Correct capture-avoiding substitution (see 'substitute').
 -- 3. Conversion between scope-safe and raw term representation (the latter is generated via BNFC), see 'toFoilTerm' and 'fromFoilTerm'.
 -- 4. Helper functions for patterns. See 'extendScopePattern' and 'withRefreshedPattern'.
--- 5. Computation of weak head normal form (WHNF) and normal form (NF), see 'whnf' and 'nf'.
--- 6. Entry point, gluing everything together. See 'defaultMain'.
+-- 5. α-equivalence checks ('alphaEquiv' and 'alphaEquivRefreshed') and α-normalization helpers ('refreshExpr').
+-- 6. Computation of weak head normal form (WHNF) and normal form (NF), see 'whnf' and 'nf'.
+-- 7. Entry point, gluing everything together. See 'defaultMain'.
 --
 -- This implementation supports (nested) patterns for pairs.
 --
 -- This is a baseline implementation, see other examples for partial automation:
 --
--- 1. "Language.LambdaPi.Impl.FreeFoil" allows to define substitution (and, in theory, more complicated algorithms) once for a large class of syntax with binders.
+-- 1. "Language.LambdaPi.Impl.FreeFoil" allows to reuse generalized substitution and α-equivalence (and, in theory, more complicated algorithms).
 -- 2. "Language.LambdaPi.Impl.FoilTH" works well with patterns and generates conversion functions and helpers for patterns.
+-- 3. "Language.LambdaPi.Impl.FreeFoilTH" combines the benefits of the above, when it is possible to generate the signature automatically.
 module Language.LambdaPi.Impl.Foil where
 
 import           Control.Monad.Foil

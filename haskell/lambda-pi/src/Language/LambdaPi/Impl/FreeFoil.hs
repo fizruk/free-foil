@@ -8,20 +8,25 @@
 {-# LANGUAGE TypeOperators     #-}
 -- | Free foil implementation of the \(\lambda\Pi\)-calculus (with pairs).
 --
--- Free foil provides the following:
+-- Free foil provides __general__ definitions or implementations for the following:
 --
 -- 1. Freely generated (from a simple signature) scope-safe AST.
 -- 2. Correct capture-avoiding substitution (see 'substitute').
--- 3. Convenient pattern synonyms (FIXME: use TH to generate those).
+-- 3. Correct α-equivalence checks (see 'alphaEquiv' and 'alphaEquivRefreshed') as well as α-normalization (see 'refreshAST').
+-- 4. Conversion helpers (see 'convertToAST' and 'convertFromAST').
 --
--- The following is implemented manually in this module:
+-- The following is implemented __manually__ in this module:
 --
--- 1. Conversion between scope-safe and raw term representation (the latter is generated via BNFC), see 'toLambdaPi' and 'fromLambdaPi'.
--- 2. Computation of weak head normal form (WHNF), see 'whnf'.
--- 3. Entry point, gluing everything together. See 'defaultMain'.
+-- 1. Convenient pattern synonyms.
+-- 2. 'ZipMatch' instances (enabling general α-equivalence).
+-- 3. Conversion between scope-safe and raw term representation (the latter is generated via BNFC), see 'toLambdaPi' and 'fromLambdaPi'.
+-- 4. Computation of weak head normal form (WHNF), see 'whnf'.
+-- 5. Entry point, gluing everything together. See 'defaultMain'.
 --
 -- __Note:__ free foil does not (easily) support patterns at the moment,
 -- so only wildcard patterns and variable patterns are handled in this implementation.
+--
+-- See "Language.LambdaPi.Impl.FreeFoilTH" for a variation of this with more automation via Template Haskell.
 module Language.LambdaPi.Impl.FreeFoil where
 
 import qualified Control.Monad.Foil              as Foil

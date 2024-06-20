@@ -9,7 +9,7 @@ import           Language.Haskell.TH
 import           Control.Monad.Foil.TH.Util
 import           Control.Monad.Free.Foil
 
--- | Generate helpful pattern synonyms given a signature bifunctor.
+-- | Generate 'ZipMatch' instance for a given bifunctor.
 deriveZipMatch
   :: Name -- ^ Type name for the signature bifunctor.
   -> Q [Dec]

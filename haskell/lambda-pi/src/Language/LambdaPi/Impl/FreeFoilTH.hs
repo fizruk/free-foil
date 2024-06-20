@@ -5,6 +5,28 @@
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE PatternSynonyms   #-}
 {-# LANGUAGE TemplateHaskell   #-}
+-- | Free foil implementation of the \(\lambda\Pi\)-calculus (with pairs).
+--
+-- Free foil provides __general__ definitions or implementations for the following:
+--
+-- 1. Freely generated (from a simple signature) scope-safe AST.
+-- 2. Correct capture-avoiding substitution (see 'substitute').
+-- 3. Correct α-equivalence checks (see 'alphaEquiv' and 'alphaEquivRefreshed') as well as α-normalization (see 'refreshAST').
+-- 4. Conversion helpers (see 'convertToAST' and 'convertFromAST').
+--
+-- The following is __generated__ using Template Haskell:
+--
+-- 1. Convenient pattern synonyms.
+-- 2. 'ZipMatch' instances (enabling general α-equivalence).
+-- 3. Conversion between scope-safe and raw term representation.
+--
+-- The following is implemented __manually__ in this module:
+--
+-- 1. Computation of weak head normal form (WHNF), see 'whnf'.
+-- 2. Entry point, gluing everything together. See 'defaultMain'.
+--
+-- __Note:__ free foil does not (easily) support patterns at the moment,
+-- so only wildcard patterns and variable patterns are handled in this implementation.
 module Language.LambdaPi.Impl.FreeFoilTH where
 
 import System.Exit (exitFailure)
