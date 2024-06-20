@@ -30,6 +30,7 @@ import qualified Language.LambdaPi.Syntax.Print as Raw
 
 -- ** Signature
 mkSignature ''Raw.Term' ''Raw.VarIdent ''Raw.ScopedTerm' ''Raw.Pattern'
+deriveZipMatch ''Term'Sig
 deriveBifunctor ''Term'Sig
 deriveBifoldable ''Term'Sig
 deriveBitraversable ''Term'Sig
@@ -85,17 +86,6 @@ instance IsString (AST (Term'Sig Raw.BNFC'Position) Foil.VoidS) where
 -- | Pretty-print scope-safe terms via raw representation.
 instance Show (AST (Term'Sig a) Foil.VoidS) where
   show = Raw.printTree . fromTerm'
-
-instance ZipMatch (Term'Sig a) where
-  zipMatch (AppSig loc l r) (AppSig _loc l' r') = Just (AppSig loc (l, l') (r, r'))
-  zipMatch (PairSig loc l r) (PairSig _loc l' r') = Just (PairSig loc (l, l') (r, r'))
-  zipMatch (ProductSig loc l r) (ProductSig _loc l' r') = Just (ProductSig loc (l, l') (r, r'))
-  zipMatch (LamSig loc s) (LamSig _loc s') = Just (LamSig loc (s, s'))
-  zipMatch (FirstSig loc t) (FirstSig _loc t') = Just (FirstSig loc (t, t'))
-  zipMatch (SecondSig loc t) (SecondSig _loc t') = Just (SecondSig loc (t, t'))
-  zipMatch (UniverseSig loc) (UniverseSig _loc) = Just (UniverseSig loc)
-  zipMatch (PiSig loc l r) (PiSig _loc l' r') = Just (PiSig loc (l, l') (r, r'))
-  zipMatch _ _ = Nothing
 
 -- ** Evaluation
 

@@ -44,6 +44,7 @@ library
       Control.Monad.Free.Foil.TH.Convert
       Control.Monad.Free.Foil.TH.PatternSynonyms
       Control.Monad.Free.Foil.TH.Signature
+      Control.Monad.Free.Foil.TH.ZipMatch
   other-modules:
       Paths_free_foil
   hs-source-dirs:
