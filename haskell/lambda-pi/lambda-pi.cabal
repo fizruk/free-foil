@@ -38,6 +38,7 @@ library
       Language.LambdaPi.Impl.Foil
       Language.LambdaPi.Impl.FoilTH
       Language.LambdaPi.Impl.FreeFoil
+      Language.LambdaPi.Impl.FreeFoilTH
       Language.LambdaPi.Syntax.Abs
       Language.LambdaPi.Syntax.Layout
       Language.LambdaPi.Syntax.Lex

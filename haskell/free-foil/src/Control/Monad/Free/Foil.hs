@@ -22,9 +22,11 @@ import           Control.DeepSeq
 import qualified Control.Monad.Foil.Internal as Foil
 import qualified Control.Monad.Foil.Relative as Foil
 import           Data.Bifoldable
-import           Data.Bifunctor.Sum
 import           Data.Bifunctor
+import           Data.Bifunctor.Sum
 import           Data.Coerce                 (coerce)
+import           Data.Map                    (Map)
+import qualified Data.Map                    as Map
 import           Data.Monoid                 (All (..))
 import           GHC.Generics                (Generic)
 
@@ -245,4 +247,74 @@ class ZipMatch sig where
 instance (ZipMatch f, ZipMatch g) => ZipMatch (Sum f g) where
   zipMatch (L2 f) (L2 f') = L2 <$> zipMatch f f'
   zipMatch (R2 g) (R2 g') = R2 <$> zipMatch g g'
-  zipMatch _ _ = Nothing
+  zipMatch _ _            = Nothing
+
+-- * Converting to and from free foil
+
+-- ** Convert to free foil
+
+convertToAST
+  :: (Foil.Distinct n, Bifunctor sig, Ord rawIdent)
+  => (rawTerm -> Either rawIdent (sig (rawPattern, rawScopedTerm) rawTerm))
+  -> (rawPattern -> Maybe rawIdent)
+  -> (rawScopedTerm -> rawTerm)
+  -> Foil.Scope n
+  -> Map rawIdent (Foil.Name n) -> rawTerm -> AST sig n
+convertToAST toSig getPatternBinder getScopedTerm scope names t =
+  case toSig t of
+    Left x ->
+      case Map.lookup x names of
+        Nothing   -> error "undefined variable"
+        Just name -> Var name
+    Right node -> Node $
+      bimap
+        (convertToScopedAST toSig getPatternBinder getScopedTerm scope names)
+        (convertToAST toSig getPatternBinder getScopedTerm scope names)
+        node
+
+convertToScopedAST
+  :: (Foil.Distinct n, Bifunctor sig, Ord rawIdent)
+  => (rawTerm -> Either rawIdent (sig (rawPattern, rawScopedTerm) rawTerm))
+  -> (rawPattern -> Maybe rawIdent)
+  -> (rawScopedTerm -> rawTerm)
+  -> Foil.Scope n
+  -> Map rawIdent (Foil.Name n)
+  -> (rawPattern, rawScopedTerm)
+  -> ScopedAST sig n
+convertToScopedAST toSig getPatternBinder getScopedTerm scope names (pat, scopedTerm) =
+  Foil.withFresh scope $ \binder ->
+    let scope' = Foil.extendScope binder scope
+        names' =
+          case getPatternBinder pat of
+            Nothing -> Foil.sink <$> names
+            Just x  -> Map.insert x (Foil.nameOf binder) (Foil.sink <$> names)
+     in ScopedAST binder (convertToAST toSig getPatternBinder getScopedTerm scope' names' (getScopedTerm scopedTerm))
+
+-- ** Convert from free foil
+
+convertFromAST
+  :: Bifunctor sig
+  => (sig (rawPattern, rawScopedTerm) rawTerm -> rawTerm)
+  -> (rawIdent -> rawTerm)
+  -> (rawIdent -> rawPattern)
+  -> (rawTerm -> rawScopedTerm)
+  -> (Int -> rawIdent) -> AST sig n -> rawTerm
+convertFromAST fromSig fromVar makePattern makeScoped f = \case
+  Var x -> fromVar (f (Foil.nameId x))
+  Node node -> fromSig $
+    bimap
+      (convertFromScopedAST fromSig fromVar makePattern makeScoped f)
+      (convertFromAST fromSig fromVar makePattern makeScoped f)
+      node
+
+convertFromScopedAST
+  :: Bifunctor sig
+  => (sig (rawPattern, rawScopedTerm) rawTerm -> rawTerm)
+  -> (rawIdent -> rawTerm)
+  -> (rawIdent -> rawPattern)
+  -> (rawTerm -> rawScopedTerm)
+  -> (Int -> rawIdent) -> ScopedAST sig n -> (rawPattern, rawScopedTerm)
+convertFromScopedAST fromSig fromVar makePattern makeScoped f = \case
+  ScopedAST binder body ->
+    ( makePattern (f (Foil.nameId (Foil.nameOf binder)))
+    , makeScoped (convertFromAST fromSig fromVar makePattern makeScoped f body))
