@@ -222,14 +222,6 @@ assertDistinctPattern = \case
       Distinct -> case assertDistinctPattern r of
         Distinct -> Distinct
 
-namesOfPattern :: Distinct n => Pattern n l -> [Name l]
-namesOfPattern PatternWildcard = []
-namesOfPattern (PatternVar x) = [nameOf x]
-namesOfPattern (PatternPair l r) =
-  case (assertExtPattern l, assertDistinctPattern l) of
-    (Ext, Distinct) -> case (assertExtPattern r, assertDistinctPattern r) of
-       (Ext, Distinct) -> map sink (namesOfPattern l) ++ namesOfPattern r
-
 -- | Perform substitution in a \(\lambda\Pi\)-term.
 substitute :: Distinct o => Scope o -> Substitution Expr i o -> Expr i -> Expr o
 substitute scope subst = \case

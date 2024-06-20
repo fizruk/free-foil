@@ -24,6 +24,7 @@ module Control.Monad.Foil (
   extendScopePattern,
   member,
   nameOf,
+  namesOfPattern,
   nameId,
   withFreshBinder,
   withFresh,

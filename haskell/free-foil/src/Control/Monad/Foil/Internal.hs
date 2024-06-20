@@ -111,6 +111,24 @@ member (UnsafeName name) (UnsafeScope s) = rawMember name s
 nameOf :: NameBinder n l -> Name l
 nameOf (UnsafeNameBinder name) = name
 
+newtype NamesOf (n :: S) l (o :: S) (o' :: S) = NamesOf [Name l]
+
+idNamesOf :: NamesOf n n o o'
+idNamesOf = NamesOf []
+
+compNamesOf :: NamesOf n i o o' -> NamesOf i l o' o'' -> NamesOf n l o o''
+compNamesOf (NamesOf xs) (NamesOf ys) =
+  NamesOf (coerce xs ++ ys)
+
+namesOfPattern
+  :: forall pattern n l. (Distinct n, CoSinkable pattern) => pattern n l -> [Name l]
+namesOfPattern pat = withPattern @_ @n
+  (\_scope' binder k ->
+    unsafeAssertFresh binder $ \binder' ->
+      k (NamesOf [nameOf binder]) binder')
+  idNamesOf compNamesOf (error "impossible") pat
+  (\(NamesOf names) _ -> names)
+
 -- | Convert 'Name' into an identifier.
 -- This may be useful for printing and debugging.
 nameId :: Name l -> Id
