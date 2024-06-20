@@ -108,6 +108,16 @@ instance CoSinkable Pattern where
           coSinkabilityProof rename' r $ \rename'' r' ->
             cont rename'' (PatternPair l' r')
 
+  withPattern withNameBinder id' combine scope pattern cont =
+    case pattern of
+      PatternWildcard -> cont id' PatternWildcard
+      PatternVar x    -> withNameBinder scope x $ \f x' ->
+        cont f (PatternVar x')
+      PatternPair l r -> withPattern withNameBinder id' combine scope l $ \fl l' ->
+        let scope' = extendScopePattern l' scope
+        in withPattern withNameBinder id' combine scope' r $ \fr r' ->
+              cont (combine fl fr) (PatternPair l' r')
+
 instance InjectName Expr where
   injectName = VarE
 
@@ -227,61 +237,6 @@ extendScopePattern = \case
   PatternWildcard -> id
   PatternVar binder -> extendScope binder
   PatternPair l r -> extendScopePattern r . extendScopePattern l
-
--- | Refresh (if needed) bound variables introduced in a pattern.
--- This is a more flexible version of 'withRefreshed'.
-withFreshPattern
-  :: (Distinct o, InjectName e, Sinkable e)
-  => Scope o
-  -> Pattern n l
-  -> (forall o'. DExt o o' => (Substitution e n o -> Substitution e l o') -> Pattern o o' -> r) -> r
-withFreshPattern scope pattern cont =
-  case pattern of
-    PatternWildcard -> cont sink PatternWildcard
-    PatternVar x    -> withFresh scope $ \x' ->
-      cont (\subst -> addRename (sink subst) x (nameOf x')) (PatternVar x')
-    PatternPair l r -> withFreshPattern scope l $ \lsubst l' ->
-      let scope' = extendScopePattern l' scope
-       in withFreshPattern scope' r $ \rsubst r' ->
-            cont (rsubst . lsubst) (PatternPair l' r')
-
--- | Refresh (if needed) bound variables introduced in a pattern.
--- This is a more flexible version of 'withRefreshed'.
-withRefreshedPattern
-  :: (Distinct o, InjectName e, Sinkable e)
-  => Scope o
-  -> Pattern n l
-  -> (forall o'. DExt o o' => (Substitution e n o -> Substitution e l o') -> Pattern o o' -> r) -> r
-withRefreshedPattern scope pattern cont =
-  case pattern of
-    PatternWildcard -> cont sink PatternWildcard
-    PatternVar x    -> withRefreshed scope (nameOf x) $ \x' ->
-      cont (\subst -> addRename (sink subst) x (nameOf x')) (PatternVar x')
-    PatternPair l r -> withRefreshedPattern scope l $ \lsubst l' ->
-      let scope' = extendScopePattern l' scope
-       in withRefreshedPattern scope' r $ \rsubst r' ->
-            cont (rsubst . lsubst) (PatternPair l' r')
-
--- | Refresh (if needed) bound variables introduced in a pattern.
---
--- This is a version of 'withRefreshedPattern' that uses functional renamings instead of 'Substitution'.
-withRefreshedPattern'
-  :: (Distinct o, InjectName e, Sinkable e)
-  => Scope o
-  -> Pattern n l
-  -> (forall o'. DExt o o' => ((Name n -> e o) -> Name l -> e o') -> Pattern o o' -> r) -> r
-withRefreshedPattern' scope pattern cont =
-  case pattern of
-    PatternWildcard -> cont id PatternWildcard
-    PatternVar x    -> withRefreshed scope (nameOf x) $ \x' ->
-      let k subst name = case unsinkName x name of
-            Nothing    -> injectName (nameOf x')
-            Just name' -> sink (subst name')
-       in cont k (PatternVar x')
-    PatternPair l r -> withRefreshedPattern' scope l $ \lsubst l' ->
-      let scope' = extendScopePattern l' scope
-       in withRefreshedPattern' scope' r $ \rsubst r' ->
-            cont (rsubst . lsubst) (PatternPair l' r')
 
 -- | Perform substitution in a \(\lambda\Pi\)-term.
 substitute :: Distinct o => Scope o -> Substitution Expr i o -> Expr i -> Expr o

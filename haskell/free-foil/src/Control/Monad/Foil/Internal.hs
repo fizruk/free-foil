@@ -34,13 +34,13 @@
 module Control.Monad.Foil.Internal where
 
 import           Control.DeepSeq (NFData (..))
+import           Data.Coerce     (coerce)
 import           Data.IntMap
 import qualified Data.IntMap     as IntMap
 import           Data.IntSet
 import qualified Data.IntSet     as IntSet
 import           Data.Kind       (Type)
 import           Unsafe.Coerce
-import Data.Coerce (coerce)
 
 -- * Safe types and operations
 
@@ -152,6 +152,93 @@ withRefreshed
 withRefreshed scope@(UnsafeScope rawScope) name@(UnsafeName rawName) cont
   | IntSet.member rawName rawScope = withFresh scope cont
   | otherwise = unsafeAssertFresh (UnsafeNameBinder name) cont
+
+newtype WithRefreshedPattern e n l o o' = WithRefreshedPattern (Substitution e n o -> Substitution e l o')
+
+idWithRefreshedPattern :: (Sinkable e, DExt o o') => WithRefreshedPattern e n n o o'
+idWithRefreshedPattern = WithRefreshedPattern sink
+
+compWithRefreshedPattern
+  :: (DExt o o', DExt o' o'')
+  => WithRefreshedPattern e n i o o'
+  -> WithRefreshedPattern e i l o' o''
+  -> WithRefreshedPattern e n l o o''
+compWithRefreshedPattern (WithRefreshedPattern f) (WithRefreshedPattern g) =
+  WithRefreshedPattern (g . f)
+
+-- | Safely rename (if necessary) a given pattern to extend a given scope.
+-- This is similar to 'withFreshPattern', except if a name in the pattern
+-- does not clash with the scope, it can be used immediately, without renaming.
+--
+-- This is a more general version of 'withRefreshed'.
+withRefreshedPattern
+  :: (Distinct o, CoSinkable pattern, Sinkable e, InjectName e)
+  => Scope o      -- ^ Ambient scope.
+  -> pattern n l  -- ^ Pattern to refresh (if it clashes with the ambient scope).
+  -> (forall o'. DExt o o' => (Substitution e n o -> Substitution e l o') -> pattern o o' -> r)
+  -- ^ Continuation, accepting the refreshed pattern.
+  -> r
+withRefreshedPattern scope pattern cont = withPattern
+  (\scope' binder f -> withRefreshed scope' (nameOf binder)
+    (\binder' -> f (WithRefreshedPattern (\subst -> addRename (sink subst) binder (nameOf binder'))) binder'))
+  idWithRefreshedPattern
+  compWithRefreshedPattern
+  scope
+  pattern
+  (\(WithRefreshedPattern f) pattern' -> cont f pattern')
+
+-- | Rename a given pattern into a fresh version of it to extend a given scope.
+--
+-- This is similar to 'withRefreshPattern', except here renaming always takes place.
+withFreshPattern
+  :: (Distinct o, CoSinkable pattern, Sinkable e, InjectName e)
+  => Scope o      -- ^ Ambient scope.
+  -> pattern n l  -- ^ Pattern to refresh (if it clashes with the ambient scope).
+  -> (forall o'. DExt o o' => (Substitution e n o -> Substitution e l o') -> pattern o o' -> r)
+  -- ^ Continuation, accepting the refreshed pattern.
+  -> r
+withFreshPattern scope pattern cont = withPattern
+  (\scope' binder f -> withFresh scope'
+    (\binder' -> f (WithRefreshedPattern (\subst -> addRename (sink subst) binder (nameOf binder'))) binder'))
+  idWithRefreshedPattern
+  compWithRefreshedPattern
+  scope
+  pattern
+  (\(WithRefreshedPattern f) pattern' -> cont f pattern')
+
+newtype WithRefreshedPattern' e n l (o :: S) (o' :: S) = WithRefreshedPattern' ((Name n -> e o) -> Name l -> e o')
+
+idWithRefreshedPattern' :: (Sinkable e, DExt o o') => WithRefreshedPattern' e n n o o'
+idWithRefreshedPattern' = WithRefreshedPattern' (\f n -> sink (f n))
+
+compWithRefreshedPattern'
+  :: (DExt o o', DExt o' o'')
+  => WithRefreshedPattern' e n i o o'
+  -> WithRefreshedPattern' e i l o' o''
+  -> WithRefreshedPattern' e n l o o''
+compWithRefreshedPattern' (WithRefreshedPattern' f) (WithRefreshedPattern' g) =
+  WithRefreshedPattern' (g . f)
+
+-- | Refresh (if needed) bound variables introduced in a pattern.
+--
+-- This is a version of 'withRefreshedPattern' that uses functional renamings instead of 'Substitution'.
+withRefreshedPattern'
+  :: (CoSinkable pattern, Distinct o, InjectName e, Sinkable e)
+  => Scope o
+  -> pattern n l
+  -> (forall o'. DExt o o' => ((Name n -> e o) -> Name l -> e o') -> pattern o o' -> r) -> r
+withRefreshedPattern' scope pattern cont = withPattern
+  (\scope' binder f -> withRefreshed scope' (nameOf binder)
+    (\binder' ->
+      let k subst name = case unsinkName binder name of
+              Nothing    -> injectName (nameOf binder')
+              Just name' -> sink (subst name')
+       in f (WithRefreshedPattern' k) binder'))
+  idWithRefreshedPattern'
+  compWithRefreshedPattern'
+  scope
+  pattern
+  (\(WithRefreshedPattern' f) pattern' -> cont f pattern')
 
 -- | Try coercing the name back to the (smaller) scope,
 -- given a binder that extends that scope.
@@ -295,9 +382,20 @@ class CoSinkable (pattern :: S -> S -> Type) where
     -- and a (possibly refreshed) pattern that extends @n'@ to @l'@.
     -> r
 
+  withPattern
+    :: Distinct o
+    => (forall x y z r'. Distinct z => Scope z -> NameBinder x y -> (forall z'. DExt z z' => f x y z z' -> NameBinder z z' -> r') -> r')
+    -> (forall x z z'. DExt z z' => f x x z z')
+    -> (forall x y y' z z' z''. (DExt z z', DExt z' z'') => f x y z z' -> f y y' z' z'' -> f x y' z z'')
+    -> Scope o
+    -> pattern n l
+    -> (forall o'. DExt o o' => f n l o o' -> pattern o o' -> r) -> r
+
 instance CoSinkable NameBinder where
   coSinkabilityProof _rename (UnsafeNameBinder name) cont =
     cont unsafeCoerce (UnsafeNameBinder name)
+
+  withPattern f _ _ = f
 
 -- * Safe substitions
 
