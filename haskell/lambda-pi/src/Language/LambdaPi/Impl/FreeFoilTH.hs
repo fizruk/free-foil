@@ -23,6 +23,8 @@ import qualified Language.LambdaPi.Syntax.Print as Raw
 -- >>> :set -XOverloadedStrings
 -- >>> :set -XDataKinds
 -- >>> import qualified Control.Monad.Foil as Foil
+-- >>> import Control.Monad.Free.Foil
+-- >>> import Data.String (fromString)
 
 -- * Generated code
 
@@ -42,7 +44,8 @@ mkConvertFromFreeFoil ''Raw.Term' ''Raw.VarIdent ''Raw.ScopedTerm' ''Raw.Pattern
 
 -- * User-defined code
 
-type Term = AST (Term'Sig Raw.BNFC'Position)
+type Term' a = AST (Term'Sig a)
+type Term = Term' Raw.BNFC'Position
 
 -- ** Conversion helpers
 
@@ -82,3 +85,63 @@ instance IsString (AST (Term'Sig Raw.BNFC'Position) Foil.VoidS) where
 -- | Pretty-print scope-safe terms via raw representation.
 instance Show (AST (Term'Sig a) Foil.VoidS) where
   show = Raw.printTree . fromTerm'
+
+instance ZipMatch (Term'Sig a) where
+  zipMatch (AppSig loc l r) (AppSig _loc l' r') = Just (AppSig loc (l, l') (r, r'))
+  zipMatch (PairSig loc l r) (PairSig _loc l' r') = Just (PairSig loc (l, l') (r, r'))
+  zipMatch (ProductSig loc l r) (ProductSig _loc l' r') = Just (ProductSig loc (l, l') (r, r'))
+  zipMatch (LamSig loc s) (LamSig _loc s') = Just (LamSig loc (s, s'))
+  zipMatch (FirstSig loc t) (FirstSig _loc t') = Just (FirstSig loc (t, t'))
+  zipMatch (SecondSig loc t) (SecondSig _loc t') = Just (SecondSig loc (t, t'))
+  zipMatch (UniverseSig loc) (UniverseSig _loc) = Just (UniverseSig loc)
+  zipMatch (PiSig loc l r) (PiSig _loc l' r') = Just (PiSig loc (l, l') (r, r'))
+  zipMatch _ _ = Nothing
+
+-- ** Evaluation
+
+-- | Compute weak head normal form (WHNF) of a \(\lambda\Pi\)-term.
+--
+-- >>> whnf Foil.emptyScope "(λx.(λ_.x)(λy.x))(λy.λz.z)"
+-- λ x0 . λ x1 . x1
+--
+-- >>> whnf Foil.emptyScope "(λs.λz.s(s(z)))(λs.λz.s(s(z)))"
+-- λ x1 . (λ x0 . λ x1 . x0 (x0 x1)) ((λ x0 . λ x1 . x0 (x0 x1)) x1)
+--
+-- Note that during computation bound variables can become unordered
+-- in the sense that binders may easily repeat or decrease. For example,
+-- in the following expression, inner binder has lower index that the outer one:
+--
+-- >>> whnf Foil.emptyScope "(λx.λy.x)(λx.x)"
+-- λ x1 . λ x0 . x0
+--
+-- At the same time, without substitution, we get regular, increasing binder indices:
+--
+-- >>> "λx.λy.y" :: Term Foil.VoidS
+-- λ x0 . λ x1 . x1
+--
+-- To compare terms for \(\alpha\)-equivalence, we may use 'alphaEquiv':
+--
+-- >>> alphaEquiv Foil.emptyScope (whnf Foil.emptyScope "(λx.λy.x)(λx.x)") "λx.λy.y"
+-- True
+--
+-- We may also normalize binders using 'refreshAST':
+--
+-- >>> refreshAST Foil.emptyScope (whnf Foil.emptyScope "(λx.λy.x)(λx.x)")
+-- λ x0 . λ x1 . x1
+whnf :: Foil.Distinct n => Foil.Scope n -> Term n -> Term n
+whnf scope = \case
+  App loc f x ->
+    case whnf scope f of
+      Lam _loc binder body ->
+        let subst = Foil.addSubst Foil.identitySubst binder x
+         in whnf scope (substitute scope subst body)
+      f' -> App loc f' x
+  First loc t ->
+    case whnf scope t of
+      Pair _loc l _r -> whnf scope l
+      t' -> First loc t'
+  Second loc t ->
+    case whnf scope t of
+      Pair _loc _l r -> whnf scope r
+      t' -> Second loc t'
+  t -> t
