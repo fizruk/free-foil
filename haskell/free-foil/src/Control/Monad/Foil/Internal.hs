@@ -177,11 +177,11 @@ unsafeAssertFresh binder cont =
       Ext -> cont (unsafeCoerce binder)
 
 -- | A distinct scope extended with a 'NameBinder' is also distinct.
-assertDistinct :: Distinct n => NameBinder n l -> DistinctEvidence l
+assertDistinct :: (Distinct n, CoSinkable pattern) => pattern n l -> DistinctEvidence l
 assertDistinct _ = unsafeDistinct
 
 -- | A distinct scope extended with a 'NameBinder' is also distinct.
-assertExt :: NameBinder n l -> ExtEvidence n l
+assertExt :: CoSinkable pattern => pattern n l -> ExtEvidence n l
 assertExt _ = unsafeExt
 
 -- | Safely rename (if necessary) a given name to extend a given scope.

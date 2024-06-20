@@ -192,24 +192,6 @@ instance Sinkable Expr where
   sinkabilityProof rename (ProductE l r) = ProductE (sinkabilityProof rename l) (sinkabilityProof rename r)
   sinkabilityProof _ UniverseE = UniverseE
 
-assertExtPattern :: Pattern n l -> ExtEvidence n l
-assertExtPattern = \case
-  PatternWildcard -> Ext
-  PatternVar x -> assertExt x
-  PatternPair l r ->
-    case assertExtPattern l of
-      Ext -> case assertExtPattern r of
-        Ext -> Ext
-
-assertDistinctPattern :: Distinct n => Pattern n l -> DistinctEvidence l
-assertDistinctPattern = \case
-  PatternWildcard -> Distinct
-  PatternVar x -> assertDistinct x
-  PatternPair l r ->
-    case assertDistinctPattern l of
-      Distinct -> case assertDistinctPattern r of
-        Distinct -> Distinct
-
 -- | Perform substitution in a \(\lambda\Pi\)-term.
 substitute :: Distinct o => Scope o -> Substitution Expr i o -> Expr i -> Expr o
 substitute scope subst = \case
