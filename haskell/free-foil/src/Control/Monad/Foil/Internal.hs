@@ -60,6 +60,11 @@ newtype Scope (n :: S) = UnsafeScope RawScope
 newtype Name (n :: S) = UnsafeName RawName
   deriving newtype (NFData, Eq, Ord, Show)
 
+-- | Convert 'Name' into an identifier.
+-- This may be useful for printing and debugging.
+nameId :: Name l -> Id
+nameId (UnsafeName i) = i
+
 -- | A name binder is a name that extends scope @n@ to a (larger) scope @l@.
 newtype NameBinder (n :: S) (l :: S) =
   UnsafeNameBinder (Name l)
@@ -69,6 +74,12 @@ newtype NameBinder (n :: S) (l :: S) =
 emptyScope :: Scope VoidS
 emptyScope = UnsafeScope IntSet.empty
 
+-- | A runtime check for potential name capture.
+member :: Name l -> Scope n -> Bool
+member (UnsafeName name) (UnsafeScope s) = rawMember name s
+
+-- ** Extending scopes
+
 -- | \(O(\min(n,W))\).
 -- Extend a scope with one name (safely).
 -- Note that as long as the foil is used as intended,
@@ -77,18 +88,6 @@ emptyScope = UnsafeScope IntSet.empty
 extendScope :: NameBinder n l -> Scope n -> Scope l
 extendScope (UnsafeNameBinder (UnsafeName name)) (UnsafeScope scope) =
   UnsafeScope (IntSet.insert name scope)
-
-newtype ExtendScope n l (o :: S) (o' :: S) = ExtendScope (Scope n -> Scope l)
-
-idExtendScope :: ExtendScope n n o o'
-idExtendScope = ExtendScope id
-
-compExtendScope
-  :: ExtendScope n i o o'
-  -> ExtendScope i l o' o''
-  -> ExtendScope n l o o''
-compExtendScope (ExtendScope f) (ExtendScope g)
-  = ExtendScope (g . f)
 
 -- | Extend scope with variables inside a pattern.
 -- This is a more flexible version of 'extendScope'.
@@ -105,23 +104,29 @@ extendScopePattern pat scope = withPattern
   pat
   (\(ExtendScope extend) _ -> extend scope)
 
--- | A runtime check for potential name capture.
-member :: Name l -> Scope n -> Bool
-member (UnsafeName name) (UnsafeScope s) = rawMember name s
+-- | Auxiliary data structure for scope extension. Used in 'extendScopePattern'.
+newtype ExtendScope n l (o :: S) (o' :: S) = ExtendScope (Scope n -> Scope l)
+
+-- | Identity scope extension (no extension).
+idExtendScope :: ExtendScope n n o o'
+idExtendScope = ExtendScope id
+
+-- | Compose scope extensions.
+compExtendScope
+  :: ExtendScope n i o o'
+  -> ExtendScope i l o' o''
+  -> ExtendScope n l o o''
+compExtendScope (ExtendScope f) (ExtendScope g)
+  = ExtendScope (g . f)
+
+-- ** Collecting new names
 
 -- | Extract name from a name binder.
 nameOf :: NameBinder n l -> Name l
 nameOf (UnsafeNameBinder name) = name
 
-newtype NamesOf (n :: S) l (o :: S) (o' :: S) = NamesOf [Name l]
-
-idNamesOf :: NamesOf n n o o'
-idNamesOf = NamesOf []
-
-compNamesOf :: NamesOf n i o o' -> NamesOf i l o' o'' -> NamesOf n l o o''
-compNamesOf (NamesOf xs) (NamesOf ys) =
-  NamesOf (coerce xs ++ ys)
-
+-- | Extract names from a pattern.
+-- This is a more flexible version of 'namesOf'.
 namesOfPattern
   :: forall pattern n l. (Distinct n, CoSinkable pattern) => pattern n l -> [Name l]
 namesOfPattern pat = withPattern @_ @n
@@ -131,10 +136,20 @@ namesOfPattern pat = withPattern @_ @n
   idNamesOf compNamesOf (error "impossible") pat
   (\(NamesOf names) _ -> names)
 
--- | Convert 'Name' into an identifier.
--- This may be useful for printing and debugging.
-nameId :: Name l -> Id
-nameId (UnsafeName i) = i
+-- | Auxiliary structure collecting names in scope @l@ that extend scope @n@.
+-- Used in 'namesOfPattern'.
+newtype NamesOf (n :: S) l (o :: S) (o' :: S) = NamesOf [Name l]
+
+-- | Empty list of names in scope @n@.
+idNamesOf :: NamesOf n n o o'
+idNamesOf = NamesOf []
+
+-- | Concatenation of names, resulting in a list of names in @l@ that extend scope @n@.
+compNamesOf :: NamesOf n i o o' -> NamesOf i l o' o'' -> NamesOf n l o o''
+compNamesOf (NamesOf xs) (NamesOf ys) =
+  NamesOf (coerce xs ++ ys)
+
+-- ** Refreshing binders
 
 -- | Allocate a fresh binder for a given scope.
 withFreshBinder
@@ -145,46 +160,30 @@ withFreshBinder (UnsafeScope scope) cont =
   where
     binder = UnsafeNameBinder (UnsafeName (rawFreshName scope))
 
--- | Evidence that scope @n@ contains distinct names.
-data DistinctEvidence (n :: S) where
-  Distinct :: Distinct n => DistinctEvidence n
-
--- | Unsafely declare that scope @n@ is distinct.
--- Used in 'unsafeAssertFresh'.
-unsafeDistinct :: DistinctEvidence n
-unsafeDistinct = unsafeCoerce (Distinct :: DistinctEvidence VoidS)
-
--- | Evidence that scope @l@ extends scope @n@.
-data ExtEvidence (n :: S) (l :: S) where
-  Ext :: Ext n l => ExtEvidence n l
-
--- | Unsafely declare that scope @l@ extends scope @n@.
--- Used in 'unsafeAssertFresh'.
-unsafeExt :: ExtEvidence n l
-unsafeExt = unsafeCoerce (Ext :: ExtEvidence VoidS VoidS)
-
 -- | Safely produce a fresh name binder with respect to a given scope.
 withFresh
   :: Distinct n => Scope n
   -> (forall l. DExt n l => NameBinder n l -> r) -> r
 withFresh scope cont = withFreshBinder scope (`unsafeAssertFresh` cont)
 
--- | Unsafely declare that a given name (binder)
--- is already fresh in any scope @n'@.
-unsafeAssertFresh :: forall n l n' l' r. NameBinder n l
-  -> (DExt n' l' => NameBinder n' l' -> r) -> r
-unsafeAssertFresh binder cont =
-  case unsafeDistinct @l' of
-    Distinct -> case unsafeExt @n' @l' of
-      Ext -> cont (unsafeCoerce binder)
-
--- | A distinct scope extended with a 'NameBinder' is also distinct.
-assertDistinct :: (Distinct n, CoSinkable pattern) => pattern n l -> DistinctEvidence l
-assertDistinct _ = unsafeDistinct
-
--- | A distinct scope extended with a 'NameBinder' is also distinct.
-assertExt :: CoSinkable pattern => pattern n l -> ExtEvidence n l
-assertExt _ = unsafeExt
+-- | Rename a given pattern into a fresh version of it to extend a given scope.
+--
+-- This is similar to 'withRefreshPattern', except here renaming always takes place.
+withFreshPattern
+  :: (Distinct o, CoSinkable pattern, Sinkable e, InjectName e)
+  => Scope o      -- ^ Ambient scope.
+  -> pattern n l  -- ^ Pattern to refresh (if it clashes with the ambient scope).
+  -> (forall o'. DExt o o' => (Substitution e n o -> Substitution e l o') -> pattern o o' -> r)
+  -- ^ Continuation, accepting the refreshed pattern.
+  -> r
+withFreshPattern scope pattern cont = withPattern
+  (\scope' binder f -> withFresh scope'
+    (\binder' -> f (WithRefreshedPattern (\subst -> addRename (sink subst) binder (nameOf binder'))) binder'))
+  idWithRefreshedPattern
+  compWithRefreshedPattern
+  scope
+  pattern
+  (\(WithRefreshedPattern f) pattern' -> cont f pattern')
 
 -- | Safely rename (if necessary) a given name to extend a given scope.
 -- This is similar to 'withFresh', except if the name does not clash with
@@ -199,19 +198,6 @@ withRefreshed
 withRefreshed scope@(UnsafeScope rawScope) name@(UnsafeName rawName) cont
   | IntSet.member rawName rawScope = withFresh scope cont
   | otherwise = unsafeAssertFresh (UnsafeNameBinder name) cont
-
-newtype WithRefreshedPattern e n l o o' = WithRefreshedPattern (Substitution e n o -> Substitution e l o')
-
-idWithRefreshedPattern :: (Sinkable e, DExt o o') => WithRefreshedPattern e n n o o'
-idWithRefreshedPattern = WithRefreshedPattern sink
-
-compWithRefreshedPattern
-  :: (DExt o o', DExt o' o'')
-  => WithRefreshedPattern e n i o o'
-  -> WithRefreshedPattern e i l o' o''
-  -> WithRefreshedPattern e n l o o''
-compWithRefreshedPattern (WithRefreshedPattern f) (WithRefreshedPattern g) =
-  WithRefreshedPattern (g . f)
 
 -- | Safely rename (if necessary) a given pattern to extend a given scope.
 -- This is similar to 'withFreshPattern', except if a name in the pattern
@@ -234,38 +220,6 @@ withRefreshedPattern scope pattern cont = withPattern
   pattern
   (\(WithRefreshedPattern f) pattern' -> cont f pattern')
 
--- | Rename a given pattern into a fresh version of it to extend a given scope.
---
--- This is similar to 'withRefreshPattern', except here renaming always takes place.
-withFreshPattern
-  :: (Distinct o, CoSinkable pattern, Sinkable e, InjectName e)
-  => Scope o      -- ^ Ambient scope.
-  -> pattern n l  -- ^ Pattern to refresh (if it clashes with the ambient scope).
-  -> (forall o'. DExt o o' => (Substitution e n o -> Substitution e l o') -> pattern o o' -> r)
-  -- ^ Continuation, accepting the refreshed pattern.
-  -> r
-withFreshPattern scope pattern cont = withPattern
-  (\scope' binder f -> withFresh scope'
-    (\binder' -> f (WithRefreshedPattern (\subst -> addRename (sink subst) binder (nameOf binder'))) binder'))
-  idWithRefreshedPattern
-  compWithRefreshedPattern
-  scope
-  pattern
-  (\(WithRefreshedPattern f) pattern' -> cont f pattern')
-
-newtype WithRefreshedPattern' e n l (o :: S) (o' :: S) = WithRefreshedPattern' ((Name n -> e o) -> Name l -> e o')
-
-idWithRefreshedPattern' :: (Sinkable e, DExt o o') => WithRefreshedPattern' e n n o o'
-idWithRefreshedPattern' = WithRefreshedPattern' (\f n -> sink (f n))
-
-compWithRefreshedPattern'
-  :: (DExt o o', DExt o' o'')
-  => WithRefreshedPattern' e n i o o'
-  -> WithRefreshedPattern' e i l o' o''
-  -> WithRefreshedPattern' e n l o o''
-compWithRefreshedPattern' (WithRefreshedPattern' f) (WithRefreshedPattern' g) =
-  WithRefreshedPattern' (g . f)
-
 -- | Refresh (if needed) bound variables introduced in a pattern.
 --
 -- This is a version of 'withRefreshedPattern' that uses functional renamings instead of 'Substitution'.
@@ -287,24 +241,88 @@ withRefreshedPattern' scope pattern cont = withPattern
   pattern
   (\(WithRefreshedPattern' f) pattern' -> cont f pattern')
 
+-- | Unsafely declare that a given name (binder)
+-- is already fresh in any scope @n'@.
+unsafeAssertFresh :: forall n l n' l' r. NameBinder n l
+  -> (DExt n' l' => NameBinder n' l' -> r) -> r
+unsafeAssertFresh binder cont =
+  case unsafeDistinct @l' of
+    Distinct -> case unsafeExt @n' @l' of
+      Ext -> cont (unsafeCoerce binder)
+
+-- | Auxiliary structure to accumulate substitution extensions
+-- produced when refreshing a pattern.
+-- Used in 'withRefreshedPattern' and 'withFreshPattern'.
+newtype WithRefreshedPattern e n l o o' = WithRefreshedPattern (Substitution e n o -> Substitution e l o')
+
+-- | Trivial substitution (coercion via 'sink').
+idWithRefreshedPattern :: (Sinkable e, DExt o o') => WithRefreshedPattern e n n o o'
+idWithRefreshedPattern = WithRefreshedPattern sink
+
+-- | Composition of substitution extensions.
+compWithRefreshedPattern
+  :: (DExt o o', DExt o' o'')
+  => WithRefreshedPattern e n i o o'
+  -> WithRefreshedPattern e i l o' o''
+  -> WithRefreshedPattern e n l o o''
+compWithRefreshedPattern (WithRefreshedPattern f) (WithRefreshedPattern g) =
+  WithRefreshedPattern (g . f)
+
+-- | Auxiliary structure to accumulate substitution extensions
+-- produced when refreshing a pattern.
+-- Similar to 'WithRefreshedPattern', except here substitutions are represented as functions.
+-- Used in 'withRefreshedPattern''.
+newtype WithRefreshedPattern' e n l (o :: S) (o' :: S) = WithRefreshedPattern' ((Name n -> e o) -> Name l -> e o')
+
+-- | Trivial substitution extension (coercion via 'sink').
+idWithRefreshedPattern' :: (Sinkable e, DExt o o') => WithRefreshedPattern' e n n o o'
+idWithRefreshedPattern' = WithRefreshedPattern' (\f n -> sink (f n))
+
+-- | Composition of substitution extensions.
+compWithRefreshedPattern'
+  :: (DExt o o', DExt o' o'')
+  => WithRefreshedPattern' e n i o o'
+  -> WithRefreshedPattern' e i l o' o''
+  -> WithRefreshedPattern' e n l o o''
+compWithRefreshedPattern' (WithRefreshedPattern' f) (WithRefreshedPattern' g) =
+  WithRefreshedPattern' (g . f)
+
+-- ** Extracting proofs from binders and patterns
+
+-- | Evidence that scope @n@ contains distinct names.
+data DistinctEvidence (n :: S) where
+  Distinct :: Distinct n => DistinctEvidence n
+
+-- | Evidence that scope @l@ extends scope @n@.
+data ExtEvidence (n :: S) (l :: S) where
+  Ext :: Ext n l => ExtEvidence n l
+
+-- | A distinct scope extended with a 'NameBinder' is also distinct.
+assertDistinct :: (Distinct n, CoSinkable pattern) => pattern n l -> DistinctEvidence l
+assertDistinct _ = unsafeDistinct
+
+-- | A distinct scope extended with a 'NameBinder' is also distinct.
+assertExt :: CoSinkable pattern => pattern n l -> ExtEvidence n l
+assertExt _ = unsafeExt
+
+-- | Unsafely declare that scope @n@ is distinct.
+-- Used in 'unsafeAssertFresh'.
+unsafeDistinct :: DistinctEvidence n
+unsafeDistinct = unsafeCoerce (Distinct :: DistinctEvidence VoidS)
+
+-- | Unsafely declare that scope @l@ extends scope @n@.
+-- Used in 'unsafeAssertFresh'.
+unsafeExt :: ExtEvidence n l
+unsafeExt = unsafeCoerce (Ext :: ExtEvidence VoidS VoidS)
+
+-- ** Unsinking names
+
 -- | Try coercing the name back to the (smaller) scope,
 -- given a binder that extends that scope.
 unsinkName :: NameBinder n l -> Name l -> Maybe (Name n)
 unsinkName binder name@(UnsafeName raw)
   | nameOf binder == name = Nothing
   | otherwise = Just (UnsafeName raw)
-
-newtype UnsinkName n l (o :: S) (o' :: S) = UnsinkName (Name l -> Maybe (Name n))
-
-idUnsinkName :: UnsinkName n n o o'
-idUnsinkName = UnsinkName Just
-
-compUnsinkName
-  :: UnsinkName n i o o'
-  -> UnsinkName i l o' o''
-  -> UnsinkName n l o o''
-compUnsinkName (UnsinkName f) (UnsinkName g)
-  = UnsinkName (\name -> g name >>= f)
 
 -- | Check if a name in the extended context
 -- is introduced in a pattern or comes from the outer scope @n@.
@@ -319,28 +337,57 @@ unsinkNamePattern pat = withPattern @_ @n
         k (UnsinkName (unsinkName binder)) binder')
   idUnsinkName
   compUnsinkName
-  (error "impossible")
+  (error "impossible")  -- scope is not used, but has to be provided in general
   pat
   (\(UnsinkName unsink) _ -> unsink)
+
+-- | Auxiliary structure for unsinking names.
+-- Used in 'unsinkNamePattern'.
+newtype UnsinkName n l (o :: S) (o' :: S) = UnsinkName (Name l -> Maybe (Name n))
+
+-- | Trivial unsinking. If no scope extension took place, any name is free (since it cannot be bound by anything).
+idUnsinkName :: UnsinkName n n o o'
+idUnsinkName = UnsinkName Just
+
+-- | Composition of unsinking for nested binders/patterns.
+compUnsinkName
+  :: UnsinkName n i o o'
+  -> UnsinkName i l o' o''
+  -> UnsinkName n l o o''
+compUnsinkName (UnsinkName f) (UnsinkName g)
+  = UnsinkName (\name -> g name >>= f)
 
 -- * Unification of binders
 
 -- | Unification result for two binders,
 -- extending some common scope to scopes @l@ and @r@ respectively.
 --
--- Due to the implementation of the foil,
+-- Due to the implementation of the foil, we can often rename binders efficiently,
+-- by renaming binders only in one of the two unified terms.
 data UnifyNameBinders (pattern :: S -> S -> Type) n l r where
   -- | Binders are the same, proving that type parameters @l@ and @r@
   -- are in fact equivalent.
-  SameNameBinders :: NameBinders n l -> UnifyNameBinders pattern n l l
+  SameNameBinders
+    :: NameBinders n l  -- ^ /Unordered/ set of binders in the unified pattern (from any of the original patterns).
+    -> UnifyNameBinders pattern n l l
   -- | It is possible to safely rename the left binder
   -- to match the right one.
-  RenameLeftNameBinder :: NameBinders n r -> (NameBinder n l -> NameBinder n r) -> UnifyNameBinders pattern n l r
+  RenameLeftNameBinder
+    :: NameBinders n r                    -- ^ /Unordered/ set of binders in the unified pattern (the binders from the right pattern).
+    -> (NameBinder n l -> NameBinder n r) -- ^ Binder renaming for the left pattern.
+    -> UnifyNameBinders pattern n l r
   -- | It is possible to safely rename the right binder
   -- to match the left one.
-  RenameRightNameBinder :: NameBinders n l -> (NameBinder n r -> NameBinder n l) -> UnifyNameBinders pattern n l r
+  RenameRightNameBinder
+    :: NameBinders n l                    -- ^ /Unordered/ set of binders in the unified pattern (the binders from the left pattern).
+    -> (NameBinder n r -> NameBinder n l) -- ^ Binder renaming for the right pattern.
+    -> UnifyNameBinders pattern n l r
   -- | It is necessary to rename both binders.
-  RenameBothBinders :: NameBinders n lr -> (NameBinder n l -> NameBinder n lr) -> (NameBinder n r -> NameBinder n lr) -> UnifyNameBinders pattern n l r
+  RenameBothBinders
+    :: NameBinders n lr                     -- ^ /Unordered/ set of binders in the unified pattern
+    -> (NameBinder n l -> NameBinder n lr)  -- ^ Binder renaming for the left pattern.
+    -> (NameBinder n r -> NameBinder n lr)  -- ^ Binder renaming for the right pattern.
+    -> UnifyNameBinders pattern n l r
   -- | Cannot unify to (sub)patterns.
   NotUnifiable :: UnifyNameBinders pattern n l r
 
@@ -348,8 +395,8 @@ data UnifyNameBinders (pattern :: S -> S -> Type) n l r where
 -- or by providing a /safe/ renaming function to convert one binder to another.
 unifyNameBinders
   :: forall i l r pattern. Distinct i
-  => NameBinder i l
-  -> NameBinder i r
+  => NameBinder i l -- ^ Left pattern.
+  -> NameBinder i r -- ^ Right pattern.
   -> UnifyNameBinders pattern i l r
 unifyNameBinders l@(UnsafeNameBinder (UnsafeName i1)) r@(UnsafeNameBinder (UnsafeName i2))
   | i1 == i2  = case assertDistinct l of
@@ -359,6 +406,8 @@ unifyNameBinders l@(UnsafeNameBinder (UnsafeName i1)) r@(UnsafeNameBinder (Unsaf
   | otherwise = RenameLeftNameBinder (nameBindersSingleton r) $ \(UnsafeNameBinder (UnsafeName i')) ->
       if i'  == i1 then UnsafeNameBinder (UnsafeName i2) else UnsafeNameBinder (UnsafeName i')
 
+-- | Unsafely merge results of unification for nested binders/patterns.
+-- Used in 'andThenUnifyPatterns'.
 unsafeMergeUnifyBinders :: UnifyNameBinders pattern a a' a'' -> UnifyNameBinders pattern a''' b' b'' -> UnifyNameBinders pattern a b' b''
 unsafeMergeUnifyBinders = \case
 
@@ -392,33 +441,55 @@ unsafeMergeUnifyBinders = \case
 
   NotUnifiable -> const (NotUnifiable)
 
-andThenUnifyPatterns :: (UnifiablePattern pattern, Distinct l, Distinct l') => UnifyNameBinders pattern n l l' -> (pattern l r, pattern l' r') -> UnifyNameBinders pattern n r r'
+-- | Chain unification of nested patterns.
+andThenUnifyPatterns
+  :: (UnifiablePattern pattern, Distinct l, Distinct l')
+  => UnifyNameBinders pattern n l l'    -- ^ Unifying action for some outer patterns.
+  -> (pattern l r, pattern l' r')       -- ^ Two nested patterns (cannot be unified directly since they extend different scopes).
+  -> UnifyNameBinders pattern n r r'
 andThenUnifyPatterns u (l, r) = unsafeMergeUnifyBinders u (unifyPatterns (unsafeCoerce l) r)
 
+-- | An /unordered/ collection of 'NameBinder's, that together extend scope @n@ to scope @l@.
+--
+-- For an ordered version see 'NameBinderList'.
 newtype NameBinders (n :: S) (l :: S) = UnsafeNameBinders IntSet
 
+-- | /Unsafely/ merge sets of binders (via set union).
 unsafeMergeNameBinders :: NameBinders a b -> NameBinders c d -> NameBinders n l
 unsafeMergeNameBinders (UnsafeNameBinders x) (UnsafeNameBinders y) = UnsafeNameBinders (x <> y)
 
+-- | An empty set of binders keeps the scope as is.
 emptyNameBinders :: NameBinders n n
 emptyNameBinders = UnsafeNameBinders IntSet.empty
 
+-- | Composition of sets of binders.
 mergeNameBinders :: NameBinders n i -> NameBinders i l -> NameBinders n l
 mergeNameBinders = unsafeMergeNameBinders
 
+-- | A singleton name binder set.
 nameBindersSingleton :: NameBinder n l -> NameBinders n l
 nameBindersSingleton binder = UnsafeNameBinders (IntSet.singleton (nameId (nameOf binder)))
 
+-- | An /ordered/ collection (list) of 'NameBinder's, that together extend scope @n@ to scope @l@.
+--
+-- For an unordered version see 'NameBinders'.
 data NameBinderList n l where
+  -- | An empty list of binders keeps the scope as is.
   NameBinderListEmpty :: NameBinderList n n
-  NameBinderListCons :: NameBinder n i -> NameBinderList i l -> NameBinderList n l
+  -- | A non-empty list of binders.
+  NameBinderListCons
+    :: NameBinder n i       -- ^ Outermost binder.
+    -> NameBinderList i l   -- ^ Remaining list of binders.
+    -> NameBinderList n l
 
+-- | Convert an unordered set of name binders into an ordered list (with some order).
 nameBindersList :: NameBinders n l -> NameBinderList n l
 nameBindersList (UnsafeNameBinders names) = go (IntSet.toList names)
   where
     go [] = unsafeCoerce NameBinderListEmpty
     go (x:xs) = NameBinderListCons (UnsafeNameBinder (UnsafeName x)) (go xs)
 
+-- | Convert an ordered list of name binders into an unordered set.
 fromNameBindersList :: NameBinderList n l -> NameBinders n l
 fromNameBindersList = UnsafeNameBinders . IntSet.fromList . go
   where
@@ -449,8 +520,14 @@ instance CoSinkable NameBinderList where
         in withPattern withBinder unit comp scope' xs $ \f' xs' ->
             cont (comp f f') (NameBinderListCons x' xs')
 
+-- ** Pattern combinators
+
+-- | An empty pattern type specifies zero possibilities for patterns.
+--
+-- This type can be used to specify that patterns are not possible.
 data V2 (n :: S) (l :: S)
 
+-- | Since 'V2' values logically don't exist, this witnesses the logical reasoning tool of "ex falso quodlibet".
 absurd2 :: V2 n l -> a
 absurd2 v2 = case v2 of {}
 
@@ -460,8 +537,9 @@ instance CoSinkable V2 where
 instance UnifiablePattern V2 where
   unifyPatterns = absurd2
 
+-- | A unit pattern type corresponds to a wildcard pattern.
 data U2 (n :: S) (l :: S) where
-  U2 :: U2 n n
+  U2 :: U2 n n  -- ^ Wildcard patten does not modify the scope.
 
 instance CoSinkable U2 where
   coSinkabilityProof rename U2 cont = cont rename U2
@@ -469,12 +547,20 @@ instance CoSinkable U2 where
 instance UnifiablePattern U2 where
   unifyPatterns U2 U2 = SameNameBinders emptyNameBinders
 
+-- ** Unifiable patterns
+
+-- | A pattern type is unifiable if it is possible to match two
+-- patterns and decide how to rename binders.
 class CoSinkable pattern => UnifiablePattern pattern where
+  -- | Unify two patterns and decide which binders need to be renamed.
   unifyPatterns :: Distinct n => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
 
 instance UnifiablePattern NameBinder where
   unifyPatterns = unifyNameBinders
 
+-- | The easiest way to compare two patterns is to check if they are the same.
+-- This function is labelled /unsafe/, since we generally are interested in proper α-equivalence
+-- instead of direct equality.
 unsafeEqPattern :: (UnifiablePattern pattern, Distinct n) => pattern n l -> pattern n' l' -> Bool
 unsafeEqPattern l r =
   case unifyPatterns l (unsafeCoerce r) of
@@ -585,14 +671,22 @@ class CoSinkable (pattern :: S -> S -> Type) where
     -- and a (possibly refreshed) pattern that extends @n'@ to @l'@.
     -> r
 
+  -- | Generalized processing of a pattern.
   withPattern
     :: Distinct o
     => (forall x y z r'. Distinct z => Scope z -> NameBinder x y -> (forall z'. DExt z z' => f x y z z' -> NameBinder z z' -> r') -> r')
+    -- ^ Processing of a single 'NameBinder'.
     -> (forall x z z'. DExt z z' => f x x z z')
+    -- ^ Result in case no binders are present.
     -> (forall x y y' z z' z''. (DExt z z', DExt z' z'') => f x y z z' -> f y y' z' z'' -> f x y' z z'')
+    -- ^ Composition of results for nested binders/patterns.
     -> Scope o
+    -- ^ Ambient scope.
     -> pattern n l
-    -> (forall o'. DExt o o' => f n l o o' -> pattern o o' -> r) -> r
+    -- ^ Pattern to process.
+    -> (forall o'. DExt o o' => f n l o o' -> pattern o o' -> r)
+    -- ^ Continuation, accepting result for the entire pattern and a (possibly refreshed) pattern.
+    -> r
 
 instance CoSinkable NameBinder where
   coSinkabilityProof _rename (UnsafeNameBinder name) cont =
