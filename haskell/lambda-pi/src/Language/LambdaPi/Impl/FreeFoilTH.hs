@@ -80,11 +80,12 @@ mkFromFoilPattern ''Raw.VarIdent ''Raw.Pattern'
 -- * User-defined code
 
 instance Foil.UnifiablePattern FoilPattern where
-  unifyPatterns (FoilPatternWildcard _loc) (FoilPatternWildcard _loc') = Foil.SameNameBinders
+  unifyPatterns (FoilPatternWildcard _loc) (FoilPatternWildcard _loc') = Foil.SameNameBinders Foil.emptyNameBinders
   unifyPatterns (FoilPatternVar _loc x) (FoilPatternVar _loc' x') = Foil.unifyNameBinders x x'
   unifyPatterns (FoilPatternPair _loc l r) (FoilPatternPair _loc' l' r') =
-    Foil.unifyPatterns l l' `Foil.andThenUnifyPatterns` (r, r')
-  unifyPatterns l r = Foil.NotUnifiable l r
+    case (Foil.assertDistinct l, Foil.assertDistinct l') of
+      (Foil.Distinct, Foil.Distinct) -> Foil.unifyPatterns l l' `Foil.andThenUnifyPatterns` (r, r')
+  unifyPatterns _ _ = Foil.NotUnifiable
 
 type Term' a = AST (FoilPattern' a) (Term'Sig a)
 type Term = Term' Raw.BNFC'Position

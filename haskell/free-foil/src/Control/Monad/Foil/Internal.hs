@@ -329,91 +329,156 @@ unsinkNamePattern pat = withPattern @_ @n
 -- extending some common scope to scopes @l@ and @r@ respectively.
 --
 -- Due to the implementation of the foil,
-data UnifyNameBinders pattern n l r where
+data UnifyNameBinders (pattern :: S -> S -> Type) n l r where
   -- | Binders are the same, proving that type parameters @l@ and @r@
   -- are in fact equivalent.
-  SameNameBinders :: UnifyNameBinders pattern n l l
+  SameNameBinders :: NameBinders n l -> UnifyNameBinders pattern n l l
   -- | It is possible to safely rename the left binder
   -- to match the right one.
-  RenameLeftNameBinder :: (NameBinder n l -> NameBinder n r) -> UnifyNameBinders pattern n l r
+  RenameLeftNameBinder :: NameBinders n r -> (NameBinder n l -> NameBinder n r) -> UnifyNameBinders pattern n l r
   -- | It is possible to safely rename the right binder
   -- to match the left one.
-  RenameRightNameBinder :: (NameBinder n r -> NameBinder n l) -> UnifyNameBinders pattern n l r
+  RenameRightNameBinder :: NameBinders n l -> (NameBinder n r -> NameBinder n l) -> UnifyNameBinders pattern n l r
   -- | It is necessary to rename both binders.
-  RenameBothBinders :: pattern n lr -> (NameBinder n l -> NameBinder n lr) -> (NameBinder n r -> NameBinder n lr) -> UnifyNameBinders pattern n l r
+  RenameBothBinders :: NameBinders n lr -> (NameBinder n l -> NameBinder n lr) -> (NameBinder n r -> NameBinder n lr) -> UnifyNameBinders pattern n l r
   -- | Cannot unify to (sub)patterns.
-  NotUnifiable :: pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
+  NotUnifiable :: UnifyNameBinders pattern n l r
 
 -- | Unify binders either by asserting that they are the same,
 -- or by providing a /safe/ renaming function to convert one binder to another.
 unifyNameBinders
-  :: forall i l r pattern.
-     NameBinder i l
+  :: forall i l r pattern. Distinct i
+  => NameBinder i l
   -> NameBinder i r
   -> UnifyNameBinders pattern i l r
-unifyNameBinders (UnsafeNameBinder (UnsafeName i1)) (UnsafeNameBinder (UnsafeName i2))
-  | i1 == i2  = unsafeCoerce (SameNameBinders @_ @l)  -- equal names extend scopes equally
-  | i1 < i2   = RenameRightNameBinder $ \(UnsafeNameBinder (UnsafeName i'')) ->
+unifyNameBinders l@(UnsafeNameBinder (UnsafeName i1)) r@(UnsafeNameBinder (UnsafeName i2))
+  | i1 == i2  = case assertDistinct l of
+      Distinct -> unsafeCoerce (SameNameBinders (nameBindersSingleton l))  -- equal names extend scopes equally
+  | i1 < i2   = RenameRightNameBinder (nameBindersSingleton l) $ \(UnsafeNameBinder (UnsafeName i'')) ->
       if i'' == i2 then UnsafeNameBinder (UnsafeName i1) else UnsafeNameBinder (UnsafeName i'')
-  | otherwise = RenameLeftNameBinder $ \(UnsafeNameBinder (UnsafeName i')) ->
+  | otherwise = RenameLeftNameBinder (nameBindersSingleton r) $ \(UnsafeNameBinder (UnsafeName i')) ->
       if i'  == i1 then UnsafeNameBinder (UnsafeName i2) else UnsafeNameBinder (UnsafeName i')
 
-unsafeMergeUnifyBinders :: UnifyNameBinders binder a a' a'' -> UnifyNameBinders binder b b' b'' -> UnifyNameBinders binder c c' c''
+unsafeMergeUnifyBinders :: UnifyNameBinders pattern a a' a'' -> UnifyNameBinders pattern a''' b' b'' -> UnifyNameBinders pattern a b' b''
 unsafeMergeUnifyBinders = \case
-  SameNameBinders -> unsafeCoerce
-  u@(RenameLeftNameBinder f) -> \case
-    SameNameBinders -> unsafeCoerce u
-    RenameLeftNameBinder g -> RenameLeftNameBinder (unsafeCoerce f . unsafeCoerce g)
-    RenameRightNameBinder g -> RenameBothBinders undefined (unsafeCoerce f) (unsafeCoerce g)
-    RenameBothBinders _ f' g -> RenameBothBinders undefined (unsafeCoerce f . unsafeCoerce f') (unsafeCoerce g)
-    NotUnifiable _ _ -> NotUnifiable undefined undefined
-  u@(RenameRightNameBinder f) -> \case
-    SameNameBinders -> unsafeCoerce u
-    RenameLeftNameBinder g -> RenameBothBinders undefined (unsafeCoerce f) (unsafeCoerce g)
-    RenameRightNameBinder g -> RenameRightNameBinder (unsafeCoerce f . unsafeCoerce g)
-    RenameBothBinders _ g f' -> RenameBothBinders undefined (unsafeCoerce g) (unsafeCoerce f . unsafeCoerce f')
-    NotUnifiable _ _ -> NotUnifiable undefined undefined
-  u@(RenameBothBinders _ f g) -> \case
-    SameNameBinders -> unsafeCoerce u
-    RenameLeftNameBinder f' -> RenameBothBinders undefined (unsafeCoerce f . unsafeCoerce f') (unsafeCoerce g)
-    RenameRightNameBinder g' -> RenameBothBinders undefined (unsafeCoerce f) (unsafeCoerce g . unsafeCoerce g')
-    RenameBothBinders _ f' g' -> RenameBothBinders undefined (unsafeCoerce f . unsafeCoerce f') (unsafeCoerce g . unsafeCoerce g')
-    NotUnifiable _ _ -> NotUnifiable undefined undefined
-  NotUnifiable _ _ -> const (NotUnifiable undefined undefined)
 
-andThenUnifyPatterns :: (UnifiablePattern binder) => UnifyNameBinders binder n l l' -> (binder l r, binder l' r') -> UnifyNameBinders binder n r r'
-andThenUnifyPatterns u = case u of
-  SameNameBinders -> uncurry (unsafeCoerce . unifyPatterns)
-  RenameLeftNameBinder renameL -> \(l, r) ->
-    extendNameBinderRenaming renameL l $ \_renameL' l' ->
-      unsafeMergeUnifyBinders u (unifyPatterns l' r)
-  RenameRightNameBinder renameR -> \(l, r) ->
-    extendNameBinderRenaming renameR r $ \_renameR' r' ->
-      unsafeMergeUnifyBinders u (unifyPatterns l r')
-  RenameBothBinders _ renameL renameR -> \(l, r) ->
-    extendNameBinderRenaming renameL l $ \_renameL' l' ->
-      extendNameBinderRenaming renameR r $ \_renameR' r' ->
-        unsafeMergeUnifyBinders u (unifyPatterns l' r')
-  NotUnifiable{} -> const (NotUnifiable undefined undefined)
+  SameNameBinders x -> \case
+    SameNameBinders y -> SameNameBinders (x `unsafeMergeNameBinders` y)
+    RenameLeftNameBinder y f -> RenameLeftNameBinder (x `unsafeMergeNameBinders` y) (unsafeCoerce f)
+    RenameRightNameBinder y g -> RenameRightNameBinder (x `unsafeMergeNameBinders` y) (unsafeCoerce g)
+    RenameBothBinders y f g -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeCoerce f) (unsafeCoerce g)
+    NotUnifiable -> NotUnifiable
+
+  RenameLeftNameBinder x f -> \case
+    SameNameBinders y -> RenameLeftNameBinder (x `unsafeMergeNameBinders` y) (unsafeCoerce f)
+    RenameLeftNameBinder y g -> RenameLeftNameBinder (x `unsafeMergeNameBinders` y) (unsafeCoerce f . unsafeCoerce g)
+    RenameRightNameBinder y g -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeCoerce f) (unsafeCoerce g)
+    RenameBothBinders y f' g -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeCoerce f . unsafeCoerce f') (unsafeCoerce g)
+    NotUnifiable -> NotUnifiable
+
+  RenameRightNameBinder x g -> \case
+    SameNameBinders y -> RenameRightNameBinder (x `unsafeMergeNameBinders` y) (unsafeCoerce g)
+    RenameLeftNameBinder y f -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeCoerce f) (unsafeCoerce g)
+    RenameRightNameBinder y g' -> RenameRightNameBinder (x `unsafeMergeNameBinders` y) (unsafeCoerce g . unsafeCoerce g')
+    RenameBothBinders y f g' -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeCoerce f) (unsafeCoerce g . unsafeCoerce g')
+    NotUnifiable -> NotUnifiable
+
+  RenameBothBinders x f g -> \case
+    SameNameBinders y -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeCoerce f) (unsafeCoerce g)
+    RenameLeftNameBinder y f' -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeCoerce f . unsafeCoerce f') (unsafeCoerce g)
+    RenameRightNameBinder y g' -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeCoerce f) (unsafeCoerce g . unsafeCoerce g')
+    RenameBothBinders y f' g' -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeCoerce f . unsafeCoerce f') (unsafeCoerce g . unsafeCoerce g')
+    NotUnifiable -> NotUnifiable
+
+  NotUnifiable -> const (NotUnifiable)
+
+andThenUnifyPatterns :: (UnifiablePattern pattern, Distinct l, Distinct l') => UnifyNameBinders pattern n l l' -> (pattern l r, pattern l' r') -> UnifyNameBinders pattern n r r'
+andThenUnifyPatterns u (l, r) = unsafeMergeUnifyBinders u (unifyPatterns (unsafeCoerce l) r)
+
+newtype NameBinders (n :: S) (l :: S) = UnsafeNameBinders IntSet
+
+unsafeMergeNameBinders :: NameBinders a b -> NameBinders c d -> NameBinders n l
+unsafeMergeNameBinders (UnsafeNameBinders x) (UnsafeNameBinders y) = UnsafeNameBinders (x <> y)
+
+emptyNameBinders :: NameBinders n n
+emptyNameBinders = UnsafeNameBinders IntSet.empty
+
+mergeNameBinders :: NameBinders n i -> NameBinders i l -> NameBinders n l
+mergeNameBinders = unsafeMergeNameBinders
+
+nameBindersSingleton :: NameBinder n l -> NameBinders n l
+nameBindersSingleton binder = UnsafeNameBinders (IntSet.singleton (nameId (nameOf binder)))
+
+data NameBinderList n l where
+  NameBinderListEmpty :: NameBinderList n n
+  NameBinderListCons :: NameBinder n i -> NameBinderList i l -> NameBinderList n l
+
+nameBindersList :: NameBinders n l -> NameBinderList n l
+nameBindersList (UnsafeNameBinders names) = go (IntSet.toList names)
+  where
+    go [] = unsafeCoerce NameBinderListEmpty
+    go (x:xs) = NameBinderListCons (UnsafeNameBinder (UnsafeName x)) (go xs)
+
+fromNameBindersList :: NameBinderList n l -> NameBinders n l
+fromNameBindersList = UnsafeNameBinders . IntSet.fromList . go
+  where
+    go :: NameBinderList n l -> [RawName]
+    go NameBinderListEmpty = []
+    go (NameBinderListCons binder binders) = nameId (nameOf binder) : go binders
+
+instance CoSinkable NameBinders where
+  coSinkabilityProof _rename (UnsafeNameBinders names) cont =
+    cont unsafeCoerce (UnsafeNameBinders names)
+
+  withPattern withBinder unit comp scope binders cont =
+    withPattern withBinder unit comp scope (nameBindersList binders) $ \f binders' ->
+      cont f (fromNameBindersList binders')
+
+instance CoSinkable NameBinderList where
+  coSinkabilityProof rename NameBinderListEmpty cont = cont rename NameBinderListEmpty
+  coSinkabilityProof rename (NameBinderListCons binder binders) cont =
+    coSinkabilityProof rename binder $ \rename' binder' ->
+      coSinkabilityProof rename' binders $ \rename'' binders' ->
+        cont rename'' (NameBinderListCons binder' binders')
+
+  withPattern withBinder unit comp scope binders cont = case binders of
+    NameBinderListEmpty -> cont unit NameBinderListEmpty
+    NameBinderListCons x xs ->
+      withBinder scope x $ \f x' ->
+        let scope' = extendScopePattern x' scope
+        in withPattern withBinder unit comp scope' xs $ \f' xs' ->
+            cont (comp f f') (NameBinderListCons x' xs')
 
 data V2 (n :: S) (l :: S)
 
 absurd2 :: V2 n l -> a
 absurd2 v2 = case v2 of {}
 
+instance CoSinkable V2 where
+  coSinkabilityProof _ v2 _ = absurd2 v2
+  withPattern _ _ _ _ v2 _ = absurd2 v2
+instance UnifiablePattern V2 where
+  unifyPatterns = absurd2
+
+data U2 (n :: S) (l :: S) where
+  U2 :: U2 n n
+
+instance CoSinkable U2 where
+  coSinkabilityProof rename U2 cont = cont rename U2
+  withPattern _withBinder unit _combine _scope U2 cont = cont unit U2
+instance UnifiablePattern U2 where
+  unifyPatterns U2 U2 = SameNameBinders emptyNameBinders
+
 class CoSinkable pattern => UnifiablePattern pattern where
-  unifyPatterns
-    :: pattern i l
-    -> pattern i r
-    -> UnifyNameBinders pattern i l r
+  unifyPatterns :: Distinct n => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
 
 instance UnifiablePattern NameBinder where
   unifyPatterns = unifyNameBinders
 
-unsafeEqPattern :: UnifiablePattern pattern => pattern n l -> pattern n' l' -> Bool
+unsafeEqPattern :: (UnifiablePattern pattern, Distinct n) => pattern n l -> pattern n' l' -> Bool
 unsafeEqPattern l r =
   case unifyPatterns l (unsafeCoerce r) of
-    SameNameBinders -> True
+    SameNameBinders{} -> True
     _ -> False
 
 -- * Safe sinking

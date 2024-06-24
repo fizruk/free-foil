@@ -188,19 +188,19 @@ alphaEquivScoped scope
   (ScopedAST binder2 body2) =
     case Foil.unifyPatterns binder1 binder2 of
       -- if binders are the same, then we can safely compare bodies
-      Foil.SameNameBinders ->  -- after seeing this we know that body scopes are the same
+      Foil.SameNameBinders{} ->  -- after seeing this we know that body scopes are the same
         case Foil.assertDistinct binder1 of
           Foil.Distinct ->
             let scope1 = Foil.extendScopePattern binder1 scope
             in alphaEquiv scope1 body1 body2
       -- if we can safely rename first binder into second
-      Foil.RenameLeftNameBinder rename1to2 ->
+      Foil.RenameLeftNameBinder _ rename1to2 ->
         case Foil.assertDistinct binder2 of
           Foil.Distinct ->
             let scope2 = Foil.extendScopePattern binder2 scope
             in alphaEquiv scope2 (Foil.liftRM scope2 (Foil.fromNameBinderRenaming rename1to2) body1) body2
       -- if we can safely rename second binder into first
-      Foil.RenameRightNameBinder rename2to1 ->
+      Foil.RenameRightNameBinder _ rename2to1 ->
         case Foil.assertDistinct binder1 of
           Foil.Distinct ->
             let scope1 = Foil.extendScopePattern binder1 scope
@@ -214,7 +214,7 @@ alphaEquivScoped scope
                 (Foil.liftRM scope' (Foil.fromNameBinderRenaming rename1) body1)
                 (Foil.liftRM scope' (Foil.fromNameBinderRenaming rename2) body2)
       -- if we cannot unify patterns then scopes are not alpha-equivalent
-      Foil.NotUnifiable _ _ -> False
+      Foil.NotUnifiable -> False
 
 -- ** Unsafe equality checks
 
@@ -223,7 +223,7 @@ alphaEquivScoped scope
 -- scope extensions under binders (which might happen due to substitution
 -- under a binder in absence of name conflicts).
 unsafeEqAST
-  :: (Bifoldable sig, ZipMatch sig, Foil.UnifiablePattern binder)
+  :: (Bifoldable sig, ZipMatch sig, Foil.UnifiablePattern binder, Foil.Distinct n, Foil.Distinct l)
   => AST binder sig n
   -> AST binder sig l
   -> Bool
@@ -236,13 +236,14 @@ unsafeEqAST _ _ = False
 
 -- | A version of 'unsafeEqAST' for scoped terms.
 unsafeEqScopedAST
-  :: (Bifoldable sig, ZipMatch sig, Foil.UnifiablePattern binder)
+  :: (Bifoldable sig, ZipMatch sig, Foil.UnifiablePattern binder, Foil.Distinct n, Foil.Distinct l)
   => ScopedAST binder sig n
   -> ScopedAST binder sig l
   -> Bool
 unsafeEqScopedAST (ScopedAST binder1 body1) (ScopedAST binder2 body2) = and
   [ Foil.unsafeEqPattern binder1 binder2
-  , body1 `unsafeEqAST` body2
+  , case (Foil.assertDistinct binder1, Foil.assertDistinct binder2) of
+      (Foil.Distinct, Foil.Distinct) -> body1 `unsafeEqAST` body2
   ]
 
 -- ** Syntactic matching (unification)

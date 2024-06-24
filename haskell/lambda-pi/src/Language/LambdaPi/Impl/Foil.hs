@@ -1,7 +1,7 @@
 {-# LANGUAGE BlockArguments        #-}
-{-# LANGUAGE EmptyCase        #-}
 {-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE EmptyCase             #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE KindSignatures        #-}
@@ -33,13 +33,11 @@
 -- 3. "Language.LambdaPi.Impl.FreeFoilTH" combines the benefits of the above, when it is possible to generate the signature automatically.
 module Language.LambdaPi.Impl.Foil where
 
-import           Control.Monad.Foil hiding (unifyPatterns)
-import           Control.Monad                   (join)
+import           Control.Monad.Foil
 import           Control.Monad.Foil.Relative
 import           Data.Coerce                     (coerce)
 import           Data.Map                        (Map)
 import qualified Data.Map                        as Map
-import           Data.Maybe                      (fromMaybe)
 import           Data.String
 import qualified Language.LambdaPi.Syntax.Abs    as Raw
 import           Language.LambdaPi.Syntax.Layout (resolveLayout)
@@ -117,6 +115,13 @@ instance CoSinkable Pattern where
         let scope' = extendScopePattern l' scope
         in withPattern withNameBinder id' combine scope' r $ \fr r' ->
               cont (combine fl fr) (PatternPair l' r')
+
+instance UnifiablePattern Pattern where
+  unifyPatterns PatternWildcard PatternWildcard = SameNameBinders emptyNameBinders
+  unifyPatterns (PatternVar x) (PatternVar x') = unifyNameBinders x x'
+  unifyPatterns (PatternPair l r) (PatternPair l' r') = case (assertDistinct l, assertDistinct l') of
+    (Distinct, Distinct) -> unifyPatterns l l' `andThenUnifyPatterns` (r, r')
+  unifyPatterns _ _ = NotUnifiable
 
 instance InjectName Expr where
   injectName = VarE
@@ -484,48 +489,41 @@ unsafeEqExpr e1 e2 = case (e1, e2) of
   (UniverseE, UniverseE) -> True
   _ -> False
 
-unifyPatterns
-  :: Distinct n
-  => Pattern n l
-  -> Pattern n r
-  -> (forall lr. DExt n lr => (NameBinder n l -> NameBinder n lr) -> (NameBinder n r -> NameBinder n lr) -> Pattern n lr -> result)
-  -> Maybe result
-unifyPatterns PatternWildcard PatternWildcard cont =
-  Just (cont id id PatternWildcard)
-unifyPatterns (PatternVar x) (PatternVar x') cont =
-  case unifyNameBinders x x' of
-    SameNameBinders ->
-      case assertDistinct x of
-        Distinct -> case assertExt x of
-          Ext -> Just (cont id id (PatternVar x))
-    RenameLeftNameBinder renameL ->
-      case (assertExt x', assertDistinct x') of
-        (Ext, Distinct) -> Just (cont renameL id (PatternVar x'))
-    RenameRightNameBinder renameR ->
-      case (assertExt x, assertDistinct x) of
-        (Ext, Distinct) -> Just (cont id renameR (PatternVar x))
-    RenameBothBinders v2 _ _ -> absurd2 v2
-    NotUnifiable v2 _ -> absurd2 v2
-unifyPatterns (PatternPair l r) (PatternPair l' r') cont = join $
-  unifyPatterns l l' $ \renameL renameL' l'' ->
-    extendNameBinderRenaming renameL r $ \renameLext rext ->
-      extendNameBinderRenaming renameL' r' $ \renameL'ext r'ext ->
-        unifyPatterns rext r'ext $ \renameR renameR' r'' ->
-          let rename = renameL `composeNameBinderRenamings` (renameR . renameLext)
-              rename' = renameL' `composeNameBinderRenamings` (renameR' . renameL'ext)
-           in cont rename rename' (PatternPair l'' r'')
-unifyPatterns _ _ _ = Nothing
-
 alphaEquiv :: Distinct n => Scope n -> Expr n -> Expr n -> Bool
 alphaEquiv scope e1 e2 = case (e1, e2) of
   (VarE x, VarE x') -> x == coerce x'
   (AppE t1 t2, AppE t1' t2') -> alphaEquiv scope t1 t1' && alphaEquiv scope t2 t2'
-  (LamE x body, LamE x' body') -> fromMaybe False $ unifyPatterns x x' $ \renameL renameR x'' ->
-    let scope' = extendScopePattern x'' scope
-     in alphaEquiv scope' (liftRM scope' (fromNameBinderRenaming renameL) body) (liftRM scope' (fromNameBinderRenaming renameR) body')
-  (PiE x a b, PiE x' a' b') -> fromMaybe False $ unifyPatterns x x' $ \renameL renameR x'' ->
-    let scope' = extendScopePattern x'' scope
-     in alphaEquiv scope a a' && alphaEquiv scope' (liftRM scope' (fromNameBinderRenaming renameL) b) (liftRM scope' (fromNameBinderRenaming renameR) b')
+  (LamE x body, LamE x' body') -> case unifyPatterns x x' of
+    SameNameBinders z    -> case assertDistinct z of
+      Distinct -> alphaEquiv (extendScopePattern z scope) body body'
+    RenameLeftNameBinder z renameL -> case assertDistinct z of
+      Distinct ->
+        let scope' = extendScopePattern z scope
+        in alphaEquiv scope' (liftRM scope' (fromNameBinderRenaming renameL) body) body'
+    RenameRightNameBinder z renameR -> case assertDistinct z of
+      Distinct ->
+        let scope' = extendScopePattern z scope
+        in alphaEquiv scope' body (liftRM scope' (fromNameBinderRenaming renameR) body')
+    RenameBothBinders z renameL renameR -> case assertDistinct z of
+      Distinct ->
+        let scope' = extendScopePattern z scope
+        in alphaEquiv scope' (liftRM scope' (fromNameBinderRenaming renameL) body) (liftRM scope' (fromNameBinderRenaming renameR) body')
+    NotUnifiable -> False
+  (PiE x a b, PiE x' a' b') -> alphaEquiv scope a a' && case unifyPatterns x x' of
+    SameNameBinders z    -> case assertDistinct z of Distinct -> alphaEquiv (extendScopePattern z scope) b b'
+    RenameLeftNameBinder z renameL -> case assertDistinct z of
+      Distinct ->
+        let scope' = extendScopePattern z scope
+        in alphaEquiv scope' (liftRM scope' (fromNameBinderRenaming renameL) b) b'
+    RenameRightNameBinder z renameR -> case assertDistinct z of
+      Distinct ->
+        let scope' = extendScopePattern z scope
+        in alphaEquiv scope' b (liftRM scope' (fromNameBinderRenaming renameR) b')
+    RenameBothBinders z renameL renameR -> case assertDistinct z of
+      Distinct ->
+        let scope' = extendScopePattern z scope
+        in alphaEquiv scope' (liftRM scope' (fromNameBinderRenaming renameL) b) (liftRM scope' (fromNameBinderRenaming renameR) b')
+    NotUnifiable -> False
   (PairE l r, PairE l' r') -> alphaEquiv scope l l' && alphaEquiv scope r r'
   (FirstE t, FirstE t') -> alphaEquiv scope t t'
   (SecondE t, SecondE t') -> alphaEquiv scope t t'
