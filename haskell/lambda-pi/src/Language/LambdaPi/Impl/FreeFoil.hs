@@ -12,13 +12,13 @@
 --
 -- 1. Freely generated (from a simple signature) scope-safe AST.
 -- 2. Correct capture-avoiding substitution (see 'substitute').
--- 3. Correct α-equivalence checks (see 'alphaEquiv' and 'alphaEquivRefreshed') as well as α-normalization (see 'refreshAST').
+-- 3. Correct \(\alpha\)-equivalence checks (see 'alphaEquiv' and 'alphaEquivRefreshed') as well as \(\alpha\)-normalization (see 'refreshAST').
 -- 4. Conversion helpers (see 'convertToAST' and 'convertFromAST').
 --
 -- The following is implemented __manually__ in this module:
 --
 -- 1. Convenient pattern synonyms.
--- 2. 'ZipMatch' instances (enabling general α-equivalence).
+-- 2. 'ZipMatch' instances (enabling general \(\alpha\)-equivalence).
 -- 3. Conversion between scope-safe and raw term representation (the latter is generated via BNFC), see 'toLambdaPi' and 'fromLambdaPi'.
 -- 4. Computation of weak head normal form (WHNF), see 'whnf'.
 -- 5. Entry point, gluing everything together. See 'defaultMain'.
@@ -88,7 +88,7 @@ instance ZipMatch PairF where
 -- | Sum of signature bifunctors.
 type (:+:) = Sum
 
--- | \(\lambda\Pi\)-terms in scope @n@, freely generated from the sum of signatures 'LambdaPiF' and 'PairF'.
+-- | \(\lambda\Pi\)-terms in scope @n@, freely generated from the sum of signatures 'LambdaPiF' and t'PairF'.
 type LambdaPi n = AST Foil.NameBinder (LambdaPiF :+: PairF) n
 
 pattern App :: LambdaPi n -> LambdaPi n -> LambdaPi n
@@ -306,14 +306,14 @@ fromLambdaPi' = \case
 ppLambdaPi :: LambdaPi Foil.VoidS -> String
 ppLambdaPi = Raw.printTree . fromLambdaPi'
 
--- | Interpret a λΠ command.
+-- | Interpret a \(\lambda\Pi\) command.
 interpretCommand :: Raw.Command -> IO ()
 interpretCommand (Raw.CommandCompute _loc term _type) =
       putStrLn ("  ↦ " ++ ppLambdaPi (whnf Foil.emptyScope (toLambdaPi Foil.emptyScope Map.empty term)))
 -- #TODO: add typeCheck
 interpretCommand (Raw.CommandCheck _loc _term _type) = putStrLn "check is not yet implemented"
 
--- | Interpret a λΠ program.
+-- | Interpret a \(\lambda\Pi\) program.
 interpretProgram :: Raw.Program -> IO ()
 interpretProgram (Raw.AProgram _loc typedTerms) = mapM_ interpretCommand typedTerms
 

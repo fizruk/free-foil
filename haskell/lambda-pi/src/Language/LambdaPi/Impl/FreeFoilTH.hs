@@ -13,13 +13,13 @@
 --
 -- 1. Freely generated (from a simple signature) scope-safe AST.
 -- 2. Correct capture-avoiding substitution (see 'substitute').
--- 3. Correct α-equivalence checks (see 'alphaEquiv' and 'alphaEquivRefreshed') as well as α-normalization (see 'refreshAST').
+-- 3. Correct \(\alpha\)-equivalence checks (see 'alphaEquiv' and 'alphaEquivRefreshed') as well as \(\alpha\)-normalization (see 'refreshAST').
 -- 4. Conversion helpers (see 'convertToAST' and 'convertFromAST').
 --
 -- The following is __generated__ using Template Haskell:
 --
 -- 1. Convenient pattern synonyms.
--- 2. 'ZipMatch' instances (enabling general α-equivalence).
+-- 2. 'ZipMatch' instances (enabling general \(\alpha\)-equivalence).
 -- 3. Conversion between scope-safe and raw term representation.
 --
 -- The following is implemented __manually__ in this module:
@@ -87,8 +87,13 @@ instance Foil.UnifiablePattern FoilPattern where
       (Foil.Distinct, Foil.Distinct) -> Foil.unifyPatterns l l' `Foil.andThenUnifyPatterns` (r, r')
   unifyPatterns _ _ = Foil.NotUnifiable
 
+-- | Generic annotated scope-safe \(\lambda\Pi\)-terms with patterns.
 type Term' a = AST (FoilPattern' a) (Term'Sig a)
+
+-- | Scode-safe \(\lambda\Pi\)-terms annotated with source code position.
 type Term = Term' Raw.BNFC'Position
+
+-- | Scope-safe patterns annotated with source code position.
 type FoilPattern = FoilPattern' Raw.BNFC'Position
 
 -- ** Conversion helpers
@@ -141,7 +146,7 @@ matchPattern pat term = go pat term Foil.identitySubst
     go (FoilPatternVar _loc x) e    = \subst -> Foil.addSubst subst x e
     go (FoilPatternPair loc l r) e  = go r (Second loc e) . go l (First loc e)
 
--- | Compute weak head normal form (WHNF) of a λΠ-term.
+-- | Compute weak head normal form (WHNF) of a \(\lambda\Pi\)-term.
 --
 -- >>> whnf Foil.emptyScope "(λx.(λ_.x)(λy.x))(λ(y,z).z)"
 -- λ (x0, x1) . x1
@@ -188,20 +193,20 @@ whnf scope = \case
       t'             -> Second loc t'
   t -> t
 
--- ** λΠ-interpreter
+-- ** \(\lambda\Pi\)-interpreter
 
--- | Interpret a λΠ command.
+-- | Interpret a \(\lambda\Pi\) command.
 interpretCommand :: Raw.Command -> IO ()
 interpretCommand (Raw.CommandCompute _loc term _type) =
       putStrLn ("  ↦ " ++ show (whnf Foil.emptyScope (toTerm'Closed term)))
 -- #TODO: add typeCheck
 interpretCommand (Raw.CommandCheck _loc _term _type) = putStrLn "check is not yet implemented"
 
--- | Interpret a λΠ program.
+-- | Interpret a \(\lambda\Pi\) program.
 interpretProgram :: Raw.Program -> IO ()
 interpretProgram (Raw.AProgram _loc typedTerms) = mapM_ interpretCommand typedTerms
 
--- | A λΠ interpreter implemented via the free foil.
+-- | A \(\lambda\Pi\) interpreter implemented via the free foil.
 defaultMain :: IO ()
 defaultMain = do
   input <- getContents

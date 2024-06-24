@@ -20,7 +20,7 @@
 -- 2. Correct capture-avoiding substitution (see 'substitute').
 -- 3. Conversion between scope-safe and raw term representation (the latter is generated via BNFC), see 'toFoilTerm' and 'fromFoilTerm'.
 -- 4. Helper functions for patterns. See 'extendScopePattern' and 'withRefreshedPattern'.
--- 5. α-equivalence checks ('alphaEquiv' and 'alphaEquivRefreshed') and α-normalization helpers ('refreshExpr').
+-- 5. \(\alpha\)-equivalence checks ('alphaEquiv' and 'alphaEquivRefreshed') and \(\alpha\)-normalization helpers ('refreshExpr').
 -- 6. Computation of weak head normal form (WHNF) and normal form (NF), see 'whnf' and 'nf'.
 -- 7. Entry point, gluing everything together. See 'defaultMain'.
 --
@@ -28,7 +28,7 @@
 --
 -- This is a baseline implementation, see other examples for partial automation:
 --
--- 1. "Language.LambdaPi.Impl.FreeFoil" allows to reuse generalized substitution and α-equivalence (and, in theory, more complicated algorithms).
+-- 1. "Language.LambdaPi.Impl.FreeFoil" allows to reuse generalized substitution and \(\alpha\)-equivalence (and, in theory, more complicated algorithms).
 -- 2. "Language.LambdaPi.Impl.FoilTH" works well with patterns and generates conversion functions and helpers for patterns.
 -- 3. "Language.LambdaPi.Impl.FreeFoilTH" combines the benefits of the above, when it is possible to generate the signature automatically.
 module Language.LambdaPi.Impl.Foil where
@@ -50,6 +50,8 @@ import           System.Exit                     (exitFailure)
 -- >>> :set -XOverloadedStrings
 -- >>> :set -XDataKinds
 -- >>> import Control.Monad.Foil
+
+-- * Scope-safe AST
 
 -- | Type of scope-safe \(\lambda\Pi\)-terms with pairs.
 data Expr n where
@@ -148,6 +150,8 @@ instance RelMonad Name Expr where
     ProductE l r -> ProductE (rbind scope l subst) (rbind scope r subst)
     UniverseE -> UniverseE
 
+-- * Pretty-printing
+
 -- | Default way to print a name using its internal 'Id'.
 ppName :: Name n -> String
 ppName name = "x" <> show (nameId name)
@@ -197,6 +201,8 @@ instance Sinkable Expr where
   sinkabilityProof rename (ProductE l r) = ProductE (sinkabilityProof rename l) (sinkabilityProof rename r)
   sinkabilityProof _ UniverseE = UniverseE
 
+-- * Substitution
+
 -- | Perform substitution in a \(\lambda\Pi\)-term.
 substitute :: Distinct o => Scope o -> Substitution Expr i o -> Expr i -> Expr o
 substitute scope subst = \case
@@ -242,6 +248,10 @@ substituteRefresh scope subst = \case
     ProductE l r -> ProductE (substituteRefresh scope subst l) (substituteRefresh scope subst r)
     UniverseE -> UniverseE
 
+-- * Conversion
+
+-- ** From raw to foil
+
 -- | Convert a raw pattern into a scope-safe one.
 toFoilPattern
   :: Distinct n
@@ -261,6 +271,50 @@ toFoilPattern scope env pattern cont =
         let scope' = extendScopePattern l' scope
          in toFoilPattern scope' env' r $ \r' env'' ->
               cont (PatternPair l' r') env''
+
+-- | Convert a raw term into a scope-safe \(\lambda\Pi\)-term.
+toFoilTerm
+  :: Distinct n
+  => Scope n                    -- ^ Target scope.
+  -> Map Raw.VarIdent (Name n)  -- ^ Mapping for variable names (to be extended with pattern).
+  -> Raw.Term                   -- ^ A raw term.
+  -> Expr n
+toFoilTerm scope env = \case
+  Raw.Var _loc x ->
+    case Map.lookup x env of
+      Just name -> VarE name
+      Nothing   -> error $ "unknown free variable: " <> show x
+
+  Raw.App _loc t1 t2 ->
+    AppE (toFoilTerm scope env t1) (toFoilTerm scope env t2)
+
+  Raw.Lam _loc pattern (Raw.AScopedTerm _loc' body) ->
+    toFoilPattern scope env pattern $ \pattern' env' ->
+      let scope' = extendScopePattern pattern' scope
+       in LamE pattern' (toFoilTerm scope' env' body)
+
+  Raw.Pi _loc pattern a (Raw.AScopedTerm _loc' b) ->
+    toFoilPattern scope env pattern $ \pattern' env' ->
+      let scope' = extendScopePattern pattern' scope
+       in PiE pattern' (toFoilTerm scope env a) (toFoilTerm scope' env' b)
+
+  Raw.Pair _loc t1 t2 ->
+    PairE (toFoilTerm scope env t1) (toFoilTerm scope env t2)
+  Raw.First _loc t ->
+    FirstE (toFoilTerm scope env t)
+  Raw.Second _loc t ->
+    SecondE (toFoilTerm scope env t)
+
+  Raw.Product _loc t1 t2 ->
+    ProductE (toFoilTerm scope env t1) (toFoilTerm scope env t2)
+
+  Raw.Universe _loc -> UniverseE
+
+-- | Convert a raw term into a closed scope-safe term.
+toFoilTermClosed :: Raw.Term -> Expr VoidS
+toFoilTermClosed = toFoilTerm emptyScope Map.empty
+
+-- ** From foil to raw
 
 -- | Convert a scope-safe pattern into a raw pattern.
 fromFoilPattern
@@ -352,47 +406,7 @@ fromFoilTerm' = \case
     loc = error "location information is lost when converting from AST"
     nameToVarIdent name = Raw.VarIdent ("x" ++ show (nameId name))
 
--- | Convert a raw term into a scope-safe \(\lambda\Pi\)-term.
-toFoilTerm
-  :: Distinct n
-  => Scope n                    -- ^ Target scope.
-  -> Map Raw.VarIdent (Name n)  -- ^ Mapping for variable names (to be extended with pattern).
-  -> Raw.Term                   -- ^ A raw term.
-  -> Expr n
-toFoilTerm scope env = \case
-  Raw.Var _loc x ->
-    case Map.lookup x env of
-      Just name -> VarE name
-      Nothing   -> error $ "unknown free variable: " <> show x
-
-  Raw.App _loc t1 t2 ->
-    AppE (toFoilTerm scope env t1) (toFoilTerm scope env t2)
-
-  Raw.Lam _loc pattern (Raw.AScopedTerm _loc' body) ->
-    toFoilPattern scope env pattern $ \pattern' env' ->
-      let scope' = extendScopePattern pattern' scope
-       in LamE pattern' (toFoilTerm scope' env' body)
-
-  Raw.Pi _loc pattern a (Raw.AScopedTerm _loc' b) ->
-    toFoilPattern scope env pattern $ \pattern' env' ->
-      let scope' = extendScopePattern pattern' scope
-       in PiE pattern' (toFoilTerm scope env a) (toFoilTerm scope' env' b)
-
-  Raw.Pair _loc t1 t2 ->
-    PairE (toFoilTerm scope env t1) (toFoilTerm scope env t2)
-  Raw.First _loc t ->
-    FirstE (toFoilTerm scope env t)
-  Raw.Second _loc t ->
-    SecondE (toFoilTerm scope env t)
-
-  Raw.Product _loc t1 t2 ->
-    ProductE (toFoilTerm scope env t1) (toFoilTerm scope env t2)
-
-  Raw.Universe _loc -> UniverseE
-
--- | Convert a raw term into a closed scope-safe term.
-toFoilTermClosed :: Raw.Term -> Expr VoidS
-toFoilTermClosed = toFoilTerm emptyScope Map.empty
+-- * Evaluation
 
 -- | Match a pattern against an expression.
 matchPattern :: Pattern n l -> Expr n -> Substitution Expr l n
@@ -450,6 +464,8 @@ whnf scope = \case
       t'         -> SecondE t'
   t -> t
 
+-- * \(\alpha\)-equivalence
+
 -- | Normalize all binder identifiers in an expression.
 refreshExpr :: Distinct n => Scope n -> Expr n -> Expr n
 refreshExpr scope = substituteRefresh scope identitySubst
@@ -489,6 +505,11 @@ unsafeEqExpr e1 e2 = case (e1, e2) of
   (UniverseE, UniverseE) -> True
   _ -> False
 
+-- | \(\alpha\)-equivalence check for two terms in one scope
+-- via unification of bound variables (via 'unifyNameBinders').
+--
+-- Compared to 'alphaEquivRefreshed', this function might skip unnecessary
+-- changes of bound variables when both binders in two matching scoped terms coincide.
 alphaEquiv :: Distinct n => Scope n -> Expr n -> Expr n -> Bool
 alphaEquiv scope e1 e2 = case (e1, e2) of
   (VarE x, VarE x') -> x == coerce x'
@@ -531,7 +552,9 @@ alphaEquiv scope e1 e2 = case (e1, e2) of
   (UniverseE, UniverseE) -> True
   _ -> False
 
--- | Interpret a λΠ command.
+-- * Interpreter
+
+-- | Interpret a \(\lambda\Pi\) command.
 interpretCommand :: Raw.Command -> IO ()
 interpretCommand (Raw.CommandCompute _loc term _type) =
   putStrLn ("  ↦ " ++ printExpr (whnf emptyScope (toFoilTerm emptyScope Map.empty term)))
@@ -539,12 +562,12 @@ interpretCommand (Raw.CommandCompute _loc term _type) =
 interpretCommand (Raw.CommandCheck _loc _term _type) =
   putStrLn "Not yet implemented"
 
--- | Interpret a λΠ program.
+-- | Interpret a \(\lambda\Pi\) program.
 interpretProgram :: Raw.Program -> IO ()
 interpretProgram (Raw.AProgram _loc typedTerms) = mapM_ interpretCommand typedTerms
 
 -- | Default interpreter program.
--- Reads a λΠ program from the standard input and runs the commands.
+-- Reads a \(\lambda\Pi\) program from the standard input and runs the commands.
 defaultMain :: IO ()
 defaultMain = do
   input <- getContents
@@ -553,6 +576,8 @@ defaultMain = do
       putStrLn err
       exitFailure
     Right program -> interpretProgram program
+
+-- * Example terms
 
 -- | A helper for constructing \(\lambda\)-abstractions.
 lam :: Distinct n => Scope n -> (forall l. DExt n l => Scope l -> NameBinder n l -> Expr l) -> Expr n

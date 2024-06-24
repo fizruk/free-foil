@@ -29,7 +29,7 @@
 --
 -- The following is __not implemented__:
 --
--- 1. α-equivalence checks and α-normalization helpers.
+-- 1. \(\alpha\)-equivalence checks and \(\alpha\)-normalization helpers.
 --
 -- This implementation supports (nested) patterns for pairs.
 module Language.LambdaPi.Impl.FoilTH where
@@ -128,7 +128,7 @@ whnf scope = \case
 
 -- ** Interpreter
 
--- | Interpret a λΠ command.
+-- | Interpret a \(\lambda\Pi\) command.
 interpretCommand :: Raw.Command -> IO ()
 interpretCommand (Raw.CommandCompute _loc term _type) =
   putStrLn ("  ↦ " ++ printFoilTerm (whnf emptyScope (toFoilTerm' emptyScope Map.empty term)))
@@ -136,12 +136,12 @@ interpretCommand (Raw.CommandCompute _loc term _type) =
 interpretCommand (Raw.CommandCheck _loc _term _type) =
   putStrLn "Not yet implemented"
 
--- | Interpret a λΠ program.
+-- | Interpret a \(\lambda\Pi\) program.
 interpretProgram :: Raw.Program -> IO ()
 interpretProgram (Raw.AProgram _loc typedTerms) = mapM_ interpretCommand typedTerms
 
 -- | Default interpreter program.
--- Reads a λΠ program from the standard input and runs the commands.
+-- Reads a \(\lambda\Pi\) program from the standard input and runs the commands.
 defaultMain :: IO ()
 defaultMain = do
   input <- getContents
