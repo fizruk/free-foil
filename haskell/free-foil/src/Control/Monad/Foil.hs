@@ -52,6 +52,8 @@ module Control.Monad.Foil (
   -- * Unification of binders
   UnifyNameBinders(..),
   unifyNameBinders,
+  andThenUnifyPatterns,
+  UnifiablePattern(..),
   -- ** Eliminating impossible unification
   V2, absurd2,
   -- * Name maps

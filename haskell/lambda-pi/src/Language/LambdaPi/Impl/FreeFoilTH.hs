@@ -1,11 +1,11 @@
 {-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE RankNTypes         #-}
-{-# LANGUAGE GADTs             #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs             #-}
 {-# LANGUAGE KindSignatures    #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE PatternSynonyms   #-}
+{-# LANGUAGE RankNTypes        #-}
 {-# LANGUAGE TemplateHaskell   #-}
 -- | Free foil implementation of the \(\lambda\Pi\)-calculus (with pairs).
 --
@@ -32,8 +32,8 @@
 module Language.LambdaPi.Impl.FreeFoilTH where
 
 import qualified Control.Monad.Foil              as Foil
-import           Control.Monad.Free.Foil
 import           Control.Monad.Foil.TH
+import           Control.Monad.Free.Foil
 import           Control.Monad.Free.Foil.TH
 import           Data.Bifunctor.TH
 import           Data.Map                        (Map)
@@ -78,6 +78,13 @@ mkToFoilPattern ''Raw.VarIdent ''Raw.Pattern'
 mkFromFoilPattern ''Raw.VarIdent ''Raw.Pattern'
 
 -- * User-defined code
+
+instance Foil.UnifiablePattern FoilPattern where
+  unifyPatterns (FoilPatternWildcard _loc) (FoilPatternWildcard _loc') = Foil.SameNameBinders
+  unifyPatterns (FoilPatternVar _loc x) (FoilPatternVar _loc' x') = Foil.unifyNameBinders x x'
+  unifyPatterns (FoilPatternPair _loc l r) (FoilPatternPair _loc' l' r') =
+    Foil.unifyPatterns l l' `Foil.andThenUnifyPatterns` (r, r')
+  unifyPatterns l r = Foil.NotUnifiable l r
 
 type Term' a = AST (FoilPattern' a) (Term'Sig a)
 type Term = Term' Raw.BNFC'Position
@@ -124,17 +131,19 @@ instance Show (AST (FoilPattern' a) (Term'Sig a) Foil.VoidS) where
 
 -- ** Evaluation
 
-matchPattern
-  :: Foil.Scope n
-  -> FoilPattern n l
-  -> Term n
-  -> Foil.Substitution Term l n
-matchPattern = undefined
+-- | Match a pattern against an term.
+matchPattern :: FoilPattern n l -> Term n -> Foil.Substitution Term l n
+matchPattern pat term = go pat term Foil.identitySubst
+  where
+    go :: FoilPattern i l -> Term n -> Foil.Substitution Term i n -> Foil.Substitution Term l n
+    go (FoilPatternWildcard _loc) _ = id
+    go (FoilPatternVar _loc x) e    = \subst -> Foil.addSubst subst x e
+    go (FoilPatternPair loc l r) e  = go r (Second loc e) . go l (First loc e)
 
 -- | Compute weak head normal form (WHNF) of a λΠ-term.
 --
--- >>> whnf Foil.emptyScope "(λx.(λ_.x)(λy.x))(λy.λz.z)"
--- λ x0 . λ x1 . x1
+-- >>> whnf Foil.emptyScope "(λx.(λ_.x)(λy.x))(λ(y,z).z)"
+-- λ (x0, x1) . x1
 --
 -- >>> whnf Foil.emptyScope "(λs.λz.s(s(z)))(λs.λz.s(s(z)))"
 -- λ x1 . (λ x0 . λ x1 . x0 (x0 x1)) ((λ x0 . λ x1 . x0 (x0 x1)) x1)
@@ -165,7 +174,7 @@ whnf scope = \case
   App loc f x ->
     case whnf scope f of
       Lam _loc binder body ->
-        let subst = matchPattern scope binder x
+        let subst = matchPattern binder x
          in whnf scope (substitute scope subst body)
       f' -> App loc f' x
   First loc t ->

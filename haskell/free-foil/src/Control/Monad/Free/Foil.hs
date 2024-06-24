@@ -213,6 +213,8 @@ alphaEquivScoped scope
             in alphaEquiv scope'
                 (Foil.liftRM scope' (Foil.fromNameBinderRenaming rename1) body1)
                 (Foil.liftRM scope' (Foil.fromNameBinderRenaming rename2) body2)
+      -- if we cannot unify patterns then scopes are not alpha-equivalent
+      Foil.NotUnifiable _ _ -> False
 
 -- ** Unsafe equality checks
 

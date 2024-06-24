@@ -1,6 +1,6 @@
 module Main where
 
-import qualified Language.LambdaPi.Impl.FreeFoil as FreeFoil
+import qualified Language.LambdaPi.Impl.FreeFoilTH as FreeFoilTH
 
 main :: IO ()
-main = FreeFoil.defaultMain
+main = FreeFoilTH.defaultMain

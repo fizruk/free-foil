@@ -1,4 +1,5 @@
 {-# LANGUAGE BlockArguments             #-}
+{-# LANGUAGE LambdaCase             #-}
 {-# LANGUAGE EmptyCase             #-}
 {-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE DataKinds                  #-}
@@ -340,6 +341,8 @@ data UnifyNameBinders pattern n l r where
   RenameRightNameBinder :: (NameBinder n r -> NameBinder n l) -> UnifyNameBinders pattern n l r
   -- | It is necessary to rename both binders.
   RenameBothBinders :: pattern n lr -> (NameBinder n l -> NameBinder n lr) -> (NameBinder n r -> NameBinder n lr) -> UnifyNameBinders pattern n l r
+  -- | Cannot unify to (sub)patterns.
+  NotUnifiable :: pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
 
 -- | Unify binders either by asserting that they are the same,
 -- or by providing a /safe/ renaming function to convert one binder to another.
@@ -354,6 +357,44 @@ unifyNameBinders (UnsafeNameBinder (UnsafeName i1)) (UnsafeNameBinder (UnsafeNam
       if i'' == i2 then UnsafeNameBinder (UnsafeName i1) else UnsafeNameBinder (UnsafeName i'')
   | otherwise = RenameLeftNameBinder $ \(UnsafeNameBinder (UnsafeName i')) ->
       if i'  == i1 then UnsafeNameBinder (UnsafeName i2) else UnsafeNameBinder (UnsafeName i')
+
+unsafeMergeUnifyBinders :: UnifyNameBinders binder a a' a'' -> UnifyNameBinders binder b b' b'' -> UnifyNameBinders binder c c' c''
+unsafeMergeUnifyBinders = \case
+  SameNameBinders -> unsafeCoerce
+  u@(RenameLeftNameBinder f) -> \case
+    SameNameBinders -> unsafeCoerce u
+    RenameLeftNameBinder g -> RenameLeftNameBinder (unsafeCoerce f . unsafeCoerce g)
+    RenameRightNameBinder g -> RenameBothBinders undefined (unsafeCoerce f) (unsafeCoerce g)
+    RenameBothBinders _ f' g -> RenameBothBinders undefined (unsafeCoerce f . unsafeCoerce f') (unsafeCoerce g)
+    NotUnifiable _ _ -> NotUnifiable undefined undefined
+  u@(RenameRightNameBinder f) -> \case
+    SameNameBinders -> unsafeCoerce u
+    RenameLeftNameBinder g -> RenameBothBinders undefined (unsafeCoerce f) (unsafeCoerce g)
+    RenameRightNameBinder g -> RenameRightNameBinder (unsafeCoerce f . unsafeCoerce g)
+    RenameBothBinders _ g f' -> RenameBothBinders undefined (unsafeCoerce g) (unsafeCoerce f . unsafeCoerce f')
+    NotUnifiable _ _ -> NotUnifiable undefined undefined
+  u@(RenameBothBinders _ f g) -> \case
+    SameNameBinders -> unsafeCoerce u
+    RenameLeftNameBinder f' -> RenameBothBinders undefined (unsafeCoerce f . unsafeCoerce f') (unsafeCoerce g)
+    RenameRightNameBinder g' -> RenameBothBinders undefined (unsafeCoerce f) (unsafeCoerce g . unsafeCoerce g')
+    RenameBothBinders _ f' g' -> RenameBothBinders undefined (unsafeCoerce f . unsafeCoerce f') (unsafeCoerce g . unsafeCoerce g')
+    NotUnifiable _ _ -> NotUnifiable undefined undefined
+  NotUnifiable _ _ -> const (NotUnifiable undefined undefined)
+
+andThenUnifyPatterns :: (UnifiablePattern binder) => UnifyNameBinders binder n l l' -> (binder l r, binder l' r') -> UnifyNameBinders binder n r r'
+andThenUnifyPatterns u = case u of
+  SameNameBinders -> uncurry (unsafeCoerce . unifyPatterns)
+  RenameLeftNameBinder renameL -> \(l, r) ->
+    extendNameBinderRenaming renameL l $ \_renameL' l' ->
+      unsafeMergeUnifyBinders u (unifyPatterns l' r)
+  RenameRightNameBinder renameR -> \(l, r) ->
+    extendNameBinderRenaming renameR r $ \_renameR' r' ->
+      unsafeMergeUnifyBinders u (unifyPatterns l r')
+  RenameBothBinders _ renameL renameR -> \(l, r) ->
+    extendNameBinderRenaming renameL l $ \_renameL' l' ->
+      extendNameBinderRenaming renameR r $ \_renameR' r' ->
+        unsafeMergeUnifyBinders u (unifyPatterns l' r')
+  NotUnifiable{} -> const (NotUnifiable undefined undefined)
 
 data V2 (n :: S) (l :: S)
 

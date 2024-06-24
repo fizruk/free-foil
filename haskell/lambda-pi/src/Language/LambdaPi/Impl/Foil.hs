@@ -33,8 +33,7 @@
 -- 3. "Language.LambdaPi.Impl.FreeFoilTH" combines the benefits of the above, when it is possible to generate the signature automatically.
 module Language.LambdaPi.Impl.Foil where
 
-import           Control.Monad.Foil
-
+import           Control.Monad.Foil hiding (unifyPatterns)
 import           Control.Monad                   (join)
 import           Control.Monad.Foil.Relative
 import           Data.Coerce                     (coerce)
@@ -506,6 +505,7 @@ unifyPatterns (PatternVar x) (PatternVar x') cont =
       case (assertExt x, assertDistinct x) of
         (Ext, Distinct) -> Just (cont id renameR (PatternVar x))
     RenameBothBinders v2 _ _ -> absurd2 v2
+    NotUnifiable v2 _ -> absurd2 v2
 unifyPatterns (PatternPair l r) (PatternPair l' r') cont = join $
   unifyPatterns l l' $ \renameL renameL' l'' ->
     extendNameBinderRenaming renameL r $ \renameLext rext ->
