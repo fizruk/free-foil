@@ -113,11 +113,11 @@ alterNames scope names = go
         (k, r') <- go m r
         return (k, AppE l' r')
       LamE x body ->
-        case (assertExtPattern x, assertDistinctPattern x) of
+        case (assertExt x, assertDistinct x) of
           (Ext, Distinct) -> fmap (LamE x) <$>
             alterNames (extendScopePattern x scope) (namesOfPattern x ++ map sink names) n body
       PiE x a b ->
-        case (assertExtPattern x, assertDistinctPattern x) of
+        case (assertExt x, assertDistinct x) of
           (Ext, Distinct) -> do
             (m, a') <- go n a
             (k, b') <- alterNames (extendScopePattern x scope) (namesOfPattern x ++ map sink names) m b

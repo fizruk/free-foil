@@ -1,6 +1,7 @@
 {-# LANGUAGE BlockArguments        #-}
 {-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE EmptyCase             #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE KindSignatures        #-}
@@ -19,7 +20,7 @@
 -- 2. Correct capture-avoiding substitution (see 'substitute').
 -- 3. Conversion between scope-safe and raw term representation (the latter is generated via BNFC), see 'toFoilTerm' and 'fromFoilTerm'.
 -- 4. Helper functions for patterns. See 'extendScopePattern' and 'withRefreshedPattern'.
--- 5. α-equivalence checks ('alphaEquiv' and 'alphaEquivRefreshed') and α-normalization helpers ('refreshExpr').
+-- 5. \(\alpha\)-equivalence checks ('alphaEquiv' and 'alphaEquivRefreshed') and \(\alpha\)-normalization helpers ('refreshExpr').
 -- 6. Computation of weak head normal form (WHNF) and normal form (NF), see 'whnf' and 'nf'.
 -- 7. Entry point, gluing everything together. See 'defaultMain'.
 --
@@ -27,19 +28,16 @@
 --
 -- This is a baseline implementation, see other examples for partial automation:
 --
--- 1. "Language.LambdaPi.Impl.FreeFoil" allows to reuse generalized substitution and α-equivalence (and, in theory, more complicated algorithms).
+-- 1. "Language.LambdaPi.Impl.FreeFoil" allows to reuse generalized substitution and \(\alpha\)-equivalence (and, in theory, more complicated algorithms).
 -- 2. "Language.LambdaPi.Impl.FoilTH" works well with patterns and generates conversion functions and helpers for patterns.
 -- 3. "Language.LambdaPi.Impl.FreeFoilTH" combines the benefits of the above, when it is possible to generate the signature automatically.
 module Language.LambdaPi.Impl.Foil where
 
 import           Control.Monad.Foil
-
-import           Control.Monad                   (join)
 import           Control.Monad.Foil.Relative
 import           Data.Coerce                     (coerce)
 import           Data.Map                        (Map)
 import qualified Data.Map                        as Map
-import           Data.Maybe                      (fromMaybe)
 import           Data.String
 import qualified Language.LambdaPi.Syntax.Abs    as Raw
 import           Language.LambdaPi.Syntax.Layout (resolveLayout)
@@ -52,6 +50,8 @@ import           System.Exit                     (exitFailure)
 -- >>> :set -XOverloadedStrings
 -- >>> :set -XDataKinds
 -- >>> import Control.Monad.Foil
+
+-- * Scope-safe AST
 
 -- | Type of scope-safe \(\lambda\Pi\)-terms with pairs.
 data Expr n where
@@ -108,20 +108,25 @@ instance CoSinkable Pattern where
           coSinkabilityProof rename' r $ \rename'' r' ->
             cont rename'' (PatternPair l' r')
 
+  withPattern withNameBinder id' combine scope pattern cont =
+    case pattern of
+      PatternWildcard -> cont id' PatternWildcard
+      PatternVar x    -> withNameBinder scope x $ \f x' ->
+        cont f (PatternVar x')
+      PatternPair l r -> withPattern withNameBinder id' combine scope l $ \fl l' ->
+        let scope' = extendScopePattern l' scope
+        in withPattern withNameBinder id' combine scope' r $ \fr r' ->
+              cont (combine fl fr) (PatternPair l' r')
+
+instance UnifiablePattern Pattern where
+  unifyPatterns PatternWildcard PatternWildcard = SameNameBinders emptyNameBinders
+  unifyPatterns (PatternVar x) (PatternVar x') = unifyNameBinders x x'
+  unifyPatterns (PatternPair l r) (PatternPair l' r') = case (assertDistinct l, assertDistinct l') of
+    (Distinct, Distinct) -> unifyPatterns l l' `andThenUnifyPatterns` (r, r')
+  unifyPatterns _ _ = NotUnifiable
+
 instance InjectName Expr where
   injectName = VarE
-
--- | Check if a name in the extended context
--- is introduced in a pattern or comes from the outer scope @n@.
---
--- This is a generalization of 'unsinkName' to 'Pattern'.
-unsinkNamePattern
-  :: Pattern n l -> Name l -> Maybe (Name n)
-unsinkNamePattern pattern name =
-  case pattern of
-    PatternWildcard   -> Just (coerce name)
-    PatternVar binder -> unsinkName binder name
-    PatternPair l r   -> unsinkNamePattern r name >>= unsinkNamePattern l
 
 instance RelMonad Name Expr where
   rreturn = VarE
@@ -144,6 +149,8 @@ instance RelMonad Name Expr where
     SecondE t -> SecondE (rbind scope t subst)
     ProductE l r -> ProductE (rbind scope l subst) (rbind scope r subst)
     UniverseE -> UniverseE
+
+-- * Pretty-printing
 
 -- | Default way to print a name using its internal 'Id'.
 ppName :: Name n -> String
@@ -194,94 +201,7 @@ instance Sinkable Expr where
   sinkabilityProof rename (ProductE l r) = ProductE (sinkabilityProof rename l) (sinkabilityProof rename r)
   sinkabilityProof _ UniverseE = UniverseE
 
-assertExtPattern :: Pattern n l -> ExtEvidence n l
-assertExtPattern = \case
-  PatternWildcard -> Ext
-  PatternVar x -> assertExt x
-  PatternPair l r ->
-    case assertExtPattern l of
-      Ext -> case assertExtPattern r of
-        Ext -> Ext
-
-assertDistinctPattern :: Distinct n => Pattern n l -> DistinctEvidence l
-assertDistinctPattern = \case
-  PatternWildcard -> Distinct
-  PatternVar x -> assertDistinct x
-  PatternPair l r ->
-    case assertDistinctPattern l of
-      Distinct -> case assertDistinctPattern r of
-        Distinct -> Distinct
-
-namesOfPattern :: Distinct n => Pattern n l -> [Name l]
-namesOfPattern PatternWildcard = []
-namesOfPattern (PatternVar x) = [nameOf x]
-namesOfPattern (PatternPair l r) =
-  case (assertExtPattern l, assertDistinctPattern l) of
-    (Ext, Distinct) -> case (assertExtPattern r, assertDistinctPattern r) of
-       (Ext, Distinct) -> map sink (namesOfPattern l) ++ namesOfPattern r
-
--- | Extend scope with variables inside a pattern.
--- This is a more flexible version of 'extendScope'.
-extendScopePattern :: Pattern n l -> Scope n -> Scope l
-extendScopePattern = \case
-  PatternWildcard -> id
-  PatternVar binder -> extendScope binder
-  PatternPair l r -> extendScopePattern r . extendScopePattern l
-
--- | Refresh (if needed) bound variables introduced in a pattern.
--- This is a more flexible version of 'withRefreshed'.
-withFreshPattern
-  :: (Distinct o, InjectName e, Sinkable e)
-  => Scope o
-  -> Pattern n l
-  -> (forall o'. DExt o o' => (Substitution e n o -> Substitution e l o') -> Pattern o o' -> r) -> r
-withFreshPattern scope pattern cont =
-  case pattern of
-    PatternWildcard -> cont sink PatternWildcard
-    PatternVar x    -> withFresh scope $ \x' ->
-      cont (\subst -> addRename (sink subst) x (nameOf x')) (PatternVar x')
-    PatternPair l r -> withFreshPattern scope l $ \lsubst l' ->
-      let scope' = extendScopePattern l' scope
-       in withFreshPattern scope' r $ \rsubst r' ->
-            cont (rsubst . lsubst) (PatternPair l' r')
-
--- | Refresh (if needed) bound variables introduced in a pattern.
--- This is a more flexible version of 'withRefreshed'.
-withRefreshedPattern
-  :: (Distinct o, InjectName e, Sinkable e)
-  => Scope o
-  -> Pattern n l
-  -> (forall o'. DExt o o' => (Substitution e n o -> Substitution e l o') -> Pattern o o' -> r) -> r
-withRefreshedPattern scope pattern cont =
-  case pattern of
-    PatternWildcard -> cont sink PatternWildcard
-    PatternVar x    -> withRefreshed scope (nameOf x) $ \x' ->
-      cont (\subst -> addRename (sink subst) x (nameOf x')) (PatternVar x')
-    PatternPair l r -> withRefreshedPattern scope l $ \lsubst l' ->
-      let scope' = extendScopePattern l' scope
-       in withRefreshedPattern scope' r $ \rsubst r' ->
-            cont (rsubst . lsubst) (PatternPair l' r')
-
--- | Refresh (if needed) bound variables introduced in a pattern.
---
--- This is a version of 'withRefreshedPattern' that uses functional renamings instead of 'Substitution'.
-withRefreshedPattern'
-  :: (Distinct o, InjectName e, Sinkable e)
-  => Scope o
-  -> Pattern n l
-  -> (forall o'. DExt o o' => ((Name n -> e o) -> Name l -> e o') -> Pattern o o' -> r) -> r
-withRefreshedPattern' scope pattern cont =
-  case pattern of
-    PatternWildcard -> cont id PatternWildcard
-    PatternVar x    -> withRefreshed scope (nameOf x) $ \x' ->
-      let k subst name = case unsinkName x name of
-            Nothing    -> injectName (nameOf x')
-            Just name' -> sink (subst name')
-       in cont k (PatternVar x')
-    PatternPair l r -> withRefreshedPattern' scope l $ \lsubst l' ->
-      let scope' = extendScopePattern l' scope
-       in withRefreshedPattern' scope' r $ \rsubst r' ->
-            cont (rsubst . lsubst) (PatternPair l' r')
+-- * Substitution
 
 -- | Perform substitution in a \(\lambda\Pi\)-term.
 substitute :: Distinct o => Scope o -> Substitution Expr i o -> Expr i -> Expr o
@@ -328,6 +248,10 @@ substituteRefresh scope subst = \case
     ProductE l r -> ProductE (substituteRefresh scope subst l) (substituteRefresh scope subst r)
     UniverseE -> UniverseE
 
+-- * Conversion
+
+-- ** From raw to foil
+
 -- | Convert a raw pattern into a scope-safe one.
 toFoilPattern
   :: Distinct n
@@ -347,6 +271,50 @@ toFoilPattern scope env pattern cont =
         let scope' = extendScopePattern l' scope
          in toFoilPattern scope' env' r $ \r' env'' ->
               cont (PatternPair l' r') env''
+
+-- | Convert a raw term into a scope-safe \(\lambda\Pi\)-term.
+toFoilTerm
+  :: Distinct n
+  => Scope n                    -- ^ Target scope.
+  -> Map Raw.VarIdent (Name n)  -- ^ Mapping for variable names (to be extended with pattern).
+  -> Raw.Term                   -- ^ A raw term.
+  -> Expr n
+toFoilTerm scope env = \case
+  Raw.Var _loc x ->
+    case Map.lookup x env of
+      Just name -> VarE name
+      Nothing   -> error $ "unknown free variable: " <> show x
+
+  Raw.App _loc t1 t2 ->
+    AppE (toFoilTerm scope env t1) (toFoilTerm scope env t2)
+
+  Raw.Lam _loc pattern (Raw.AScopedTerm _loc' body) ->
+    toFoilPattern scope env pattern $ \pattern' env' ->
+      let scope' = extendScopePattern pattern' scope
+       in LamE pattern' (toFoilTerm scope' env' body)
+
+  Raw.Pi _loc pattern a (Raw.AScopedTerm _loc' b) ->
+    toFoilPattern scope env pattern $ \pattern' env' ->
+      let scope' = extendScopePattern pattern' scope
+       in PiE pattern' (toFoilTerm scope env a) (toFoilTerm scope' env' b)
+
+  Raw.Pair _loc t1 t2 ->
+    PairE (toFoilTerm scope env t1) (toFoilTerm scope env t2)
+  Raw.First _loc t ->
+    FirstE (toFoilTerm scope env t)
+  Raw.Second _loc t ->
+    SecondE (toFoilTerm scope env t)
+
+  Raw.Product _loc t1 t2 ->
+    ProductE (toFoilTerm scope env t1) (toFoilTerm scope env t2)
+
+  Raw.Universe _loc -> UniverseE
+
+-- | Convert a raw term into a closed scope-safe term.
+toFoilTermClosed :: Raw.Term -> Expr VoidS
+toFoilTermClosed = toFoilTerm emptyScope Map.empty
+
+-- ** From foil to raw
 
 -- | Convert a scope-safe pattern into a raw pattern.
 fromFoilPattern
@@ -438,47 +406,7 @@ fromFoilTerm' = \case
     loc = error "location information is lost when converting from AST"
     nameToVarIdent name = Raw.VarIdent ("x" ++ show (nameId name))
 
--- | Convert a raw term into a scope-safe \(\lambda\Pi\)-term.
-toFoilTerm
-  :: Distinct n
-  => Scope n                    -- ^ Target scope.
-  -> Map Raw.VarIdent (Name n)  -- ^ Mapping for variable names (to be extended with pattern).
-  -> Raw.Term                   -- ^ A raw term.
-  -> Expr n
-toFoilTerm scope env = \case
-  Raw.Var _loc x ->
-    case Map.lookup x env of
-      Just name -> VarE name
-      Nothing   -> error $ "unknown free variable: " <> show x
-
-  Raw.App _loc t1 t2 ->
-    AppE (toFoilTerm scope env t1) (toFoilTerm scope env t2)
-
-  Raw.Lam _loc pattern (Raw.AScopedTerm _loc' body) ->
-    toFoilPattern scope env pattern $ \pattern' env' ->
-      let scope' = extendScopePattern pattern' scope
-       in LamE pattern' (toFoilTerm scope' env' body)
-
-  Raw.Pi _loc pattern a (Raw.AScopedTerm _loc' b) ->
-    toFoilPattern scope env pattern $ \pattern' env' ->
-      let scope' = extendScopePattern pattern' scope
-       in PiE pattern' (toFoilTerm scope env a) (toFoilTerm scope' env' b)
-
-  Raw.Pair _loc t1 t2 ->
-    PairE (toFoilTerm scope env t1) (toFoilTerm scope env t2)
-  Raw.First _loc t ->
-    FirstE (toFoilTerm scope env t)
-  Raw.Second _loc t ->
-    SecondE (toFoilTerm scope env t)
-
-  Raw.Product _loc t1 t2 ->
-    ProductE (toFoilTerm scope env t1) (toFoilTerm scope env t2)
-
-  Raw.Universe _loc -> UniverseE
-
--- | Convert a raw term into a closed scope-safe term.
-toFoilTermClosed :: Raw.Term -> Expr VoidS
-toFoilTermClosed = toFoilTerm emptyScope Map.empty
+-- * Evaluation
 
 -- | Match a pattern against an expression.
 matchPattern :: Pattern n l -> Expr n -> Substitution Expr l n
@@ -536,6 +464,8 @@ whnf scope = \case
       t'         -> SecondE t'
   t -> t
 
+-- * \(\alpha\)-equivalence
+
 -- | Normalize all binder identifiers in an expression.
 refreshExpr :: Distinct n => Scope n -> Expr n -> Expr n
 refreshExpr scope = substituteRefresh scope identitySubst
@@ -575,46 +505,46 @@ unsafeEqExpr e1 e2 = case (e1, e2) of
   (UniverseE, UniverseE) -> True
   _ -> False
 
-unifyPatterns
-  :: Distinct n
-  => Pattern n l
-  -> Pattern n r
-  -> (forall lr. DExt n lr => (NameBinder n l -> NameBinder n lr) -> (NameBinder n r -> NameBinder n lr) -> Pattern n lr -> result)
-  -> Maybe result
-unifyPatterns PatternWildcard PatternWildcard cont =
-  Just (cont id id PatternWildcard)
-unifyPatterns (PatternVar x) (PatternVar x') cont =
-  case unifyNameBinders x x' of
-    SameNameBinders ->
-      case assertDistinct x of
-        Distinct -> case assertExt x of
-          Ext -> Just (cont id id (PatternVar x))
-    RenameLeftNameBinder renameL ->
-      case (assertExt x', assertDistinct x') of
-        (Ext, Distinct) -> Just (cont renameL id (PatternVar x'))
-    RenameRightNameBinder renameR ->
-      case (assertExt x, assertDistinct x) of
-        (Ext, Distinct) -> Just (cont id renameR (PatternVar x))
-unifyPatterns (PatternPair l r) (PatternPair l' r') cont = join $
-  unifyPatterns l l' $ \renameL renameL' l'' ->
-    extendNameBinderRenaming renameL r $ \renameLext rext ->
-      extendNameBinderRenaming renameL' r' $ \renameL'ext r'ext ->
-        unifyPatterns rext r'ext $ \renameR renameR' r'' ->
-          let rename = renameL `composeNameBinderRenamings` (renameR . renameLext)
-              rename' = renameL' `composeNameBinderRenamings` (renameR' . renameL'ext)
-           in cont rename rename' (PatternPair l'' r'')
-unifyPatterns _ _ _ = Nothing
-
+-- | \(\alpha\)-equivalence check for two terms in one scope
+-- via unification of bound variables (via 'unifyNameBinders').
+--
+-- Compared to 'alphaEquivRefreshed', this function might skip unnecessary
+-- changes of bound variables when both binders in two matching scoped terms coincide.
 alphaEquiv :: Distinct n => Scope n -> Expr n -> Expr n -> Bool
 alphaEquiv scope e1 e2 = case (e1, e2) of
   (VarE x, VarE x') -> x == coerce x'
   (AppE t1 t2, AppE t1' t2') -> alphaEquiv scope t1 t1' && alphaEquiv scope t2 t2'
-  (LamE x body, LamE x' body') -> fromMaybe False $ unifyPatterns x x' $ \renameL renameR x'' ->
-    let scope' = extendScopePattern x'' scope
-     in alphaEquiv scope' (liftRM scope' (fromNameBinderRenaming renameL) body) (liftRM scope' (fromNameBinderRenaming renameR) body')
-  (PiE x a b, PiE x' a' b') -> fromMaybe False $ unifyPatterns x x' $ \renameL renameR x'' ->
-    let scope' = extendScopePattern x'' scope
-     in alphaEquiv scope a a' && alphaEquiv scope' (liftRM scope' (fromNameBinderRenaming renameL) b) (liftRM scope' (fromNameBinderRenaming renameR) b')
+  (LamE x body, LamE x' body') -> case unifyPatterns x x' of
+    SameNameBinders z    -> case assertDistinct z of
+      Distinct -> alphaEquiv (extendScopePattern z scope) body body'
+    RenameLeftNameBinder z renameL -> case assertDistinct z of
+      Distinct ->
+        let scope' = extendScopePattern z scope
+        in alphaEquiv scope' (liftRM scope' (fromNameBinderRenaming renameL) body) body'
+    RenameRightNameBinder z renameR -> case assertDistinct z of
+      Distinct ->
+        let scope' = extendScopePattern z scope
+        in alphaEquiv scope' body (liftRM scope' (fromNameBinderRenaming renameR) body')
+    RenameBothBinders z renameL renameR -> case assertDistinct z of
+      Distinct ->
+        let scope' = extendScopePattern z scope
+        in alphaEquiv scope' (liftRM scope' (fromNameBinderRenaming renameL) body) (liftRM scope' (fromNameBinderRenaming renameR) body')
+    NotUnifiable -> False
+  (PiE x a b, PiE x' a' b') -> alphaEquiv scope a a' && case unifyPatterns x x' of
+    SameNameBinders z    -> case assertDistinct z of Distinct -> alphaEquiv (extendScopePattern z scope) b b'
+    RenameLeftNameBinder z renameL -> case assertDistinct z of
+      Distinct ->
+        let scope' = extendScopePattern z scope
+        in alphaEquiv scope' (liftRM scope' (fromNameBinderRenaming renameL) b) b'
+    RenameRightNameBinder z renameR -> case assertDistinct z of
+      Distinct ->
+        let scope' = extendScopePattern z scope
+        in alphaEquiv scope' b (liftRM scope' (fromNameBinderRenaming renameR) b')
+    RenameBothBinders z renameL renameR -> case assertDistinct z of
+      Distinct ->
+        let scope' = extendScopePattern z scope
+        in alphaEquiv scope' (liftRM scope' (fromNameBinderRenaming renameL) b) (liftRM scope' (fromNameBinderRenaming renameR) b')
+    NotUnifiable -> False
   (PairE l r, PairE l' r') -> alphaEquiv scope l l' && alphaEquiv scope r r'
   (FirstE t, FirstE t') -> alphaEquiv scope t t'
   (SecondE t, SecondE t') -> alphaEquiv scope t t'
@@ -622,7 +552,9 @@ alphaEquiv scope e1 e2 = case (e1, e2) of
   (UniverseE, UniverseE) -> True
   _ -> False
 
--- | Interpret a λΠ command.
+-- * Interpreter
+
+-- | Interpret a \(\lambda\Pi\) command.
 interpretCommand :: Raw.Command -> IO ()
 interpretCommand (Raw.CommandCompute _loc term _type) =
   putStrLn ("  ↦ " ++ printExpr (whnf emptyScope (toFoilTerm emptyScope Map.empty term)))
@@ -630,12 +562,12 @@ interpretCommand (Raw.CommandCompute _loc term _type) =
 interpretCommand (Raw.CommandCheck _loc _term _type) =
   putStrLn "Not yet implemented"
 
--- | Interpret a λΠ program.
+-- | Interpret a \(\lambda\Pi\) program.
 interpretProgram :: Raw.Program -> IO ()
 interpretProgram (Raw.AProgram _loc typedTerms) = mapM_ interpretCommand typedTerms
 
 -- | Default interpreter program.
--- Reads a λΠ program from the standard input and runs the commands.
+-- Reads a \(\lambda\Pi\) program from the standard input and runs the commands.
 defaultMain :: IO ()
 defaultMain = do
   input <- getContents
@@ -644,6 +576,8 @@ defaultMain = do
       putStrLn err
       exitFailure
     Right program -> interpretProgram program
+
+-- * Example terms
 
 -- | A helper for constructing \(\lambda\)-abstractions.
 lam :: Distinct n => Scope n -> (forall l. DExt n l => Scope l -> NameBinder n l -> Expr l) -> Expr n

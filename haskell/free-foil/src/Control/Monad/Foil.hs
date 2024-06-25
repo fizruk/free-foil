@@ -21,13 +21,19 @@ module Control.Monad.Foil (
   NameBinder,
   emptyScope,
   extendScope,
+  extendScopePattern,
   member,
   nameOf,
+  namesOfPattern,
   nameId,
   withFreshBinder,
   withFresh,
+  withFreshPattern,
   withRefreshed,
+  withRefreshedPattern,
+  withRefreshedPattern',
   unsinkName,
+  unsinkNamePattern,
   -- * Safe (co)sinking and renaming
   Sinkable(..),
   CoSinkable(..),
@@ -46,6 +52,13 @@ module Control.Monad.Foil (
   -- * Unification of binders
   UnifyNameBinders(..),
   unifyNameBinders,
+  andThenUnifyPatterns,
+  UnifiablePattern(..),
+  NameBinders,
+  emptyNameBinders,
+  mergeNameBinders,
+  -- ** Eliminating impossible unification
+  V2, absurd2,
   -- * Name maps
   NameMap,
   emptyNameMap,

@@ -3,7 +3,7 @@
 {-# LANGUAGE QuasiQuotes           #-}
 {-# LANGUAGE TemplateHaskellQuotes #-}
 {-# OPTIONS_GHC -fno-warn-type-defaults #-}
-module Control.Monad.Foil.TH.MkInstancesFoil (mkInstancesFoil) where
+module Control.Monad.Foil.TH.MkInstancesFoil where
 
 import           Language.Haskell.TH
 
@@ -18,25 +18,22 @@ mkInstancesFoil
   -> Name -- ^ Type name for raw patterns.
   -> Q [Dec]
 mkInstancesFoil termT nameT scopeT patternT = do
-  TyConI (DataD _ctx _name patternTVars _kind patternCons _deriv) <- reify patternT
   TyConI (DataD _ctx _name scopeTVars _kind scopeCons _deriv) <- reify scopeT
   TyConI (DataD _ctx _name termTVars _kind termCons _deriv) <- reify termT
 
-  return
+  coSinkablePatternD <- deriveCoSinkable nameT patternT
+
+  return $
     [ InstanceD Nothing [] (AppT (ConT ''Foil.Sinkable) (PeelConT foilScopeT (map (VarT . tvarName) scopeTVars)))
         [ FunD 'Foil.sinkabilityProof (map clauseScopedTerm scopeCons) ]
 
-    , InstanceD Nothing [] (AppT (ConT ''Foil.CoSinkable) (PeelConT foilPatternT (map (VarT . tvarName) patternTVars)))
-        [ FunD 'Foil.coSinkabilityProof (map clausePattern patternCons) ]
-
     , InstanceD Nothing [] (AppT (ConT ''Foil.Sinkable) (PeelConT foilTermT (map (VarT . tvarName) termTVars)))
         [ FunD 'Foil.sinkabilityProof (map clauseTerm termCons)]
-    ]
+    ] ++ coSinkablePatternD
 
   where
     foilTermT = mkName ("Foil" ++ nameBase termT)
     foilScopeT = mkName ("Foil" ++ nameBase scopeT)
-    foilPatternT = mkName ("Foil" ++ nameBase patternT)
 
     clauseScopedTerm :: Con -> Clause
     clauseScopedTerm = clauseTerm
@@ -54,7 +51,7 @@ mkInstancesFoil termT nameT scopeT patternT = do
         []
       where
         foilConName = mkName ("Foil" ++ nameBase conName)
-        rename = mkName "rename"
+        rename = mkName "_rename"
         conParamPatterns = zipWith mkConParamPattern params [1..]
         mkConParamPattern _ i = VarP (mkName ("x" ++ show i))
 
@@ -79,6 +76,23 @@ mkInstancesFoil termT nameT scopeT patternT = do
           go (i + 1) rename' (AppE p (VarE xi)) conPatterns
           where
             xi = mkName ("x" ++ show i)
+
+-- | Generate 'Foil.Sinkable' and 'Foil.CoSinkable' instances.
+deriveCoSinkable
+  :: Name -- ^ Type name for raw variable identifiers.
+  -> Name -- ^ Type name for raw patterns.
+  -> Q [Dec]
+deriveCoSinkable nameT patternT = do
+  TyConI (DataD _ctx _name patternTVars _kind patternCons _deriv) <- reify patternT
+
+  return
+    [ InstanceD Nothing [] (AppT (ConT ''Foil.CoSinkable) (PeelConT foilPatternT (map (VarT . tvarName) patternTVars)))
+        [ FunD 'Foil.coSinkabilityProof (map clausePattern patternCons)
+        , FunD 'Foil.withPattern (map clauseWithPattern patternCons) ]
+    ]
+
+  where
+    foilPatternT = mkName ("Foil" ++ nameBase patternT)
 
     clausePattern :: Con -> Clause
     clausePattern RecC{} = error "Record constructors (RecC) are not supported yet!"
@@ -111,5 +125,44 @@ mkInstancesFoil termT nameT scopeT patternT = do
             renamei = mkName ("rename" ++ show i)
         go i rename' p (_ : conPatterns) =
           go (i + 1) rename' (AppE p (VarE xi)) conPatterns
+          where
+            xi = mkName ("x" ++ show i)
+
+    clauseWithPattern :: Con -> Clause
+    clauseWithPattern RecC{} = error "Record constructors (RecC) are not supported yet!"
+    clauseWithPattern InfixC{} = error "Infix constructors (InfixC) are not supported yet!"
+    clauseWithPattern ForallC{} = error "Existential constructors (ForallC) are not supported yet!"
+    clauseWithPattern GadtC{} = error "GADT constructors (GadtC) are not supported yet!"
+    clauseWithPattern RecGadtC{} = error "Record GADT constructors (RecGadtC) are not supported yet!"
+    clauseWithPattern (NormalC conName params) =
+      Clause
+        [VarP withNameBinder, VarP id', VarP comp, VarP scope, ConP foilConName [] conParamPatterns, VarP cont]
+        (NormalB (go 1 scope (VarE id') (ConE foilConName) params))
+        []
+      where
+        foilConName = mkName ("Foil" ++ nameBase conName)
+        withNameBinder = mkName "_withNameBinder"
+        id' = mkName "id'"
+        comp = mkName "_comp"
+        scope = mkName "_scope"
+        cont = mkName "cont"
+        conParamPatterns = zipWith mkConParamPattern params [1..]
+        mkConParamPattern _ i = VarP (mkName ("x" ++ show i))
+
+        go _i _scope' rename' p [] = AppE (AppE (VarE cont) rename') p
+        go i scope' rename' p ((_bang, PeelConT tyName _tyParams) : conParams)
+          | tyName == nameT || tyName == patternT =
+              AppE
+                (foldl AppE (VarE 'Foil.withPattern) [VarE withNameBinder, VarE id', VarE comp, VarE scope', VarE xi])
+                (LamE [VarP renamei, VarP xi']
+                  (LetE [ValD (VarP scopei) (NormalB (AppE (AppE (VarE 'Foil.extendScopePattern) (VarE xi')) (VarE scope'))) []]
+                    (go (i + 1) scopei (foldl AppE (VarE comp) [rename', (VarE renamei)]) (AppE p (VarE xi')) conParams)))
+          where
+            xi = mkName ("x" ++ show i)
+            xi' = mkName ("x" ++ show i ++ "'")
+            renamei = mkName ("f" ++ show i)
+            scopei = mkName ("_scope" ++ show i)
+        go i scope' rename' p (_ : conPatterns) =
+          go (i + 1) scope' rename' (AppE p (VarE xi)) conPatterns
           where
             xi = mkName ("x" ++ show i)

@@ -13,6 +13,10 @@ check
   : Π (x : A) → A
 
 compute
+  (λ (x, ( y , z)). y) ( ( (λ a . a) , (λ b. λ a. b, λ b. λ a. a)) )
+  : λ x. x
+
+compute
   (λ x. λ y. x) y
   : Π (w : A) → B
 

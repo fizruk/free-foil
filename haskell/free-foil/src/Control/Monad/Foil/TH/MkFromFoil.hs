@@ -4,7 +4,7 @@
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE QuasiQuotes           #-}
 {-# LANGUAGE TemplateHaskellQuotes #-}
-module Control.Monad.Foil.TH.MkFromFoil (mkFromFoil) where
+module Control.Monad.Foil.TH.MkFromFoil where
 
 import           Language.Haskell.TH
 import Language.Haskell.TH.Syntax (addModFinalizer)
@@ -225,6 +225,78 @@ mkFromFoil termT nameT scopeT patternT = do
 
             mkConParamVar :: BangType -> Int -> Name
             mkConParamVar _ty i = mkName ("x" <> show i)
+        toMatch RecC{} = error "Record constructors (RecC) are not supported yet!"
+        toMatch InfixC{} = error "Infix constructors (InfixC) are not supported yet!"
+        toMatch ForallC{} = error "Existential constructors (ForallC) are not supported yet!"
+        toMatch GadtC{} = error "GADT constructors (GadtC) are not supported yet!"
+        toMatch RecGadtC{} = error "Record GADT constructors (RecGadtC) are not supported yet!"
+
+-- | Generate conversion function from raw to scope-safe pattern.
+mkFromFoilPattern
+  :: Name -- ^ Type name for raw variable identifiers.
+  -> Name -- ^ Type name for raw patterns.
+  -> Q [Dec]
+mkFromFoilPattern nameT patternT = do
+  n <- newName "n"
+  let ntype = return (VarT n)
+  l <- newName "l"
+  let ltype = return (VarT l)
+  TyConI (DataD _ctx _name patternTVars _kind patternCons _deriv) <- reify patternT
+
+  let patternParams = map (VarT . tvarName) patternTVars
+
+  fromFoilPatternSignature <-
+    SigD fromFoilPatternT <$>
+      [t| (Int -> $(return (ConT nameT)))
+          -> $(return (PeelConT foilPatternT patternParams)) $ntype $ltype
+          -> $(return (PeelConT patternT patternParams))
+        |]
+
+  addModFinalizer $ putDoc (DeclDoc fromFoilPatternT)
+    "Convert a scope-safe pattern into a raw pattern."
+
+  return
+    [ fromFoilPatternSignature
+    , fromFoilPatternBody patternCons
+    ]
+  where
+    foilPatternT = mkName ("Foil" ++ nameBase patternT)
+
+    fromFoilPatternT = mkName ("fromFoil" ++ nameBase patternT)
+
+    fromFoilPatternBody patternCons = FunD fromFoilPatternT
+      [Clause [VarP toRawIdent, VarP pattern] (NormalB (CaseE (VarE pattern) (map toMatch patternCons))) []]
+      where
+        toRawIdent = mkName "toRawIdent"
+        pattern = mkName "pattern"
+
+        toMatch (NormalC conName params) =
+          Match (ConP foilConName [] conParamPatterns) (NormalB conMatchBody) []
+          where
+            conMatchBody = go 1 (ConE conName) params
+
+            go _i p [] = p
+            go i p ((_bang, PeelConT tyName _tyParams) : conParams)
+              | tyName == nameT = go (i + 1)
+                  (AppE p (AppE (VarE toRawIdent) (AppE (VarE 'Foil.nameId) (AppE (VarE 'Foil.nameOf) (VarE xi)))))
+                  conParams
+              | tyName == patternT = go (i+1)
+                  (AppE p (foldl AppE (VarE fromFoilPatternT) [VarE toRawIdent, VarE xi]))
+                  conParams
+              where
+                xi = mkName ("x" <> show i)
+            go i p (_ : conParams) =
+              go (i + 1) (AppE p (VarE xi)) conParams
+              where
+                xi = mkName ("x" <> show i)
+
+            foilConName = mkName ("Foil" ++ nameBase conName)
+            conParamPatterns = map VarP conParamVars
+
+            conParamVars = zipWith mkConParamVar params [1..]
+
+            mkConParamVar :: BangType -> Int -> Name
+            mkConParamVar _ i = mkName ("x" <> show i)
         toMatch RecC{} = error "Record constructors (RecC) are not supported yet!"
         toMatch InfixC{} = error "Infix constructors (InfixC) are not supported yet!"
         toMatch ForallC{} = error "Existential constructors (ForallC) are not supported yet!"

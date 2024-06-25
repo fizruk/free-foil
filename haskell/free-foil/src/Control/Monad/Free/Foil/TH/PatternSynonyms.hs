@@ -6,7 +6,6 @@
 module Control.Monad.Free.Foil.TH.PatternSynonyms where
 
 import           Control.Monad              (forM_)
-import qualified Control.Monad.Foil         as Foil
 import           Control.Monad.Foil.TH.Util
 import           Control.Monad.Free.Foil
 import           Language.Haskell.TH
@@ -61,7 +60,8 @@ mkPatternSynonym signatureType scope term = \case
 
   where
     n = mkName "n"
-    termType = PeelConT ''AST [signatureType, VarT n]
+    binderT = VarT (mkName "binder")
+    termType = PeelConT ''AST [binderT, signatureType, VarT n]
     toArg = \case
       Left ((b, _), (x, _)) -> ConP 'ScopedAST [] [VarP b, VarP x]
       Right (x, _) -> VarP x
@@ -69,10 +69,10 @@ mkPatternSynonym signatureType scope term = \case
     toPatternArgType i (_bang, VarT typeName)
       | typeName == scope =
           Left
-            ( (mkName ("b" ++ show i), PeelConT ''Foil.NameBinder [VarT n, VarT l])
-            , (mkName ("x" ++ show i), PeelConT ''AST [signatureType, VarT l]))
+            ( (mkName ("b" ++ show i), foldl AppT binderT [VarT n, VarT l])
+            , (mkName ("x" ++ show i), PeelConT ''AST [binderT, signatureType, VarT l]))
       | typeName == term =
-          Right (mkName ("x" ++ show i), PeelConT ''AST [signatureType, VarT n])
+          Right (mkName ("x" ++ show i), PeelConT ''AST [binderT, signatureType, VarT n])
       where
         l = mkName ("l" ++ show i)
     toPatternArgType i (_bang, type_)
