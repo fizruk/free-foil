@@ -6,6 +6,7 @@
 module Control.Monad.Foil.TH.MkFoilData where
 
 import           Language.Haskell.TH
+import Language.Haskell.TH.Syntax (addModFinalizer)
 
 import qualified Control.Monad.Foil.Internal as Foil
 import Control.Monad.Foil.TH.Util
@@ -27,6 +28,10 @@ mkFoilData termT nameT scopeT patternT = do
   let foilTermCons = map (toTermCon termTVars n l) termCons
 
   patternD <- mkFoilPattern nameT patternT
+  addModFinalizer $ putDoc (DeclDoc foilTermT)
+    ("/Generated/ with '" ++ show 'mkFoilData ++ "'. A scope-safe version of '" ++ show termT ++ "'.")
+  addModFinalizer $ putDoc (DeclDoc foilScopeT)
+    ("/Generated/ with '" ++ show 'mkFoilData ++ "'. A scope-safe version of '" ++ show scopeT ++ "'.")
   return $
     [ DataD [] foilTermT (termTVars ++ [KindedTV n BndrReq (PromotedT ''Foil.S)]) Nothing foilTermCons []
     , DataD [] foilScopeT (scopeTVars ++ [KindedTV n BndrReq (PromotedT ''Foil.S)]) Nothing foilScopeCons []
@@ -74,6 +79,8 @@ mkFoilPattern nameT patternT = do
 
   foilPatternCons <- mapM (toPatternCon patternTVars n) patternCons
 
+  addModFinalizer $ putDoc (DeclDoc foilPatternT)
+    ("/Generated/ with '" ++ show 'mkFoilPattern ++ "'. A scope-safe version of '" ++ show patternT ++ "'.")
   return
     [ DataD [] foilPatternT (patternTVars ++ [KindedTV n BndrReq (PromotedT ''Foil.S), KindedTV l BndrReq (PromotedT ''Foil.S)]) Nothing foilPatternCons []
     ]
@@ -90,6 +97,7 @@ mkFoilPattern nameT patternT = do
     toPatternCon tvars n (NormalC conName params) = do
       (lastScopeName, foilParams) <- toPatternConParams 1 n params
       let foilConName = mkName ("Foil" ++ nameBase conName)
+      addModFinalizer $ putDoc (DeclDoc foilConName) ("Corresponds to '" ++ show conName ++ "'.")
       return (GadtC [foilConName] foilParams (PeelConT foilPatternT (map (VarT . tvarName) tvars ++ [VarT n, VarT lastScopeName])))
       where
         -- | Process type parameters of a pattern,

@@ -57,12 +57,12 @@ mkFromFoil termT nameT scopeT patternT = do
           -> $rtype
         |]
 
-  addModFinalizer $ putDoc (DeclDoc fromFoilTermT)
-    "Convert a scope-safe term into a raw term."
-  addModFinalizer $ putDoc (DeclDoc fromFoilPatternT)
-    "Convert a scope-safe pattern into a raw pattern."
-  addModFinalizer $ putDoc (DeclDoc fromFoilScopedT)
-    "Convert a scope-safe scoped term into a raw scoped term."
+  addModFinalizer $ putDoc (DeclDoc fromFoilTermT) $
+    "/Generated/ with '" ++ show 'mkFromFoil ++ "'. Convert a scope-safe term into a raw term."
+  addModFinalizer $ putDoc (DeclDoc fromFoilPatternT) $
+    "/Generated/ with '" ++ show 'mkFromFoil ++ "'. Convert a scope-safe pattern into a raw pattern."
+  addModFinalizer $ putDoc (DeclDoc fromFoilScopedT) $
+    "/Generated/ with '" ++ show 'mkFromFoil ++ "'. Convert a scope-safe scoped term into a raw scoped term."
 
   return
     [ fromFoilTermSignature
@@ -252,8 +252,8 @@ mkFromFoilPattern nameT patternT = do
           -> $(return (PeelConT patternT patternParams))
         |]
 
-  addModFinalizer $ putDoc (DeclDoc fromFoilPatternT)
-    "Convert a scope-safe pattern into a raw pattern."
+  addModFinalizer $ putDoc (DeclDoc fromFoilPatternT) $
+    "/Generated/ with '" ++ show 'mkFromFoilPattern ++ "'. Convert a scope-safe pattern into a raw pattern."
 
   return
     [ fromFoilPatternSignature

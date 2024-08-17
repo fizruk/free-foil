@@ -55,8 +55,10 @@ mkExtendScopeFoilPattern nameT patternT = do
   idfun <- [e| id |]
   extendScopeFun <- [e| Foil.extendScope |]
 
-  addModFinalizer $ putDoc (DeclDoc extendScopePatternFunName)
-    "Extend a scope with the names bound by the given pattern.\nThis is a more flexible version of 'Control.Monad.Foil.extendScope'."
+  addModFinalizer $ putDoc (DeclDoc extendScopePatternFunName) $ unlines
+    [ "/Generated/ with '" ++ show 'mkExtendScopeFoilPattern ++ "'."
+    , "Extend a scope with the names bound by the given pattern."
+    , "This is a more flexible version of '" ++ show 'Foil.extendScope ++ "'." ]
 
   return
     [ extendScopePatternSignature
@@ -144,8 +146,10 @@ mkWithRefreshedFoilPattern nameT patternT = do
   withRefreshedFun <- [e| Foil.withRefreshed |]
   extendScopeFun <- [e| Foil.extendScope |]
 
-  addModFinalizer $ putDoc (DeclDoc withRefreshedFoilPatternFunName)
-    "Refresh (if needed) bound variables introduced in a pattern.\nThis is a more flexible version of 'Control.Monad.Foil.withRefreshed'."
+  addModFinalizer $ putDoc (DeclDoc withRefreshedFoilPatternFunName) $ unlines
+    [ "/Generated/ with '" ++ show 'mkWithRefreshedFoilPattern ++ "'."
+    , "Refresh (if needed) bound variables introduced in a pattern."
+    , "This is a more flexible version of '" ++ show 'Foil.withRefreshed ++ "'." ]
 
   return
     [ withRefreshedFoilPatternSignature
@@ -258,12 +262,12 @@ mkToFoilTerm termT nameT scopeT patternT = do
           -> $rtype
         |]
 
-  addModFinalizer $ putDoc (DeclDoc toFoilTermT)
-    "Convert a raw term into a scope-safe term."
-  addModFinalizer $ putDoc (DeclDoc toFoilPatternT)
-    "Convert a raw pattern into a scope-safe pattern."
-  addModFinalizer $ putDoc (DeclDoc toFoilScopedT)
-    "Convert a raw scoped term into a scope-safe scoped term."
+  addModFinalizer $ putDoc (DeclDoc toFoilTermT) $
+    "/Generated/ with '" ++ show 'mkToFoilTerm ++ "'. Convert a raw term into a scope-safe term."
+  addModFinalizer $ putDoc (DeclDoc toFoilPatternT) $
+    "/Generated/ with '" ++ show 'mkToFoilTerm ++ "'. Convert a raw pattern into a scope-safe pattern."
+  addModFinalizer $ putDoc (DeclDoc toFoilScopedT) $
+    "/Generated/ with '" ++ show 'mkToFoilTerm ++ "'. Convert a raw scoped term into a scope-safe scoped term."
 
   return
     [ toFoilTermSignature
@@ -479,8 +483,8 @@ mkToFoilPattern nameT patternT = do
           -> $rtype
         |]
 
-  addModFinalizer $ putDoc (DeclDoc toFoilPatternT)
-    "Convert a raw pattern into a scope-safe pattern."
+  addModFinalizer $ putDoc (DeclDoc toFoilPatternT) $
+    "/Generated/ with '" ++ show 'mkToFoilPattern ++ "'. Convert a raw pattern into a scope-safe pattern."
 
   return
     [ toFoilPatternSignature
