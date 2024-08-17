@@ -568,6 +568,7 @@ class CoSinkable pattern => UnifiablePattern pattern where
 -- By default, 'Eq' instance is used, but it may be useful to ignore
 -- some data in pattens (such as location annotations).
 class UnifiableInPattern a where
+  -- | Unify non-binding components of a pattern.
   unifyInPattern :: a -> a -> Bool
   default unifyInPattern :: Eq a => a -> a -> Bool
   unifyInPattern = (==)
@@ -689,14 +690,16 @@ class CoSinkable (pattern :: S -> S -> Type) where
     -> r
 
   -- | Generalized processing of a pattern.
+  --
+  -- You can see 'withPattern' as a CPS-style traversal over the binders in a pattern.
   withPattern
     :: Distinct o
     => (forall x y z r'. Distinct z => Scope z -> NameBinder x y -> (forall z'. DExt z z' => f x y z z' -> NameBinder z z' -> r') -> r')
-    -- ^ Processing of a single 'NameBinder'.
+    -- ^ Processing of a single 'NameBinder', this will be applied to each binder in a pattern.
     -> (forall x z z'. DExt z z' => f x x z z')
-    -- ^ Result in case no binders are present.
+    -- ^ Result in case no binders are present. This can be seen as scope-indexed 'mempty'.
     -> (forall x y y' z z' z''. (DExt z z', DExt z' z'') => f x y z z' -> f y y' z' z'' -> f x y' z z'')
-    -- ^ Composition of results for nested binders/patterns.
+    -- ^ Composition of results for nested binders/patterns. This can be seen as scope-indexed 'mappend'.
     -> Scope o
     -- ^ Ambient scope.
     -> pattern n l
