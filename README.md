@@ -15,7 +15,7 @@ Generating Efficient and Scope-Safe Abstract Syntax with Free (Scoped) Monads an
 This project provides an implementation of the efficient scope-safe representation
 for syntax with binders (think λ-abstraction, let-binding, for-loop, etc.).
 The underlying representation is based on the IFL 2022 paper by Maclaurin, Radul, and Paszke [«The Foil: Capture-Avoiding Substitution With No Sharp Edges»](https://doi.org/10.1145/3587216.3587224)[^1]. This project extends the foil with patterns, as well as two
-techniques for free generation of the foil. The details are presented in the paper [«Free Foil: Generating Efficient and Scope-Safe Abstract Syntax»](https://arxiv.org/abs/2405.16384)[^2]. Also see the [slides from the ICCQ 2024 presentation](https://fizruk.github.io/files/iccq-2024-free-foil-slides.pdf).
+techniques for free generation of the foil. The details are presented in the paper [«Free Foil: Generating Efficient and Scope-Safe Abstract Syntax»](https://arxiv.org/abs/2405.16384)[^2]. Also see the [slides from the ICCQ 2024 presentation](https://fizruk.github.io/files/iccq-2024-free-foil-slides.pdf) (also [video](https://youtu.be/06gudJKXpkk?si=FbR03r-bngdZUdlf)).
 
 In brief, following the paper:
 
@@ -25,12 +25,12 @@ In brief, following the paper:
 
 Additionally, we implement:
 
-1. Tempalte Haskell generation for the free foil.
+1. Template Haskell generation for the free foil.
 2. Generalized support for patterns using `withPattern` method (currently in `CoSinkable`).
 3. Generic α-equivalence for the free foil and α-equivalence support for patterns using `UnifiablePattern` typeclass.
 4. Generic conversion functions for the free foil.
 
-In addition to this repository, we have benchmarks the foil and the free foil against each other and other implementation of λ-calculus.
+In addition to this repository, we have benchmarks for the foil and the free foil against each other and other implementation of λ-calculus.
 See [KarinaTyulebaeva/lambda-n-ways](https://github.com/KarinaTyulebaeva/lambda-n-ways), a fork of Stephanie Weirich's benchmark suite ([sweirich/lambda-n-ways](https://github.com/sweirich/lambda-n-ways)).
 
 ## Project structure
@@ -49,12 +49,13 @@ The Haskell code is organized into two packages as follows:
 
 - [`Control.Monad.Foil.TH`](https://fizruk.github.io/free-foil/haddock/free-foil-0.0.3/Control-Monad-Foil-TH.html) provides Template Haskell functions that generate scope-safe representation types together with some conversion functions and helpers for patterns. All of this is generated from a raw recursive representation of syntax, that has to be split into 4 types: type of variable identifiers, type of terms, type of scoped terms (to clearly understand which parts get under binders), and type of patterns.
 
-- [`Control.Monad.Foil.Relative`](https://fizruk.github.io/free-foil/haddock/free-foil-0.0.3/Control-Monad-Foil-Relative.html) defines a variation of a relative monad typeclass specifcially indexed by scope type variables of kind `S`. This is merely for the demonstration that term type constructors are monads relative to [`Name`](https://fizruk.github.io/free-foil/haddock/free-foil-0.0.3/Control-Monad-Foil-Internal.html#t:Name).
+- [`Control.Monad.Foil.Relative`](https://fizruk.github.io/free-foil/haddock/free-foil-0.0.3/Control-Monad-Foil-Relative.html) defines a variation of a relative monad typeclass specifically indexed by scope type variables of kind `S`. This is merely for the demonstration that term type constructors are monads relative to [`Name`](https://fizruk.github.io/free-foil/haddock/free-foil-0.0.3/Control-Monad-Foil-Internal.html#t:Name).
 
 - [`Control.Monad.Free.Foil`](https://fizruk.github.io/free-foil/haddock/free-foil-0.0.3/Control-Monad-Free-Foil.html) defines a variation of free scoped (relative) monads relying on the foil for the scope-safe efficient handling of the binders. This module also defines
 
   - generic substitution for this generic representation of syntax with binders
   - generic α-normalization and α-equivalence checks
+  - generic conversion helpers
 
 - [`Control.Monad.Free.Foil.TH`](https://fizruk.github.io/free-foil/haddock/free-foil-0.0.3/Control-Monad-Free-Foil-TH.html) provides Template Haskell functions that generate helpers specifically for free foil, including the generation of the signature bifunctor, convenient pattern synonyms, conversion helpers, and instances needed to enable general α-equivalence.
 
@@ -76,9 +77,10 @@ Scala implementation is not documented yet.
 
 In Haskell:
 
-1. We do not (yet) generate α-equivalence via Template Haskell or `GHC.Generics`. We do provide a generic α-equivalence functions for `AST sig n`, and demonstrate how to implement the check manually for λΠ-terms using the foil, but in generating this from Template Haskell or using GHC.Generics is left for future work.
-2. We do not (yet) demonstrate an implementation of the typechecker for λΠ in these representations. While it is largely straightforward the main non-trivial part is the equality for the Π-types, which relies on the α-equivalence from the previous item.
-3. We provide general support for patterns, but at the moment it does not allow terms or scoped terms inside patterns.
+1. We do not (yet) generate α-equivalence via Template Haskell or `GHC.Generics`. However, we do provide generic α-equivalence functions for `AST sig n`, and demonstrate how to implement the check manually for λΠ-terms using the foil.
+2. We do not (yet) demonstrate an implementation of the typechecker for λΠ in these representations. It should be largely straightforward, since the main non-trivial part is probably the equality for the Π-types, which relies on the α-equivalence from the previous item.
+3. We provide general support for patterns, but at the moment it feels somewhat ad hoc (pending proper generalization of patterns)
+   and also does not allow terms or scoped terms inside patterns.
    Supporting terms in patterns would be desirable to enable type annotations in patterns or things like `ViewPatterns` in Haskell.
 4. We do not (yet) provide strict versions of the foil and free foil here. The benchmarks, however, do implement these variations.
 5. We derive [`CoSinkable`](https://fizruk.github.io/free-foil/haddock/free-foil-0.0.3/Control-Monad-Foil.html#t:CoSinkable) and [`Sinkable`](https://fizruk.github.io/free-foil/haddock/free-foil-0.0.3/Control-Monad-Foil.html#t:Sinkable) instances via Template Haskell at the moment. However, a safer and more flexible derivation should be possible via `GHC.Generics`.
@@ -90,5 +92,5 @@ In Haskell:
 9. We do not (yet) provide a Church-encoded version of the free foil, which should improve its performance.
 
 [^1]: Dougal Maclaurin, Alexey Radul, and Adam Paszke. 2023. _The Foil: Capture-Avoiding Substitution With No Sharp Edges._ In Proceedings of the 34th Symposium on Implementation and Application of Functional Languages (IFL '22). Association for Computing Machinery, New York, NY, USA, Article 8, 1–10. <https://doi.org/10.1145/3587216.3587224>
-[^2]: Nikolai Kudasov, Renata Shakirova, Egor Shalagin, Karina Tyulebaeva. 2024. _Free Foil: Generating Efficient and Scope-Safe Abstract Syntax._ To appear in ICCQ 2024. <https://arxiv.org/abs/2405.16384>
+[^2]: Nikolai Kudasov, Renata Shakirova, Egor Shalagin, Karina Tyulebaeva. 2024. _Free Foil: Generating Efficient and Scope-Safe Abstract Syntax._ 4th International Conference on Code Quality (ICCQ), Innopolis, Russian Federation, 2024, pp. 1-16 <http://doi.org/10.1109/ICCQ60895.2024.10576867> (arXiv version at <https://arxiv.org/abs/2405.16384>)
 [^3]: Nikolai Kudasov. _Free Monads, Intrinsic Scoping, and Higher-Order Preunification._ To appear in TFP 2024. <https://arxiv.org/abs/2204.05653>
