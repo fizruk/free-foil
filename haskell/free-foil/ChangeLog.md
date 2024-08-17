@@ -1,5 +1,33 @@
 # CHANGELOG for `free-foil`
 
+# 0.1.0 — 2024-08-18
+
+- Generalize functions for binders, support general patterns (see [#16](https://github.com/fizruk/free-foil/pull/16))
+
+  - Add `withPattern` method to `CoSinkable`. It can be seen as a CPS-style traversal over binders in a pattern.
+    Our Template Haskell support covers generation of `withPattern`,
+    so normally the user does not have to think about it.
+
+  - Generalize many functions to work with arbitrary patterns, not just `NameBinder`:
+
+    - `withFreshPattern` — to
+    - `withRefreshedPattern` and `withRefreshedPattern'`
+    - `extendScopePattern` — extend a given scope with all binders in a given pattern
+    - `namesOfPattern` — collect all names from a pattern
+    - `unsinkNamePattern` — try to unsink names from a scope extended with binders from a given pattern
+    - `assertDistinctPattern` — establish that extended scope is distinct (if outer scope is)
+    - `assertDistinctExt` — establish that extended scope is distinct and indeed an extension
+
+  - Implement unification for patterns in `unifyPatterns`.
+    This turns out to be one of the most difficult places, especially for compound patterns.
+    Implementing patterns properly on the user side not comfortable at all!
+    Luckily, we provide useful helpers like `andThenUnifyPatterns` and `andThenUnifyNameBinders`,
+    as well as Template Haskell support to derive `UnifiablePattern`.
+
+  - Generalize Free Foil to support arbitrary patterns.
+
+  - The `Foil` and `FreeFoilTH` implementations now make use of the generalized pattern support.
+
 # 0.0.3 — 2024-06-20
 
 - Add α-equivalence checks and α-normalization (see [#12](https://github.com/fizruk/free-foil/pull/12)):
