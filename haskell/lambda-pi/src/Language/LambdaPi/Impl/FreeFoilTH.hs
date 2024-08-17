@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -77,15 +78,12 @@ deriveCoSinkable ''Raw.VarIdent ''Raw.Pattern'
 mkToFoilPattern ''Raw.VarIdent ''Raw.Pattern'
 mkFromFoilPattern ''Raw.VarIdent ''Raw.Pattern'
 
--- * User-defined code
+-- | Ignoring location information when unifying patterns.
+instance Foil.UnifiableInPattern Raw.BNFC'Position where
+  unifyInPattern _ _  = True
+deriveUnifiablePattern ''Raw.VarIdent ''Raw.Pattern'
 
-instance Foil.UnifiablePattern FoilPattern where
-  unifyPatterns (FoilPatternWildcard _loc) (FoilPatternWildcard _loc') = Foil.SameNameBinders Foil.emptyNameBinders
-  unifyPatterns (FoilPatternVar _loc x) (FoilPatternVar _loc' x') = Foil.unifyNameBinders x x'
-  unifyPatterns (FoilPatternPair _loc l r) (FoilPatternPair _loc' l' r') =
-    case (Foil.assertDistinct l, Foil.assertDistinct l') of
-      (Foil.Distinct, Foil.Distinct) -> Foil.unifyPatterns l l' `Foil.andThenUnifyPatterns` (r, r')
-  unifyPatterns _ _ = Foil.NotUnifiable
+-- * User-defined code
 
 -- | Generic annotated scope-safe \(\lambda\Pi\)-terms with patterns.
 type Term' a = AST (FoilPattern' a) (Term'Sig a)

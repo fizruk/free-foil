@@ -1,11 +1,11 @@
 {-# LANGUAGE BlockArguments             #-}
-{-# LANGUAGE LambdaCase             #-}
-{-# LANGUAGE EmptyCase             #-}
 {-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE EmptyCase                  #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE QuantifiedConstraints      #-}
 {-# LANGUAGE RankNTypes                 #-}
@@ -17,6 +17,7 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
+{-# LANGUAGE DefaultSignatures          #-}
 -- | Main definitions of the foil that can be
 -- reused for specific implementations.
 -- This is an internal module, so it also contains implementation details of the foil.
@@ -449,6 +450,14 @@ andThenUnifyPatterns
   -> UnifyNameBinders pattern n r r'
 andThenUnifyPatterns u (l, r) = unsafeMergeUnifyBinders u (unifyPatterns (unsafeCoerce l) r)
 
+-- | Chain unification of nested patterns with 'NameBinder's.
+andThenUnifyNameBinders
+  :: (UnifiablePattern pattern, Distinct l, Distinct l')
+  => UnifyNameBinders pattern n l l'    -- ^ Unifying action for some outer patterns.
+  -> (NameBinder l r, NameBinder l' r') -- ^ Two nested binders (cannot be unified directly since they extend different scopes).
+  -> UnifyNameBinders pattern n r r'
+andThenUnifyNameBinders u (l, r) = unsafeMergeUnifyBinders u (unifyNameBinders (unsafeCoerce l) r)
+
 -- | An /unordered/ collection of 'NameBinder's, that together extend scope @n@ to scope @l@.
 --
 -- For an ordered version see 'NameBinderList'.
@@ -486,7 +495,7 @@ data NameBinderList n l where
 nameBindersList :: NameBinders n l -> NameBinderList n l
 nameBindersList (UnsafeNameBinders names) = go (IntSet.toList names)
   where
-    go [] = unsafeCoerce NameBinderListEmpty
+    go []     = unsafeCoerce NameBinderListEmpty
     go (x:xs) = NameBinderListCons (UnsafeNameBinder (UnsafeName x)) (go xs)
 
 -- | Convert an ordered list of name binders into an unordered set.
@@ -494,7 +503,7 @@ fromNameBindersList :: NameBinderList n l -> NameBinders n l
 fromNameBindersList = UnsafeNameBinders . IntSet.fromList . go
   where
     go :: NameBinderList n l -> [RawName]
-    go NameBinderListEmpty = []
+    go NameBinderListEmpty                 = []
     go (NameBinderListCons binder binders) = nameId (nameOf binder) : go binders
 
 instance CoSinkable NameBinders where
@@ -555,6 +564,14 @@ class CoSinkable pattern => UnifiablePattern pattern where
   -- | Unify two patterns and decide which binders need to be renamed.
   unifyPatterns :: Distinct n => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
 
+-- | Unification of values in patterns.
+-- By default, 'Eq' instance is used, but it may be useful to ignore
+-- some data in pattens (such as location annotations).
+class UnifiableInPattern a where
+  unifyInPattern :: a -> a -> Bool
+  default unifyInPattern :: Eq a => a -> a -> Bool
+  unifyInPattern = (==)
+
 instance UnifiablePattern NameBinder where
   unifyPatterns = unifyNameBinders
 
@@ -565,7 +582,7 @@ unsafeEqPattern :: (UnifiablePattern pattern, Distinct n) => pattern n l -> patt
 unsafeEqPattern l r =
   case unifyPatterns l (unsafeCoerce r) of
     SameNameBinders{} -> True
-    _ -> False
+    _                 -> False
 
 -- * Safe sinking
 
