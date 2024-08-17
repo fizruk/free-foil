@@ -3,9 +3,10 @@
 {-# LANGUAGE TemplateHaskellQuotes #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
-module Control.Monad.Foil.TH.MkFoilData (mkFoilData) where
+module Control.Monad.Foil.TH.MkFoilData where
 
 import           Language.Haskell.TH
+import Language.Haskell.TH.Syntax (addModFinalizer)
 
 import qualified Control.Monad.Foil.Internal as Foil
 import Control.Monad.Foil.TH.Util
@@ -20,22 +21,70 @@ mkFoilData
 mkFoilData termT nameT scopeT patternT = do
   n <- newName "n"
   l <- newName "l"
-  TyConI (DataD _ctx _name patternTVars _kind patternCons _deriv) <- reify patternT
   TyConI (DataD _ctx _name scopeTVars _kind scopeCons _deriv) <- reify scopeT
   TyConI (DataD _ctx _name termTVars _kind termCons _deriv) <- reify termT
 
-  foilPatternCons <- mapM (toPatternCon patternTVars n) patternCons
   let foilScopeCons = map (toScopeCon scopeTVars n) scopeCons
   let foilTermCons = map (toTermCon termTVars n l) termCons
 
-  return
+  patternD <- mkFoilPattern nameT patternT
+  addModFinalizer $ putDoc (DeclDoc foilTermT)
+    ("/Generated/ with '" ++ show 'mkFoilData ++ "'. A scope-safe version of '" ++ show termT ++ "'.")
+  addModFinalizer $ putDoc (DeclDoc foilScopeT)
+    ("/Generated/ with '" ++ show 'mkFoilData ++ "'. A scope-safe version of '" ++ show scopeT ++ "'.")
+  return $
     [ DataD [] foilTermT (termTVars ++ [KindedTV n BndrReq (PromotedT ''Foil.S)]) Nothing foilTermCons []
     , DataD [] foilScopeT (scopeTVars ++ [KindedTV n BndrReq (PromotedT ''Foil.S)]) Nothing foilScopeCons []
-    , DataD [] foilPatternT (patternTVars ++ [KindedTV n BndrReq (PromotedT ''Foil.S), KindedTV l BndrReq (PromotedT ''Foil.S)]) Nothing foilPatternCons []
-    ]
+    ] ++ patternD
   where
     foilTermT = mkName ("Foil" ++ nameBase termT)
     foilScopeT = mkName ("Foil" ++ nameBase scopeT)
+    foilPatternT = mkName ("Foil" ++ nameBase patternT)
+
+    -- | Convert a constructor declaration for a raw scoped term
+    -- into a constructor for the scope-safe scoped term.
+    toScopeCon :: [TyVarBndr BndrVis] -> Name -> Con -> Con
+    toScopeCon _tvars n (NormalC conName params) =
+      NormalC foilConName (map toScopeParam params)
+      where
+        foilConName = mkName ("Foil" ++ nameBase conName)
+        toScopeParam (_bang, PeelConT tyName tyParams)
+          | tyName == termT = (_bang, PeelConT foilTermT (tyParams ++ [VarT n]))
+        toScopeParam _bangType = _bangType
+
+    -- | Convert a constructor declaration for a raw term
+    -- into a constructor for the scope-safe term.
+    toTermCon :: [TyVarBndr BndrVis] -> Name -> Name -> Con -> Con
+    toTermCon tvars n l (NormalC conName params) =
+      GadtC [foilConName] (map toTermParam params) (PeelConT foilTermT (map (VarT . tvarName) tvars ++ [VarT n]))
+      where
+        foilNames = [n, l]
+        foilConName = mkName ("Foil" ++ nameBase conName)
+        toTermParam (_bang, PeelConT tyName tyParams)
+          | tyName == patternT = (_bang, PeelConT foilPatternT (tyParams ++ map VarT foilNames))
+          | tyName == nameT = (_bang, AppT (ConT ''Foil.Name) (VarT n))
+          | tyName == scopeT = (_bang, PeelConT foilScopeT (tyParams ++ [VarT l]))
+          | tyName == termT = (_bang, PeelConT foilTermT (tyParams ++ [VarT n]))
+        toTermParam _bangType = _bangType
+
+-- | Generate just the scope-safe patterns.
+mkFoilPattern
+  :: Name -- ^ Type name for raw variable identifiers.
+  -> Name -- ^ Type name for raw patterns.
+  -> Q [Dec]
+mkFoilPattern nameT patternT = do
+  n <- newName "n"
+  l <- newName "l"
+  TyConI (DataD _ctx _name patternTVars _kind patternCons _deriv) <- reify patternT
+
+  foilPatternCons <- mapM (toPatternCon patternTVars n) patternCons
+
+  addModFinalizer $ putDoc (DeclDoc foilPatternT)
+    ("/Generated/ with '" ++ show 'mkFoilPattern ++ "'. A scope-safe version of '" ++ show patternT ++ "'.")
+  return
+    [ DataD [] foilPatternT (patternTVars ++ [KindedTV n BndrReq (PromotedT ''Foil.S), KindedTV l BndrReq (PromotedT ''Foil.S)]) Nothing foilPatternCons []
+    ]
+  where
     foilPatternT = mkName ("Foil" ++ nameBase patternT)
 
     -- | Convert a constructor declaration for a raw pattern type
@@ -48,6 +97,7 @@ mkFoilData termT nameT scopeT patternT = do
     toPatternCon tvars n (NormalC conName params) = do
       (lastScopeName, foilParams) <- toPatternConParams 1 n params
       let foilConName = mkName ("Foil" ++ nameBase conName)
+      addModFinalizer $ putDoc (DeclDoc foilConName) ("Corresponds to '" ++ show conName ++ "'.")
       return (GadtC [foilConName] foilParams (PeelConT foilPatternT (map (VarT . tvarName) tvars ++ [VarT n, VarT lastScopeName])))
       where
         -- | Process type parameters of a pattern,
@@ -79,29 +129,3 @@ mkFoilData termT nameT scopeT patternT = do
             _ -> do
               (l, conParams') <- toPatternConParams (i+1) p conParams
               return (l, param : conParams')
-
-    -- | Convert a constructor declaration for a raw scoped term
-    -- into a constructor for the scope-safe scoped term.
-    toScopeCon :: [TyVarBndr BndrVis] -> Name -> Con -> Con
-    toScopeCon _tvars n (NormalC conName params) =
-      NormalC foilConName (map toScopeParam params)
-      where
-        foilConName = mkName ("Foil" ++ nameBase conName)
-        toScopeParam (_bang, PeelConT tyName tyParams)
-          | tyName == termT = (_bang, PeelConT foilTermT (tyParams ++ [VarT n]))
-        toScopeParam _bangType = _bangType
-
-    -- | Convert a constructor declaration for a raw term
-    -- into a constructor for the scope-safe term.
-    toTermCon :: [TyVarBndr BndrVis] -> Name -> Name -> Con -> Con
-    toTermCon tvars n l (NormalC conName params) =
-      GadtC [foilConName] (map toTermParam params) (PeelConT foilTermT (map (VarT . tvarName) tvars ++ [VarT n]))
-      where
-        foilNames = [n, l]
-        foilConName = mkName ("Foil" ++ nameBase conName)
-        toTermParam (_bang, PeelConT tyName tyParams)
-          | tyName == patternT = (_bang, PeelConT foilPatternT (tyParams ++ map VarT foilNames))
-          | tyName == nameT = (_bang, AppT (ConT ''Foil.Name) (VarT n))
-          | tyName == scopeT = (_bang, PeelConT foilScopeT (tyParams ++ [VarT l]))
-          | tyName == termT = (_bang, PeelConT foilTermT (tyParams ++ [VarT n]))
-        toTermParam _bangType = _bangType

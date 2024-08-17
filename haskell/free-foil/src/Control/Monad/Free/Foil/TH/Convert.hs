@@ -61,7 +61,7 @@ mkConvertToSig termT nameT scopeT patternT = do
     [t| $termType -> Either $nameType ($signatureType ($patternType, $scopeType) $termType) |]
 
   addModFinalizer $ putDoc (DeclDoc convertTermToSigT)
-    ("/Generated/ with '" ++ show 'mkConvertToFreeFoil ++ "'. Perform one step of converting '" ++ show termT ++ "', peeling off one node of type '" ++ show signatureT ++ "'.")
+    ("/Generated/ with '" ++ show 'mkConvertToSig ++ "'. Perform one step of converting '" ++ show termT ++ "', peeling off one node of type '" ++ show signatureT ++ "'.")
   return
     [ SigD convertTermToSigT convertTermToSigClausesType
     , FunD convertTermToSigT convertTermToSigClauses
@@ -130,7 +130,7 @@ mkConvertFromSig termT nameT scopeT patternT = do
     [t| $signatureType ($patternType, $scopeType) $termType -> $termType |]
 
   addModFinalizer $ putDoc (DeclDoc convertTermFromSigT)
-    ("/Generated/ with '" ++ show 'mkConvertToFreeFoil ++ "'. Perform one step of converting '" ++ show termT ++ "', peeling off one node of type '" ++ show signatureT ++ "'.")
+    ("/Generated/ with '" ++ show 'mkConvertFromSig ++ "'. Perform one step of converting '" ++ show termT ++ "', peeling off one node of type '" ++ show signatureT ++ "'.")
   return
     [ SigD convertTermFromSigT convertTermFromSigClausesType
     , FunD convertTermFromSigT convertTermFromSigClauses
