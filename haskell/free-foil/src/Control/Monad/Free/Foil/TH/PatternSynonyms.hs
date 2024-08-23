@@ -1,13 +1,14 @@
-{-# LANGUAGE LambdaCase      #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# OPTIONS_GHC -fno-warn-type-defaults      #-}
-{-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE ViewPatterns    #-}
+{-# LANGUAGE PatternSynonyms       #-}
+{-# LANGUAGE TemplateHaskellQuotes #-}
+{-# LANGUAGE ViewPatterns          #-}
 module Control.Monad.Free.Foil.TH.PatternSynonyms where
 
 import           Control.Monad              (forM_)
 import           Control.Monad.Foil.TH.Util
 import           Control.Monad.Free.Foil
+import           Data.List                  (nub)
 import           Language.Haskell.TH
 import           Language.Haskell.TH.Syntax
 
@@ -20,10 +21,12 @@ mkPatternSynonyms signatureT = do
 
   case reverse signatureTVars of
     (tvarName -> term) : (tvarName -> scope) : (reverse -> params) -> do
-      concat <$> mapM (mkPatternSynonym (PeelConT signatureT (map (VarT . tvarName) params)) scope term) signatureCons
+      (names, decs) <- unzip . concat <$> mapM (mkPatternSynonym (PeelConT signatureT (map (VarT . tvarName) params)) scope term) signatureCons
+      return $ decs ++
+        [ PragmaD (CompleteP ('Var : nub names) Nothing)]
     _ -> fail "cannot generate pattern synonyms"
 
-mkPatternSynonym :: Type -> Name -> Name -> Con -> Q [Dec]
+mkPatternSynonym :: Type -> Name -> Name -> Con -> Q [(Name, Dec)]
 mkPatternSynonym signatureType scope term = \case
   NormalC conName types -> mkPatternSynonym signatureType scope term
     (GadtC [conName] types (AppT (AppT signatureType (VarT scope)) (VarT term)))
@@ -33,9 +36,9 @@ mkPatternSynonym signatureType scope term = \case
   InfixC l conName r -> mkPatternSynonym signatureType scope term (NormalC conName [l, r])
 
   ForallC params ctx con -> do
-    [ PatSynSigD patName patType, patD ] <- mkPatternSynonym signatureType scope term con
+    [ (name, PatSynSigD patName patType), patD ] <- mkPatternSynonym signatureType scope term con
     return
-      [ PatSynSigD patName (ForallT params ctx patType)
+      [ (name, PatSynSigD patName (ForallT params ctx patType))
       , patD
       ]
 
@@ -49,8 +52,8 @@ mkPatternSynonym signatureType scope term = \case
       addModFinalizer $ putDoc (DeclDoc (mkPatternName conName))
         ("/Generated/ with '" ++ show 'mkPatternSynonyms ++ "'. Pattern synonym for an '" ++ show ''AST ++ "' node of type '" ++ show conName ++ "'.")
     return $ concat
-      [ [ PatSynSigD patternName (foldr (AppT . AppT ArrowT) termType types')
-        , PatSynD  patternName (PrefixPatSyn args) ImplBidir (ConP 'Node [] [ConP conName [] pats])
+      [ [ (patternName, PatSynSigD patternName (foldr (AppT . AppT ArrowT) termType types'))
+        , (patternName, PatSynD  patternName (PrefixPatSyn args) ImplBidir (ConP 'Node [] [ConP conName [] pats]))
         ]
       | conName <- conNames
       , let patternName = mkPatternName conName
