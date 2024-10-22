@@ -89,9 +89,40 @@ mkSignature termT nameT scopeT patternT = do
           where
             k (x, y) = (name, x, y)
 
-        toSignatureParam (bang_, PeelConT typeName _typeParams)
+        toSignatureParam (_bang, PeelConT typeName _typeParams)
           | typeName == nameT = fail ("variable with other stuff in constructor: " ++ show con')
           | typeName == patternT = pure Nothing -- skip binders, they will be inserted automatically with each scoped term
-          | typeName == scopeT = pure (Just (bang_, VarT scope))
-          | typeName == termT = pure (Just (bang_, VarT term))
-        toSignatureParam bt = pure (Just bt)  -- everything else remains as is
+        toSignatureParam (bang_, type_) = pure (Just (bang_, replaceScopeTermInType type_))
+
+        replaceScopeTermInType = \case
+          PeelConT typeName _typeParams
+            | typeName == scopeT -> VarT scope
+            | typeName == termT -> VarT term
+          ForallT bndrs ctx type_ -> ForallT bndrs ctx (replaceScopeTermInType type_)
+          ForallVisT bndrs type_ -> ForallVisT bndrs (replaceScopeTermInType type_)
+          AppT f x -> AppT (replaceScopeTermInType f) (replaceScopeTermInType x)
+          AppKindT f k -> AppKindT (replaceScopeTermInType f) k
+          SigT t k -> SigT (replaceScopeTermInType t) k
+          t@ConT{} -> t
+          t@VarT{} -> t
+          t@PromotedT{} -> t
+          InfixT l op r -> InfixT (replaceScopeTermInType l) op (replaceScopeTermInType r)
+          UInfixT l op r -> UInfixT (replaceScopeTermInType l) op (replaceScopeTermInType r)
+          PromotedInfixT l op r -> PromotedInfixT (replaceScopeTermInType l) op (replaceScopeTermInType r)
+          PromotedUInfixT l op r -> PromotedUInfixT (replaceScopeTermInType l) op (replaceScopeTermInType r)
+          ParensT t -> ParensT (replaceScopeTermInType t)
+          t@TupleT{} -> t
+          t@UnboxedTupleT{} -> t
+          t@UnboxedSumT{} -> t
+          t@ArrowT{} -> t
+          t@MulArrowT{} -> t
+          t@EqualityT{} -> t
+          t@ListT{} -> t
+          t@PromotedTupleT{} -> t
+          t@PromotedNilT{} -> t
+          t@PromotedConsT{} -> t
+          t@StarT{} -> t
+          t@ConstraintT{} -> t
+          t@LitT{} -> t
+          t@WildCardT{} -> t
+          ImplicitParamT s t -> ImplicitParamT s (replaceScopeTermInType t)
