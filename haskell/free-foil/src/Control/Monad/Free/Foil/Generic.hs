@@ -80,11 +80,19 @@ class ZipMatchK (f :: k) where
     => Mappings as bs cs -> f :@@: as -> f :@@: bs -> Maybe (f :@@: cs)
   zipMatchWithK = genericZipMatchWithK @f @as @bs @cs
 
+zipMatchViaEq :: Eq a => Mappings as bs cs -> a -> a -> Maybe a
+zipMatchViaEq _ x y
+  | x == y = Just x
+  | otherwise = Nothing
+
+zipMatchViaChooseLeft :: Mappings as bs cs -> a -> a -> Maybe a
+zipMatchViaChooseLeft _ x _ = Just x
+
 -- instance ZipMatchK (,)     -- missing GenericK instance upstream
 instance ZipMatchK []
 instance ZipMatchK Maybe
 instance ZipMatchK Either
-instance ZipMatchK (Either a)
+instance ZipMatchK a => ZipMatchK (Either a)
 
 type ReqsZipMatch f as bs = ReqsZipMatchWith f as bs (ZipLoT as bs)
 class GZipMatch (f :: LoT k -> Type) where
@@ -137,9 +145,9 @@ instance ApplyMappings v => ZipMatchFields (Var v) where
   type ReqsZipMatchFieldsWith (Var v) as bs cs = () -- InterpretVar v cs ~ (InterpretVar v as, InterpretVar v bs))
   zipMatchFieldsWith g (Field x) (Field y) = Field <$> applyMappings @_ @v g x y
 
-instance ZipMatchFields (Kon k) where
+instance ZipMatchK k => ZipMatchFields (Kon k) where
   type ReqsZipMatchFieldsWith (Kon k) as bs cs = ()
-  zipMatchFieldsWith _ (Field l) _ = Just (Field l)
+  zipMatchFieldsWith _ (Field l) (Field r) = Field <$> zipMatchWithK @_ @k M0 l r
 
 instance (ZipMatchFields t, ZipMatchK k) => ZipMatchFields (Kon k :@: t) where
   type ReqsZipMatchFieldsWith (Kon k :@: t) as bs cs = ReqsZipMatchFieldsWith t as bs cs
