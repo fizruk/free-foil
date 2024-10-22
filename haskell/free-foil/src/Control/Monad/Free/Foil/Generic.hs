@@ -1,3 +1,7 @@
+{-# LANGUAGE AllowAmbiguousTypes      #-}
+{-# LANGUAGE InstanceSigs      #-}
+{-# LANGUAGE DefaultSignatures      #-}
+{-# LANGUAGE FlexibleInstances      #-}
 {-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE PolyKinds                #-}
@@ -19,13 +23,25 @@ type family ZipLoT as bs where
   ZipLoT LoT0 LoT0 = LoT0
   ZipLoT (a :&&: as) (b :&&: bs) = ((a, b) :&&: ZipLoT as bs)
 
+genericZipMatchK :: forall f as bs.
+    (GenericK f, GZipMatch (RepK f), ReqsZipMatch (RepK f) as bs)
+    => f :@@: as -> f :@@: bs -> Maybe (f :@@: (ZipLoT as bs))
+genericZipMatchK x y = toK @_ @f <$> gzipMatch
+  (fromK @_ @f @as x)
+  (fromK @_ @f @bs y)
+
 genericZipMatch2
-  :: forall sig scope scope' term term'.
-  (GenericK sig, GZipMatch (RepK sig), ReqsZipMatch (RepK sig) (scope :&&: term :&&: 'LoT0) (scope' :&&: term' :&&: 'LoT0))
-  => sig scope term -> sig scope' term' -> Maybe (sig (scope, scope') (term, term'))
-genericZipMatch2 x y = toK <$> gzipMatch
-  (fromK @_ @sig @(scope :&&: term :&&: 'LoT0) x)
-  (fromK @_ @sig @(scope' :&&: term' :&&: 'LoT0) y)
+   :: forall sig scope scope' term term'.
+   (GenericK sig, GZipMatch (RepK sig), ReqsZipMatch (RepK sig) (scope :&&: term :&&: 'LoT0) (scope' :&&: term' :&&: 'LoT0))
+   => sig scope term -> sig scope' term' -> Maybe (sig (scope, scope') (term, term'))
+genericZipMatch2 = genericZipMatchK @sig @(scope :&&: term :&&: 'LoT0) @(scope' :&&: term' :&&: 'LoT0)
+
+class ZipMatchK (f :: k) where
+  zipMatchK :: forall as bs. f :@@: as -> f :@@: bs -> Maybe (f :@@: (ZipLoT as bs))
+  default zipMatchK :: forall as bs.
+    (GenericK f, GZipMatch (RepK f), ReqsZipMatch (RepK f) as bs)
+    => f :@@: as -> f :@@: bs -> Maybe (f :@@: (ZipLoT as bs))
+  zipMatchK = genericZipMatchK @f @as @bs
 
 class GZipMatch (f :: LoT k -> Type) where
   type ReqsZipMatch f (as :: LoT k) (bs :: LoT k) :: Constraint
@@ -56,7 +72,7 @@ instance (GZipMatch f, GZipMatch g) => GZipMatch (f :*: g) where
 
 instance ZipMatchFields t => GZipMatch (Field t) where
   type ReqsZipMatch (Field t) as bs = ReqsZipMatchFields t as bs
-  gzipMatch x y = Just (zipMatchFields x y)
+  gzipMatch x y = zipMatchFields x y
 
 instance GZipMatch f => GZipMatch (c :=>: f) where
   type ReqsZipMatch (c :=>: f) as bs = (ReqsZipMatch f as bs, Interpret c (ZipLoT as bs))
@@ -70,20 +86,22 @@ instance TypeError ('Text "Existentials are not supported")
 
 class ZipMatchFields t where
   type ReqsZipMatchFields t (as :: LoT k) (bs :: LoT k) :: Constraint
-  zipMatchFields :: ReqsZipMatchFields t as bs => Field t as -> Field t bs -> Field t (ZipLoT as bs)
+  zipMatchFields :: ReqsZipMatchFields t as bs => Field t as -> Field t bs -> Maybe (Field t (ZipLoT as bs))
 
 instance ZipMatchFields (Var v) where
   -- this is always true, but GHC is not smart enough to know that, I think
   type ReqsZipMatchFields (Var v) as bs = (InterpretVar v (ZipLoT as bs) ~ (InterpretVar v as, InterpretVar v bs))
-  zipMatchFields (Field x) (Field y) = Field (x, y)
+  zipMatchFields (Field x) (Field y) = Just (Field (x, y))
 
 instance ZipMatchFields (Kon k) where
   type ReqsZipMatchFields (Kon k) as bs = ()
-  zipMatchFields (Field l) _ = Field l
+  zipMatchFields (Field l) _ = Just (Field l)
 
--- instance ZipMatchFields (f :@: x) where
---   type ReqsZipMatchFields (f :@: x) as bs = ???
---   zipMatchFields = ???
+-- instance (ZipMatchFields t) => ZipMatchFields (f :@: t) where
+--   type ReqsZipMatchFields (f :@: t) as bs = (Interpret f as ~ Interpret f bs, ZipMatchK (Interpret f as))
+--   zipMatchFields :: forall as bs. ReqsZipMatchFields (f :@: t) as bs => Field (f :@: t) as -> Field (f :@: t) bs -> Maybe (Field (f :@: t) (ZipLoT as bs))
+--   zipMatchFields (Field l) (Field r) =
+--     Field <$> zipMatchWithK zipMatchFields @_ @(Interpret f as) @as @bs l r
 
 -- instance ZipMatchFields (ForAll f) where
 --   type ReqsZipMatchFields (ForAll f) as bs = ???
