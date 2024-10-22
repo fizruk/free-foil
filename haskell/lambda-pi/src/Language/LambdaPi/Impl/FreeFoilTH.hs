@@ -1,5 +1,8 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs             #-}
@@ -46,6 +49,10 @@ import qualified Language.LambdaPi.Syntax.Lex    as Raw
 import qualified Language.LambdaPi.Syntax.Par    as Raw
 import qualified Language.LambdaPi.Syntax.Print  as Raw
 import           System.Exit                     (exitFailure)
+import Control.Monad.Free.Foil.Generic (genericZipMatch2)
+import Generics.Kind.TH (deriveGenericK)
+import qualified GHC.Generics as GHC
+
 
 -- $setup
 -- >>> :set -XOverloadedStrings
@@ -58,7 +65,6 @@ import           System.Exit                     (exitFailure)
 
 -- ** Signature
 mkSignature ''Raw.Term' ''Raw.VarIdent ''Raw.ScopedTerm' ''Raw.Pattern'
-deriveZipMatch ''Term'Sig
 deriveBifunctor ''Term'Sig
 deriveBifoldable ''Term'Sig
 deriveBitraversable ''Term'Sig
@@ -82,6 +88,11 @@ mkFromFoilPattern ''Raw.VarIdent ''Raw.Pattern'
 instance Foil.UnifiableInPattern Raw.BNFC'Position where
   unifyInPattern _ _  = True
 deriveUnifiablePattern ''Raw.VarIdent ''Raw.Pattern'
+
+deriving instance GHC.Generic (Term'Sig a scope term)
+deriveGenericK ''Term'Sig
+instance ZipMatch (Term'Sig a) where
+  zipMatch = genericZipMatch2
 
 -- * User-defined code
 

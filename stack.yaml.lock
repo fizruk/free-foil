@@ -3,7 +3,14 @@
 # For more information, please see the documentation at:
 #   https://docs.haskellstack.org/en/stable/lock_files
 
-packages: []
+packages:
+- completed:
+    hackage: kind-generics-th-0.2.3.3@sha256:fc5f3aee46725e048a0159d73612a5d86c30017cd24ebab764347b65cffbd1d4,1519
+    pantry-tree:
+      sha256: 5dd528fca535a2b51cd45883520bc2fd86aca078436132bee42fa21218a21a2a
+      size: 328
+  original:
+    hackage: kind-generics-th-0.2.3.3@sha256:fc5f3aee46725e048a0159d73612a5d86c30017cd24ebab764347b65cffbd1d4,1519
 snapshots:
 - completed:
     sha256: c93fb97219f317bdba82c69b4388665268c1964d9636a6ecdc9a58f8771f0bc0
