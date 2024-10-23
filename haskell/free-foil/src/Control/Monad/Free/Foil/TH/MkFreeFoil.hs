@@ -203,11 +203,18 @@ toFreeFoilBindingCon config rawRetType theOuterScope = go
     goTypeArgs i outerScope ((bang_, rawArgType) : rawArgs) = do
       case rawArgType of
         PeelConT rawTypeName _rawTypeParams
+          | rawTypeName `elem` map rawIdentName (freeFoilTermConfigs config) -> do
+            innerScope <- VarT <$> newName ("i" <> show i)
+            let argType = toFreeFoilType ABinder config outerScope innerScope rawArgType
+            (theInnerScope, argTypes) <- goTypeArgs (i + 1) innerScope rawArgs
+            return (theInnerScope, ((bang_, argType) : argTypes))
+
           | Just _ <- lookupBindingName rawTypeName (freeFoilTermConfigs config) -> do
-          innerScope <- VarT <$> newName ("i" <> show i)
-          let argType = toFreeFoilType ABinder config outerScope innerScope rawArgType
-          (theInnerScope, argTypes) <- goTypeArgs (i + 1) innerScope rawArgs
-          return (theInnerScope, ((bang_, argType) : argTypes))
+            innerScope <- VarT <$> newName ("i" <> show i)
+            let argType = toFreeFoilType ABinder config outerScope innerScope rawArgType
+            (theInnerScope, argTypes) <- goTypeArgs (i + 1) innerScope rawArgs
+            return (theInnerScope, ((bang_, argType) : argTypes))
+
         _ -> do
           let argType = toFreeFoilType ABinder config outerScope outerScope rawArgType
           (theInnerScope, argTypes) <- goTypeArgs (i + 1) outerScope rawArgs
