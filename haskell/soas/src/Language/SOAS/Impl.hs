@@ -17,6 +17,9 @@ module Language.SOAS.Impl where
 import Data.List (find)
 import Data.Bifunctor
 import Data.Bifunctor.TH
+import Data.Map (Map)
+import qualified Data.Map as Map
+import Data.String (IsString(..))
 import qualified Control.Monad.Foil as Foil
 import           Control.Monad.Free.Foil.TH.MkFreeFoil
 import           Control.Monad.Free.Foil
@@ -120,6 +123,83 @@ instance ZipMatchK a => ZipMatch (Type'Sig a) where zipMatch = genericZipMatch2
 
 type Subst = Subst' Raw.BNFC'Position Foil.VoidS
 type Term = Term' Raw.BNFC'Position
+
+-- ** From raw to scope-safe
+
+toBinders' :: Foil.Distinct n =>
+  Foil.Scope n -> Map Raw.VarIdent (Foil.Name n) -> Raw.Binders' a ->
+    (forall l. Foil.DExt n l => Foil.Scope l -> Map Raw.VarIdent (Foil.Name l) -> Binders' a n l -> r)
+    -> r
+toBinders' scope env rawBinders cont =
+  case rawBinders of
+    Raw.NoBinders loc -> cont scope env (NoBinders loc)
+    Raw.SomeBinders loc x xs ->
+      Foil.withFresh scope $ \binder ->
+        let scope' = Foil.extendScope binder scope
+            env' = Map.insert x (Foil.nameOf binder) (Foil.sink <$> env)
+        in toBinders' scope' env' xs $ \scope'' env'' binders ->
+            cont scope'' env'' (SomeBinders loc binder binders)
+
+pattern OpArg :: a -> Binders' a n l -> Term' a l -> OpArg' a n
+pattern OpArg loc binders body = OpArgSig loc (ScopedAST binders body)
+
+toOpArg' :: Foil.Distinct n => Foil.Scope n -> Map Raw.VarIdent (Foil.Name n) -> Raw.OpArg' a -> OpArg' a n
+toOpArg' scope env = \case
+  Raw.OpArg loc binders (Raw.ScopedTerm _loc body) ->
+    toBinders' scope env binders $ \scope' env' binders' ->
+      OpArg loc binders' (toTerm' scope' env' body)
+
+toTerm' :: Foil.Distinct n => Foil.Scope n -> Map Raw.VarIdent (Foil.Name n) -> Raw.Term' a -> Term' a n
+toTerm' scope env = \case
+  Raw.Var _loc x ->
+    case Map.lookup x env of
+      Just name -> Var name
+      Nothing -> error ("undefined variable: " ++ Raw.printTree x)
+  Raw.Op loc op args ->
+    Op loc op (map (toOpArg' scope env) args)
+  Raw.MetaVar loc m args ->
+    MetaVar loc m (map (toTerm' scope env) args)
+
+-- >>> "?m[App(.Lam(x.x), .Lam(y.y))]" :: Term
+-- ?m [App (. Lam (x0 . x0), . Lam (x0 . x0))]
+instance IsString (Term' Raw.BNFC'Position Foil.VoidS) where
+  fromString = toTerm' Foil.emptyScope Map.empty . unsafeParseRawTerm
+    where
+      unsafeParseRawTerm input =
+        case Raw.pTerm (Raw.myLexer input) of
+          Left err -> error err
+          Right term -> term
+
+-- ** From scope-safe to raw
+
+fromOpArg'Sig :: OpArg'Sig a (Raw.Binders' a, Raw.ScopedTerm' a) (Raw.Term' a) -> Raw.OpArg' a
+fromOpArg'Sig (OpArgSig loc (binders, body)) = Raw.OpArg loc binders body
+
+fromTerm'Sig :: Term'Sig a (Raw.Binders' a, Raw.ScopedTerm' a) (Raw.Term' a) -> Raw.Term' a
+fromTerm'Sig = \case
+  OpSig loc op args -> Raw.Op loc op (map fromOpArg'Sig args)
+  MetaVarSig loc m args -> Raw.MetaVar loc m args
+
+fromBinders' :: (Int -> Raw.VarIdent) -> Binders' a n l -> Raw.Binders' a
+fromBinders' mkIdent = \case
+  NoBinders loc -> Raw.NoBinders loc
+  SomeBinders loc binder binders ->
+    Raw.SomeBinders loc
+      (mkIdent (Foil.nameId (Foil.nameOf binder)))
+      (fromBinders' mkIdent binders)
+
+fromTerm' :: Term' a n -> Raw.Term' a
+fromTerm' = convertFromAST
+  fromTerm'Sig
+  (Raw.Var (error "trying to access an erased annotation on a variable"))
+  fromBinders'
+  (Raw.ScopedTerm (error "trying to access an erased annotation on a scoped term"))
+  (\i -> Raw.VarIdent ("x" <> show i))
+
+instance Show (Term' a n) where
+  show = Raw.printTree . fromTerm'
+
+-- ** Meta variable substitutions
 
 -- | Lookup a substitution by its 'Raw.MetaVarIdent'.
 lookupSubst :: Raw.MetaVarIdent -> [Subst] -> Maybe Subst
