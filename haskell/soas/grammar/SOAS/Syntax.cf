@@ -1,0 +1,54 @@
+comment "--" ;
+comment "{-" "-}" ;
+
+token VarIdent lower (letter | digit | '_' | '\'')* ;
+token OpIdent upper (letter | digit | '_' | '\'')* ;
+token MetaVarIdent '?' (letter | digit | '_' | '\'')* ;
+
+TermTyping. TermTyping ::= "∀" TypeBinders "." Context "⊢" ScopedTerm ":" Type ;
+
+Context. Context ::= [MetaVarTyping] "|" [VarTyping] ;
+
+VarTyping. VarTyping ::= VarIdent ":" Type ;
+separator VarTyping "," ;
+
+MetaVarTyping. MetaVarTyping ::= MetaVarIdent ":" "[" [Type] "]" Type ;
+separator MetaVarTyping "," ;
+
+OpTyping. OpTyping ::= OpIdent ":" "∀" TypeBinders "." "(" [OpArgTyping] ")" "→" ScopedType ;
+
+ConstraintEq. Constraint ::= "∀" Binders "." ScopedTerm "=" ScopedTerm ;
+
+Unifier. Unifier ::= "[" [Subst] "]" ;
+
+Subst. Subst ::= MetaVarIdent "[" Binders "]" "↦" ScopedTerm ;
+separator Subst "," ;
+
+Var.      Term ::= VarIdent ;
+Op.       Term ::= OpIdent "(" [OpArg] ")" ;
+MetaVar.  Term ::= MetaVarIdent "[" [Term] "]" ;
+separator Term "," ;
+
+OpArg. OpArg ::= Binders "." ScopedTerm ;
+separator OpArg "," ;
+
+NoBinders. Binders ::= ;
+SomeBinders. Binders ::= VarIdent Binders ;
+
+ScopedTerm. ScopedTerm ::= Term ;
+
+TypeVarIdent. TypeVarIdent ::= VarIdent ;
+
+TypeFun.     Type ::= Type1 "→" Type1 ;
+TypeProduce. Type1 ::= Type1 "×" Type2 ;
+TypeVar.     Type2 ::= TypeVarIdent ;
+coercions Type 2 ;
+separator Type "," ;
+
+NoTypeBinders. TypeBinders ::= ;
+SomeTypeBinders. TypeBinders ::= TypeVarIdent TypeBinders ;
+
+OpArgTyping. OpArgTyping ::= TypeBinders "." ScopedType ;
+separator OpArgTyping "," ;
+
+ScopedType. ScopedType ::= Type ;
