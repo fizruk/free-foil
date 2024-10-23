@@ -79,8 +79,8 @@ toFreeFoilType isBinder config@FreeFoilConfig{..} outerScope innerScope = go
         | Just FreeFoilTermConfig{..} <- lookupScopeName typeName freeFoilTermConfigs ->
             PeelConT (toFreeFoilScopedName config rawTermName) (typeParams ++ [outerScope])
         | Just FreeFoilTermConfig{..} <- lookupSubTermName typeName freeFoilTermConfigs ->
-            let scopeT = PeelConT (toFreeFoilScopedName config typeName) (typeParams ++ [outerScope])
-                termT = PeelConT (toFreeFoilName config typeName) (typeParams ++ [outerScope])
+            let scopeT = PeelConT (toFreeFoilScopedName config rawTermName) (typeParams ++ [outerScope])
+                termT = PeelConT (toFreeFoilName config rawTermName) (typeParams ++ [outerScope])
              in PeelConT (toSignatureName config typeName) (typeParams ++ [scopeT, termT])
       ForallT bndrs ctx type_ -> ForallT bndrs ctx (go type_)
       ForallVisT bndrs type_ -> ForallVisT bndrs (go type_)
@@ -292,17 +292,22 @@ mkFreeFoil config@FreeFoilConfig{..} = concat <$> sequence
           toCon = toFreeFoilSigCon config termConfig sigName rawRetType (VarT scope) (VarT term)
       newCons <- catMaybes <$> mapM toCon cons
       let bindingT = PeelConT (toFreeFoilName config rawBindingName) tvars'
-          sigT = PeelConT sigName tvars'
+          sigNameT = PeelConT sigName tvars'
           astName = toFreeFoilName config rawName
           scopeName = toFreeFoilScopedName config rawName
       addModFinalizer $ putDoc (DeclDoc sigName)
         ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. A signature based on '" ++ show rawName ++ "'.")
-      addModFinalizer $ putDoc (DeclDoc astName)
-        ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. A scope-safe version of '" ++ show rawName ++ "'.")
-      addModFinalizer $ putDoc (DeclDoc scopeName)
-        ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. A scoped (and scope-safe) version of '" ++ show rawName ++ "'.")
-      return
-        [ DataD [] sigName newParams Nothing newCons []
-        , TySynD astName   tvars (PeelConT ''Foil.AST [bindingT, sigT])
-        , TySynD scopeName tvars (PeelConT ''Foil.ScopedAST [bindingT, sigT])
-        ]
+      if (rawName == rawTermName)
+        then do
+          addModFinalizer $ putDoc (DeclDoc astName)
+            ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. A scope-safe version of '" ++ show rawName ++ "'.")
+          addModFinalizer $ putDoc (DeclDoc scopeName)
+            ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. A scoped (and scope-safe) version of '" ++ show rawName ++ "'.")
+          return
+            [ DataD [] sigName newParams Nothing newCons []
+            , TySynD astName   tvars (PeelConT ''Foil.AST [bindingT, sigNameT])
+            , TySynD scopeName tvars (PeelConT ''Foil.ScopedAST [bindingT, sigNameT])
+            ]
+        else do
+          return
+            [ DataD [] sigName newParams Nothing newCons [] ]
