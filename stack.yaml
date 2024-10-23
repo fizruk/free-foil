@@ -2,6 +2,7 @@ resolver: nightly-2024-08-17
 packages:
   - haskell/free-foil
   - haskell/lambda-pi
+  - haskell/soas
 # kind-generics-th is not on Stackage :(
 extra-deps:
   - kind-generics-th-0.2.3.3@sha256:fc5f3aee46725e048a0159d73612a5d86c30017cd24ebab764347b65cffbd1d4,1519

@@ -708,6 +708,35 @@ class CoSinkable (pattern :: S -> S -> Type) where
     -- ^ Continuation, accepting result for the entire pattern and a (possibly refreshed) pattern.
     -> r
 
+-- | Auxiliary data structure for collecting name binders. Used in 'nameBinderListOf'.
+newtype WithNameBinderList r n l (o :: S) (o' :: S) = WithNameBinderList (NameBinderList l r -> NameBinderList n r)
+
+-- | Empty list of name binders (identity).
+idWithNameBinderList :: DExt o o' => WithNameBinderList r n n o o'
+idWithNameBinderList = WithNameBinderList id
+
+-- | Concatenating lists of name binders (compose).
+compWithNameBinderList
+  :: (DExt o o', DExt o' o'')
+  => WithNameBinderList r n i o o'
+  -> WithNameBinderList r i l o' o''
+  -> WithNameBinderList r n l o o''
+compWithNameBinderList (WithNameBinderList f) (WithNameBinderList g) =
+  WithNameBinderList (f . g)
+
+-- | Collect name binders of a generalized pattern into a name binder list,
+-- which can be more easily traversed.
+nameBinderListOf :: (CoSinkable binder) => binder n l -> NameBinderList n l
+nameBinderListOf pat = withPattern
+  (\_scope' binder k ->
+    unsafeAssertFresh binder $ \binder' ->
+      k (WithNameBinderList (NameBinderListCons binder)) binder')
+  idWithNameBinderList
+  compWithNameBinderList
+  emptyScope
+  pat
+  (\(WithNameBinderList f) _ -> f NameBinderListEmpty)
+
 instance CoSinkable NameBinder where
   coSinkabilityProof _rename (UnsafeNameBinder name) cont =
     cont unsafeCoerce (UnsafeNameBinder name)
@@ -733,6 +762,10 @@ identitySubst
   :: InjectName e => Substitution e i i
 identitySubst = UnsafeSubstitution IntMap.empty
 
+-- | An empty substitution from an empty scope.
+voidSubst :: Substitution e VoidS n
+voidSubst = UnsafeSubstitution IntMap.empty
+
 -- | Extend substitution with a particular mapping.
 addSubst
   :: Substitution e i o
@@ -741,6 +774,24 @@ addSubst
   -> Substitution e i' o
 addSubst (UnsafeSubstitution env) (UnsafeNameBinder (UnsafeName name)) ex
   = UnsafeSubstitution (IntMap.insert name ex env)
+
+addSubstPattern
+  :: CoSinkable binder
+  => Substitution e i o
+  -> binder i i'
+  -> [e o]
+  -> Substitution e i' o
+addSubstPattern subst pat = addSubstList subst (nameBinderListOf pat)
+
+addSubstList
+  :: Substitution e i o
+  -> NameBinderList i i'
+  -> [e o]
+  -> Substitution e i' o
+addSubstList subst NameBinderListEmpty _ = subst
+addSubstList subst (NameBinderListCons binder binders) (x:xs) =
+  addSubstList (addSubst subst binder x) binders xs
+addSubstList _ _ [] = error "cannot add a binder to Substitution since the value list does not have enough elements"
 
 -- | Add variable renaming to a substitution.
 -- This includes the performance optimization of eliding names mapped to themselves.
@@ -762,6 +813,29 @@ newtype NameMap (n :: S) a = NameMap { getNameMap :: IntMap a }
 -- | An empty map belongs in the empty scope.
 emptyNameMap :: NameMap VoidS a
 emptyNameMap = NameMap IntMap.empty
+
+-- | Convert a 'NameMap' of expressions into a 'Substitution'.
+nameMapToSubstitution :: NameMap i (e o) -> Substitution e i o
+nameMapToSubstitution (NameMap m) = (UnsafeSubstitution m)
+
+-- | Extend a map with multiple mappings (by repeatedly applying 'addNameBinder').
+--
+-- Note that the input list is expected to have __at least__ the same number of elements
+-- as there are binders in the input pattern (generalized binder).
+addNameBinders :: CoSinkable binder => binder n l -> [a] -> NameMap n a -> NameMap l a
+addNameBinders pat = addNameBinderList (nameBinderListOf pat)
+
+-- | Extend a map with multiple mappings (by repeatedly applying 'addNameBinder').
+--
+-- Note that the input list is expected to have __at least__ the same number of elements
+-- as there are binders in the input name binder list.
+--
+-- See also 'addNameBinders' for a generalized version.
+addNameBinderList :: NameBinderList n l -> [a] -> NameMap n a -> NameMap l a
+addNameBinderList NameBinderListEmpty _ = id
+addNameBinderList (NameBinderListCons binder binders) (x:xs) =
+  addNameBinderList binders xs . addNameBinder binder x
+addNameBinderList _ [] = error "cannot add a binder to NameMap since the value list does not have enough elements"
 
 -- | Looking up a name should always succeed.
 --

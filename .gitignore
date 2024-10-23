@@ -1,9 +1,15 @@
-haskell/free-foil/src/Language/LambdaPi/Syntax/Lex.hs
-haskell/free-foil/src/Language/LambdaPi/Syntax/Par.hs
-haskell/free-foil/src/Language/LambdaPi/Syntax/Test
-haskell/free-foil/src/Language/LambdaPi/Syntax/Test.hs
-haskell/free-foil/src/Language/LambdaPi/Syntax/Skel.hs
-haskell/free-foil/src/Language/LambdaPi/Syntax/ErrM.hs
+haskell/lambda-pi/src/Language/LambdaPi/Syntax/Lex.hs
+haskell/lambda-pi/src/Language/LambdaPi/Syntax/Par.hs
+haskell/lambda-pi/src/Language/LambdaPi/Syntax/Test
+haskell/lambda-pi/src/Language/LambdaPi/Syntax/Test.hs
+haskell/lambda-pi/src/Language/LambdaPi/Syntax/Skel.hs
+haskell/lambda-pi/src/Language/LambdaPi/Syntax/ErrM.hs
+haskell/soas/src/Language/SOAS/Syntax/Lex.hs
+haskell/soas/src/Language/SOAS/Syntax/Par.hs
+haskell/soas/src/Language/SOAS/Syntax/Test
+haskell/soas/src/Language/SOAS/Syntax/Test.hs
+haskell/soas/src/Language/SOAS/Syntax/Skel.hs
+haskell/soas/src/Language/SOAS/Syntax/ErrM.hs
 
 scala/free-foil/src/main/scala/.scala-build/
 
