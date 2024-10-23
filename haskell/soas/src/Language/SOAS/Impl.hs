@@ -85,7 +85,22 @@ deriveBifunctor ''OpArg'Sig
 deriveBifunctor ''Term'Sig
 deriveBifunctor ''Type'Sig
 
-instance Foil.CoSinkable  (Binders' a)  -- FIXME: derive via GenericK?
+-- FIXME: derive via GenericK
+instance Foil.CoSinkable (Binders' a) where
+  coSinkabilityProof rename (NoBinders loc) cont = cont rename (NoBinders loc)
+  coSinkabilityProof rename (SomeBinders loc binder binders) cont =
+    Foil.coSinkabilityProof rename binder $ \rename' binder' ->
+      Foil.coSinkabilityProof rename' binders $ \rename'' binders' ->
+        cont rename'' (SomeBinders loc binder' binders')
+
+  withPattern withBinder unit comp scope binders cont =
+    case binders of
+      NoBinders loc -> cont unit (NoBinders loc)
+      SomeBinders loc binder moreBinders ->
+        Foil.withPattern withBinder unit comp scope binder $ \f binder' ->
+          let scope' = Foil.extendScopePattern binder' scope
+           in Foil.withPattern withBinder unit comp scope' moreBinders $ \g moreBinders' ->
+                cont (comp f g) (SomeBinders loc binder' moreBinders')
 
 -- | Ignore 'Raw.BNFC'Position' when matching terms.
 instance ZipMatchK Raw.BNFC'Position where zipMatchWithK = zipMatchViaChooseLeft
