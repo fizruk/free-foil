@@ -1,4 +1,4 @@
-{-# OPTIONS_GHC -Wno-orphans #-}
+{-# OPTIONS_GHC -Wno-orphans -ddump-splices #-}
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE ScopedTypeVariables         #-}
 {-# LANGUAGE TypeFamilies         #-}
@@ -139,9 +139,6 @@ toBinders' scope env rawBinders cont =
             env' = Map.insert x (Foil.nameOf binder) (Foil.sink <$> env)
         in toBinders' scope' env' xs $ \scope'' env'' binders ->
             cont scope'' env'' (SomeBinders loc binder binders)
-
-pattern OpArg :: a -> Binders' a n l -> Term' a l -> OpArg' a n
-pattern OpArg loc binders body = OpArgSig loc (ScopedAST binders body)
 
 toOpArg' :: Foil.Distinct n => Foil.Scope n -> Map Raw.VarIdent (Foil.Name n) -> Raw.OpArg' a -> OpArg' a n
 toOpArg' scope env = \case

@@ -242,18 +242,20 @@ toFreeFoilBindingCon config rawRetType theOuterScope = go
       ForallC params ctx con -> ForallC params ctx <$> go con
       RecGadtC conNames argTypes retType -> go (GadtC conNames (map removeName argTypes) retType)
 
-termConToPat :: FreeFoilConfig -> Con -> Q [([Name], Pat)]
-termConToPat config@FreeFoilConfig{..} = go
+termConToPat :: Name -> FreeFoilConfig -> FreeFoilTermConfig -> Con -> Q [([Name], Pat)]
+termConToPat rawTypeName config@FreeFoilConfig{..} FreeFoilTermConfig{..} = go
   where
     rawRetType = error "impossible happened!"
 
     fromArgType :: Type -> Q ([Name], [Pat])
     fromArgType = \case
       PeelConT typeName _params
+        | Just _ <- lookupBindingName typeName freeFoilTermConfigs -> do
+            return ([], [])
         | Just _ <- lookupScopeName typeName freeFoilTermConfigs -> do
             binder <- newName "binder"
             body <- newName "body"
-            return ([binder, body], [ConP ''Foil.ScopedAST [] [VarP binder, VarP body]])
+            return ([binder, body], [ConP 'Foil.ScopedAST [] [VarP binder, VarP body]])
       _ -> do
         x <- newName "x"
         return ([x], [VarP x])
@@ -265,16 +267,18 @@ termConToPat config@FreeFoilConfig{..} = go
           let newConName = toSignatureName config conName
           (concat -> vars, concat -> pats) <- unzip <$>
             mapM (fromArgType . snd) rawArgTypes
-          return
-            [ (vars, ConP 'Foil.Node [] [ConP newConName [] pats] ) ]
+          return $
+            if rawTypeName == rawTermName
+              then [ (vars, ConP 'Foil.Node [] [ConP newConName [] pats] ) ]
+              else [ (vars, ConP newConName [] pats) ]
       NormalC conName types -> go (GadtC [conName] types rawRetType)
       RecC conName types -> go (NormalC conName (map removeName types))
       InfixC l conName r -> go (GadtC [conName] [l, r] rawRetType)
       ForallC _params _ctx con -> go con
       RecGadtC conNames argTypes retType -> go (GadtC conNames (map removeName argTypes) retType)
 
-mkPatternSynonym :: FreeFoilConfig -> FreeFoilTermConfig -> Type -> Con -> Q [Dec]
-mkPatternSynonym config FreeFoilTermConfig{..} rawRetType = go
+mkPatternSynonym :: Name -> FreeFoilConfig -> FreeFoilTermConfig -> Type -> Con -> Q [Dec]
+mkPatternSynonym rawTypeName config termConfig@FreeFoilTermConfig{..} rawRetType = go
   where
     go :: Con -> Q [Dec]
     go = \case
@@ -284,7 +288,9 @@ mkPatternSynonym config FreeFoilTermConfig{..} rawRetType = go
               rawConType = foldr (\x y -> AppT (AppT ArrowT x) y) rawRetType (map snd rawArgTypes)
               outerScope = VarT (mkName "o")
               innerScope = VarT (mkName "i")
-          [(vars, pat)] <- termConToPat config (GadtC [conName] rawArgTypes rawRetType)    -- FIXME: unsafe matching!
+          [(vars, pat)] <- termConToPat rawTypeName config termConfig (GadtC [conName] rawArgTypes rawRetType)    -- FIXME: unsafe matching!
+          addModFinalizer $ putDoc (DeclDoc patName)
+            ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. Pattern synonym for an '" ++ show ''Foil.AST ++ "' node of type '" ++ show conName ++ "'.")
           return
             [ PatSynSigD patName (toFreeFoilType NotABinder config outerScope innerScope rawConType)
             , PatSynD patName (PrefixPatSyn vars) ImplBidir pat
@@ -309,10 +315,15 @@ mkFreeFoil config@FreeFoilConfig{..} = concat <$> sequence
     outerScope = mkName "o"
     innerScope = mkName "i"
 
-    mkPatternSynonyms FreeFoilTermConfig{..} = do
-      TyConI (DataD _ctx _name tvars _kind cons _deriv) <- reify rawTermName
-      let rawRetType = PeelConT rawTermName (map (VarT . tvarName) tvars)
-      concat <$> mapM (mkPatternSynonym config FreeFoilTermConfig{..} rawRetType) cons
+    mkPatternSynonyms termConfig@FreeFoilTermConfig{..} = do
+      ds <- mkPatternSynonyms' termConfig rawTermName
+      ds' <- concat <$> mapM (mkPatternSynonyms' termConfig) rawSubTermNames
+      return (ds <> ds')
+
+    mkPatternSynonyms' FreeFoilTermConfig{..} rawName = do
+      TyConI (DataD _ctx _name tvars _kind cons _deriv) <- reify rawName
+      let rawRetType = PeelConT rawName (map (VarT . tvarName) tvars)
+      concat <$> mapM (mkPatternSynonym rawName config FreeFoilTermConfig{..} rawRetType) cons
 
     mkQuantifiedType rawName = do
       TyConI (DataD _ctx _name tvars _kind cons _deriv) <- reify rawName
