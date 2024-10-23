@@ -1,5 +1,6 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE ScopedTypeVariables         #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -13,6 +14,10 @@
 {-# LANGUAGE TemplateHaskell   #-}
 module Language.SOAS.Impl where
 
+import Data.List (find)
+import Data.Bifunctor
+import Data.Bifunctor.TH
+import qualified Control.Monad.Foil as Foil
 import           Control.Monad.Free.Foil.TH.MkFreeFoil
 import           Control.Monad.Free.Foil
 import qualified Language.SOAS.Syntax.Abs    as Raw
@@ -73,6 +78,15 @@ deriveGenericK ''Term'Sig
 deriveGenericK ''OpArg'Sig
 deriveGenericK ''Type'Sig
 
+deriving instance Functor (Term'Sig a scope)
+deriving instance Functor (OpArg'Sig a scope)
+deriving instance Functor (Type'Sig a scope)
+deriveBifunctor ''OpArg'Sig
+deriveBifunctor ''Term'Sig
+deriveBifunctor ''Type'Sig
+
+instance Foil.CoSinkable  (Binders' a)  -- FIXME: derive via GenericK?
+
 -- | Ignore 'Raw.BNFC'Position' when matching terms.
 instance ZipMatchK Raw.BNFC'Position where zipMatchWithK = zipMatchViaChooseLeft
 -- | Match 'Raw.OpIdent' via 'Eq'.
@@ -86,6 +100,28 @@ instance ZipMatchK a => ZipMatchK (Type'Sig a)
 
 instance ZipMatchK a => ZipMatch (Term'Sig a) where zipMatch = genericZipMatch2
 instance ZipMatchK a => ZipMatch (Type'Sig a) where zipMatch = genericZipMatch2
+
+-- * User-defined code
+
+type Subst = Subst' Raw.BNFC'Position Foil.VoidS
+type Term = Term' Raw.BNFC'Position
+
+lookupSubst :: Raw.MetaVarIdent -> [Subst] -> Maybe Subst
+lookupSubst m = find $ \(Subst _loc m' _ _) -> m == m'
+
+applySubsts :: Foil.Distinct n => Foil.Scope n -> [Subst] -> Term n -> Term n
+applySubsts scope substs term =
+  case term of
+    MetaVar _loc m args | Just (Subst _ _ binders body) <- lookupSubst m substs ->
+      substitutePattern scope Foil.emptyNameMap binders args body
+    Var{} -> term
+    Node node -> Node (bimap goScoped (applySubsts scope substs) node)
+  where
+    goScoped (ScopedAST binders body) =
+      case Foil.assertDistinct binders of
+        Foil.Distinct ->
+          let scope' = Foil.extendScopePattern binders scope
+           in ScopedAST binders (applySubsts scope' substs body)
 
 -- | A SOAS interpreter implemented via the free foil.
 defaultMain :: IO ()

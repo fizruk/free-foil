@@ -708,6 +708,30 @@ class CoSinkable (pattern :: S -> S -> Type) where
     -- ^ Continuation, accepting result for the entire pattern and a (possibly refreshed) pattern.
     -> r
 
+newtype WithNameBinderList r n l (o :: S) (o' :: S) = WithNameBinderList (NameBinderList l r -> NameBinderList n r)
+
+idWithNameBinderList :: DExt o o' => WithNameBinderList r n n o o'
+idWithNameBinderList = WithNameBinderList id
+
+compWithNameBinderList
+  :: (DExt o o', DExt o' o'')
+  => WithNameBinderList r n i o o'
+  -> WithNameBinderList r i l o' o''
+  -> WithNameBinderList r n l o o''
+compWithNameBinderList (WithNameBinderList f) (WithNameBinderList g) =
+  WithNameBinderList (f . g)
+
+nameBinderListOf :: (CoSinkable binder) => binder n l -> NameBinderList n l
+nameBinderListOf pat = withPattern
+  (\_scope' binder k ->
+    unsafeAssertFresh binder $ \binder' ->
+      k (WithNameBinderList (NameBinderListCons binder)) binder')
+  idWithNameBinderList
+  compWithNameBinderList
+  emptyScope
+  pat
+  (\(WithNameBinderList f) _ -> f NameBinderListEmpty)
+
 instance CoSinkable NameBinder where
   coSinkabilityProof _rename (UnsafeNameBinder name) cont =
     cont unsafeCoerce (UnsafeNameBinder name)
@@ -762,6 +786,18 @@ newtype NameMap (n :: S) a = NameMap { getNameMap :: IntMap a }
 -- | An empty map belongs in the empty scope.
 emptyNameMap :: NameMap VoidS a
 emptyNameMap = NameMap IntMap.empty
+
+-- | Convert a 'NameMap' of expressions into a 'Substitution'.
+nameMapToSubstitution :: NameMap i (e o) -> Substitution e i o
+nameMapToSubstitution (NameMap m) = (UnsafeSubstitution m)
+
+addNameBinders :: CoSinkable binder => binder n l -> [a] -> NameMap n a -> NameMap l a
+addNameBinders pat = addNameBinderList (nameBinderListOf pat)
+
+addNameBinderList :: NameBinderList n l -> [a] -> NameMap n a -> NameMap l a
+addNameBinderList NameBinderListEmpty [] = id
+addNameBinderList (NameBinderListCons binder binders) (x:xs) =
+  addNameBinderList binders xs . addNameBinder binder x
 
 -- | Looking up a name should always succeed.
 --

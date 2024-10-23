@@ -66,6 +66,10 @@ module Control.Monad.Foil (
   emptyNameMap,
   lookupName,
   addNameBinder,
+  nameMapToSubstitution,
+  addNameBinders,
+  addNameBinderList,
+  NameBinderList(..),
   -- * Constraints
   Ext,
   ExtEvidence(..),

@@ -77,7 +77,7 @@ toFreeFoilType isBinder config@FreeFoilConfig{..} outerScope innerScope = go
         | Just _ <- lookupBindingName typeName freeFoilTermConfigs ->
             PeelConT (toFreeFoilName config typeName) (typeParams ++ [outerScope, innerScope])
         | Just FreeFoilTermConfig{..} <- lookupScopeName typeName freeFoilTermConfigs ->
-            PeelConT (toFreeFoilScopedName config rawTermName) (typeParams ++ [outerScope])
+            PeelConT (toFreeFoilName config rawTermName) (typeParams ++ [innerScope])
         | Just _ <- lookupSubTermName typeName freeFoilTermConfigs ->
             PeelConT (toFreeFoilName config typeName) (typeParams ++ [outerScope])
       ForallT bndrs ctx type_ -> ForallT bndrs ctx (go type_)

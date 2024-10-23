@@ -122,6 +122,19 @@ instance (Bifunctor sig, Foil.CoSinkable binder) => Foil.RelMonad Foil.Name (AST
               subst' = extendSubst subst
            in ScopedAST binder' (Foil.rbind scope' body subst')
 
+substitutePattern
+  :: (Bifunctor sig, Foil.Distinct o, Foil.CoSinkable binder', Foil.CoSinkable binder)
+  => Foil.Scope o
+  -> Foil.NameMap n (AST binder sig o)
+  -> binder' n i
+  -> [AST binder sig o]
+  -> AST binder sig i
+  -> AST binder sig o
+substitutePattern scope env binders args body =
+  substitute scope substs' body
+  where
+    substs' = Foil.nameMapToSubstitution (Foil.addNameBinders binders args env)
+
 -- * \(\alpha\)-equivalence
 
 -- | Refresh (force) all binders in a term, minimizing the used indices.
