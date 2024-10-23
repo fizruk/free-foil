@@ -1,4 +1,4 @@
-{-# OPTIONS_GHC -fno-warn-orphans -ddump-splices #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE DeriveGeneric         #-}
@@ -14,13 +14,15 @@
 module Language.SOAS.Impl where
 
 import           Control.Monad.Free.Foil.TH.MkFreeFoil
+import           Control.Monad.Free.Foil
 import qualified Language.SOAS.Syntax.Abs    as Raw
 import qualified Language.SOAS.Syntax.Lex    as Raw
 import qualified Language.SOAS.Syntax.Par    as Raw
 import qualified Language.SOAS.Syntax.Print  as Raw
 import           System.Exit                     (exitFailure)
--- import Control.Monad.Free.Foil.Generic
--- import Generics.Kind.TH (deriveGenericK)
+import Control.Monad.Free.Foil.Generic
+import Generics.Kind.TH (deriveGenericK)
+import qualified GHC.Generics as GHC
 
 -- $setup
 -- >>> :set -XOverloadedStrings
@@ -63,6 +65,27 @@ mkFreeFoil FreeFoilConfig
   , signatureNameModifier = (++ "Sig")
   , ignoreNames = []
   }
+
+deriving instance GHC.Generic (Term'Sig a scope term)
+deriving instance GHC.Generic (OpArg'Sig a scope term)
+deriving instance GHC.Generic (Type'Sig a scope term)
+deriveGenericK ''Term'Sig
+deriveGenericK ''OpArg'Sig
+deriveGenericK ''Type'Sig
+
+-- | Ignore 'Raw.BNFC'Position' when matching terms.
+instance ZipMatchK Raw.BNFC'Position where zipMatchWithK = zipMatchViaChooseLeft
+-- | Match 'Raw.OpIdent' via 'Eq'.
+instance ZipMatchK Raw.OpIdent where zipMatchWithK = zipMatchViaEq
+-- | Match 'Raw.MetaVarIdent' via 'Eq'.
+instance ZipMatchK Raw.MetaVarIdent where zipMatchWithK = zipMatchViaEq
+
+instance ZipMatchK a => ZipMatchK (Term'Sig a)
+instance ZipMatchK a => ZipMatchK (OpArg'Sig a)
+instance ZipMatchK a => ZipMatchK (Type'Sig a)
+
+instance ZipMatchK a => ZipMatch (Term'Sig a) where zipMatch = genericZipMatch2
+instance ZipMatchK a => ZipMatch (Type'Sig a) where zipMatch = genericZipMatch2
 
 -- | A SOAS interpreter implemented via the free foil.
 defaultMain :: IO ()
