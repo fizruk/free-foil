@@ -58,6 +58,7 @@ mkFreeFoil FreeFoilConfig
           , rawSubTermNames = [ ''Raw.OpArgTyping' ]
           } ]
   , freeFoilNameModifier = id
+  , freeFoilScopeNameModifier = ("Scoped" ++ )
   , freeFoilConNameModifier = id
   , signatureNameModifier = (++ "Sig")
   , ignoreNames = []

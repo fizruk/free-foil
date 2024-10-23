@@ -26,16 +26,20 @@ data FreeFoilTermConfig = FreeFoilTermConfig
   }
 
 data FreeFoilConfig = FreeFoilConfig
-  { rawQuantifiedNames      :: [Name]
-  , freeFoilTermConfigs     :: [FreeFoilTermConfig]
-  , freeFoilNameModifier    :: String -> String
-  , signatureNameModifier   :: String -> String
-  , freeFoilConNameModifier :: String -> String
-  , ignoreNames             :: [Name]
+  { rawQuantifiedNames        :: [Name]
+  , freeFoilTermConfigs       :: [FreeFoilTermConfig]
+  , freeFoilNameModifier      :: String -> String
+  , freeFoilScopeNameModifier :: String -> String
+  , signatureNameModifier     :: String -> String
+  , freeFoilConNameModifier   :: String -> String
+  , ignoreNames               :: [Name]
   }
 
 toFreeFoilName :: FreeFoilConfig -> Name -> Name
 toFreeFoilName FreeFoilConfig{..} name = mkName (freeFoilNameModifier (nameBase name))
+
+toFreeFoilScopedName :: FreeFoilConfig -> Name -> Name
+toFreeFoilScopedName FreeFoilConfig{..} name = mkName (freeFoilScopeNameModifier (nameBase name))
 
 toSignatureName :: FreeFoilConfig -> Name -> Name
 toSignatureName FreeFoilConfig{..} name = mkName (signatureNameModifier (nameBase name))
@@ -68,21 +72,15 @@ toFreeFoilType isBinder config@FreeFoilConfig{..} outerScope innerScope = go
             case isBinder of
               NotABinder -> PeelConT ''Foil.Name [outerScope]
               ABinder -> PeelConT ''Foil.NameBinder [outerScope, innerScope]
-        | Just FreeFoilTermConfig{..} <- lookupTermName typeName freeFoilTermConfigs ->
-            let bindingT = PeelConT (toFreeFoilName config rawBindingName) typeParams
-                termSigT = PeelConT (toSignatureName config rawTermName) typeParams
-             in PeelConT ''Foil.AST [bindingT, termSigT, outerScope]
+        | Just _ <- lookupTermName typeName freeFoilTermConfigs ->
+            PeelConT (toFreeFoilName config typeName) (typeParams ++ [outerScope])
         | Just _ <- lookupBindingName typeName freeFoilTermConfigs ->
             PeelConT (toFreeFoilName config typeName) (typeParams ++ [outerScope, innerScope])
         | Just FreeFoilTermConfig{..} <- lookupScopeName typeName freeFoilTermConfigs ->
-            let bindingT = PeelConT (toFreeFoilName config rawBindingName) typeParams
-                termSigT = PeelConT (toSignatureName config rawTermName) typeParams
-             in PeelConT ''Foil.AST [bindingT, termSigT, innerScope]
+            PeelConT (toFreeFoilScopedName config rawTermName) (typeParams ++ [outerScope])
         | Just FreeFoilTermConfig{..} <- lookupSubTermName typeName freeFoilTermConfigs ->
-            let bindingT = PeelConT (toFreeFoilName config rawBindingName) typeParams
-                termSigT = PeelConT (toSignatureName config rawTermName) typeParams
-                scopeT = PeelConT ''Foil.ScopedAST [bindingT, termSigT, outerScope]
-                termT = PeelConT ''Foil.AST [bindingT, termSigT, outerScope]
+            let scopeT = PeelConT (toFreeFoilScopedName config typeName) (typeParams ++ [outerScope])
+                termT = PeelConT (toFreeFoilName config typeName) (typeParams ++ [outerScope])
              in PeelConT (toSignatureName config typeName) (typeParams ++ [scopeT, termT])
       ForallT bndrs ctx type_ -> ForallT bndrs ctx (go type_)
       ForallVisT bndrs type_ -> ForallVisT bndrs (go type_)
@@ -282,16 +280,29 @@ mkFreeFoil config@FreeFoilConfig{..} = concat <$> sequence
 
     mkSignatureTypes termConfig@FreeFoilTermConfig{..} = do
       sig <- mkSignatureType termConfig rawTermName
-      subsigs <- mapM (mkSignatureType termConfig) rawSubTermNames
-      return (sig : subsigs)
+      subsigs <- concat <$> mapM (mkSignatureType termConfig) rawSubTermNames
+      return (sig ++ subsigs)
 
-    mkSignatureType termConfig rawName = do
+    mkSignatureType termConfig@FreeFoilTermConfig{..} rawName = do
       TyConI (DataD _ctx _name tvars _kind cons _deriv) <- reify rawName
       let sigName = toSignatureName config rawName
-          rawRetType = PeelConT rawName (map (VarT . tvarName) tvars)
+          tvars' = map (VarT . tvarName) tvars
+          rawRetType = PeelConT rawName tvars'
           newParams = tvars ++ [PlainTV scope BndrReq, PlainTV term BndrReq]
           toCon = toFreeFoilSigCon config termConfig sigName rawRetType (VarT scope) (VarT term)
       newCons <- catMaybes <$> mapM toCon cons
+      let bindingT = PeelConT (toFreeFoilName config rawBindingName) tvars'
+          sigT = PeelConT sigName tvars'
+          astName = toFreeFoilName config rawName
+          scopeName = toFreeFoilScopedName config rawName
       addModFinalizer $ putDoc (DeclDoc sigName)
         ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. A signature based on '" ++ show rawName ++ "'.")
-      return (DataD [] sigName newParams Nothing newCons [])
+      addModFinalizer $ putDoc (DeclDoc astName)
+        ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. A scope-safe version of '" ++ show rawName ++ "'.")
+      addModFinalizer $ putDoc (DeclDoc scopeName)
+        ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. A scoped (and scope-safe) version of '" ++ show rawName ++ "'.")
+      return
+        [ DataD [] sigName newParams Nothing newCons []
+        , TySynD astName   tvars (PeelConT ''Foil.AST [bindingT, sigT])
+        , TySynD scopeName tvars (PeelConT ''Foil.ScopedAST [bindingT, sigT])
+        ]
