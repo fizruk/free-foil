@@ -106,14 +106,16 @@ instance ZipMatchK a => ZipMatch (Type'Sig a) where zipMatch = genericZipMatch2
 type Subst = Subst' Raw.BNFC'Position Foil.VoidS
 type Term = Term' Raw.BNFC'Position
 
+-- | Lookup a substitution by its 'Raw.MetaVarIdent'.
 lookupSubst :: Raw.MetaVarIdent -> [Subst] -> Maybe Subst
 lookupSubst m = find $ \(Subst _loc m' _ _) -> m == m'
 
+-- | Apply meta variable substitutions to a term.
 applySubsts :: Foil.Distinct n => Foil.Scope n -> [Subst] -> Term n -> Term n
 applySubsts scope substs term =
   case term of
     MetaVar _loc m args | Just (Subst _ _ binders body) <- lookupSubst m substs ->
-      substitutePattern scope Foil.emptyNameMap binders args body
+      substitutePattern scope Foil.voidSubst binders args body
     Var{} -> term
     Node node -> Node (bimap goScoped (applySubsts scope substs) node)
   where

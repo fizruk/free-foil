@@ -122,18 +122,19 @@ instance (Bifunctor sig, Foil.CoSinkable binder) => Foil.RelMonad Foil.Name (AST
               subst' = extendSubst subst
            in ScopedAST binder' (Foil.rbind scope' body subst')
 
+-- | Substitution for a single generalized pattern.
 substitutePattern
   :: (Bifunctor sig, Foil.Distinct o, Foil.CoSinkable binder', Foil.CoSinkable binder)
-  => Foil.Scope o
-  -> Foil.NameMap n (AST binder sig o)
-  -> binder' n i
-  -> [AST binder sig o]
+  => Foil.Scope o                           -- ^ Resulting scope.
+  -> Foil.Substitution (AST binder sig) n o -- ^ Environment mapping names in scope @n@.
+  -> binder' n i                            -- ^ Binders that extend scope @n@ to scope @i@.
+  -> [AST binder sig o]                     -- ^ A list of terms intended to serve as
   -> AST binder sig i
   -> AST binder sig o
 substitutePattern scope env binders args body =
-  substitute scope substs' body
+  substitute scope env' body
   where
-    substs' = Foil.nameMapToSubstitution (Foil.addNameBinders binders args env)
+    env' = Foil.addSubstPattern env binders args
 
 -- * \(\alpha\)-equivalence
 
