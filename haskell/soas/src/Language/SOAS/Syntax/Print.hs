@@ -226,7 +226,7 @@ instance Print (Language.SOAS.Syntax.Abs.TypeVarIdent' a) where
 instance Print (Language.SOAS.Syntax.Abs.Type' a) where
   prt i = \case
     Language.SOAS.Syntax.Abs.TypeFun _ type_1 type_2 -> prPrec i 0 (concatD [prt 1 type_1, doc (showString "\8594"), prt 1 type_2])
-    Language.SOAS.Syntax.Abs.TypeProduce _ type_1 type_2 -> prPrec i 1 (concatD [prt 1 type_1, doc (showString "\215"), prt 2 type_2])
+    Language.SOAS.Syntax.Abs.TypeProduct _ type_1 type_2 -> prPrec i 1 (concatD [prt 1 type_1, doc (showString "\215"), prt 2 type_2])
     Language.SOAS.Syntax.Abs.TypeVar _ typevarident -> prPrec i 2 (concatD [prt 0 typevarident])
 
 instance Print [Language.SOAS.Syntax.Abs.Type' a] where

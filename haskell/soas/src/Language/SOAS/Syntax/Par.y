@@ -194,7 +194,7 @@ Type
 
 Type1 :: { (Language.SOAS.Syntax.Abs.BNFC'Position, Language.SOAS.Syntax.Abs.Type) }
 Type1
-  : Type1 '×' Type2 { (fst $1, Language.SOAS.Syntax.Abs.TypeProduce (fst $1) (snd $1) (snd $3)) }
+  : Type1 '×' Type2 { (fst $1, Language.SOAS.Syntax.Abs.TypeProduct (fst $1) (snd $1) (snd $3)) }
   | Type2 { (fst $1, (snd $1)) }
 
 Type2 :: { (Language.SOAS.Syntax.Abs.BNFC'Position, Language.SOAS.Syntax.Abs.Type) }

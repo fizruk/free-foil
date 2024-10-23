@@ -40,7 +40,7 @@ ScopedTerm. ScopedTerm ::= Term ;
 TypeVarIdent. TypeVarIdent ::= VarIdent ;
 
 TypeFun.     Type ::= Type1 "→" Type1 ;
-TypeProduce. Type1 ::= Type1 "×" Type2 ;
+TypeProduct. Type1 ::= Type1 "×" Type2 ;
 TypeVar.     Type2 ::= TypeVarIdent ;
 coercions Type 2 ;
 separator Type "," ;

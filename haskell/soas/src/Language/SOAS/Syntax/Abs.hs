@@ -85,7 +85,7 @@ data TypeVarIdent' a = TypeVarIdent a VarIdent
 type Type = Type' BNFC'Position
 data Type' a
     = TypeFun a (Type' a) (Type' a)
-    | TypeProduce a (Type' a) (Type' a)
+    | TypeProduct a (Type' a) (Type' a)
     | TypeVar a (TypeVarIdent' a)
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
 
@@ -186,7 +186,7 @@ instance HasPosition TypeVarIdent where
 instance HasPosition Type where
   hasPosition = \case
     TypeFun p _ _ -> p
-    TypeProduce p _ _ -> p
+    TypeProduct p _ _ -> p
     TypeVar p _ -> p
 
 instance HasPosition TypeBinders where
