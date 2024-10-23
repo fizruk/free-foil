@@ -11,28 +11,6 @@
 {-# LANGUAGE PatternSynonyms   #-}
 {-# LANGUAGE RankNTypes        #-}
 {-# LANGUAGE TemplateHaskell   #-}
--- | Free foil implementation of the SOAS-calculus (with pairs).
---
--- Free foil provides __general__ definitions or implementations for the following:
---
--- 1. Freely generated (from a simple signature) scope-safe AST.
--- 2. Correct capture-avoiding substitution (see 'substitute').
--- 3. Correct \(\alpha\)-equivalence checks (see 'alphaEquiv' and 'alphaEquivRefreshed') as well as \(\alpha\)-normalization (see 'refreshAST').
--- 4. Conversion helpers (see 'convertToAST' and 'convertFromAST').
---
--- The following is __generated__ using Template Haskell:
---
--- 1. Convenient pattern synonyms.
--- 2. 'ZipMatch' instances (enabling general \(\alpha\)-equivalence).
--- 3. Conversion between scope-safe and raw term representation.
---
--- The following is implemented __manually__ in this module:
---
--- 1. Computation of weak head normal form (WHNF), see 'whnf'.
--- 2. Entry point, gluing everything together. See 'defaultMain'.
---
--- __Note:__ free foil does not (easily) support patterns at the moment,
--- so only wildcard patterns and variable patterns are handled in this implementation.
 module Language.SOAS.Impl where
 
 import           Control.Monad.Free.Foil.TH.MkFreeFoil

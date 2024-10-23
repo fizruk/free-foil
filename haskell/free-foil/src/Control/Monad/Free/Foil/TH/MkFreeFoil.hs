@@ -5,8 +5,10 @@
 module Control.Monad.Free.Foil.TH.MkFreeFoil where
 
 import           Language.Haskell.TH
+import Language.Haskell.TH.Syntax (addModFinalizer)
 
-import Data.Maybe (mapMaybe)
+import Data.Maybe (mapMaybe, catMaybes)
+import Control.Monad (forM_)
 import qualified Control.Monad.Foil as Foil
 import qualified Control.Monad.Free.Foil as Foil
 import           Control.Monad.Foil.TH.Util
@@ -156,26 +158,35 @@ toFreeFoilSigType config@FreeFoilConfig{..} scope term = go
       t@WildCardT{} -> pure t
       ImplicitParamT s t -> ImplicitParamT s <$> go t
 
-toFreeFoilCon :: FreeFoilConfig -> Type -> Type -> Type -> Con -> Con
+toFreeFoilCon :: FreeFoilConfig -> Type -> Type -> Type -> Con -> Q Con
 toFreeFoilCon config rawRetType outerScope innerScope = go
   where
     goType = toFreeFoilType NotABinder config outerScope innerScope
     go = \case
-      GadtC conNames argTypes retType -> GadtC (map (toConName config) conNames) (map (fmap goType) argTypes) (goType retType)
+      GadtC conNames argTypes retType -> do
+        let newConNames = (map (toConName config) conNames)
+        forM_ (zip conNames newConNames) $ \(conName, newConName) ->
+          addModFinalizer $ putDoc (DeclDoc newConName)
+            ("Corresponds to '" ++ show conName ++ "'.")
+        return (GadtC newConNames (map (fmap goType) argTypes) (goType retType))
       NormalC conName types -> go (GadtC [conName] types rawRetType)
       RecC conName types -> go (NormalC conName (map removeName types))
       InfixC l conName r -> go (GadtC [conName] [l, r] rawRetType)
-      ForallC params ctx con -> ForallC params ctx (go con)
+      ForallC params ctx con -> ForallC params ctx <$> go con
       RecGadtC conNames argTypes retType -> go (GadtC conNames (map removeName argTypes) retType)
 
-toFreeFoilSigCon :: FreeFoilConfig -> FreeFoilTermConfig -> Name -> Type -> Type -> Type -> Con -> Maybe Con
+toFreeFoilSigCon :: FreeFoilConfig -> FreeFoilTermConfig -> Name -> Type -> Type -> Type -> Con -> Q (Maybe Con)
 toFreeFoilSigCon config FreeFoilTermConfig{..} sigName rawRetType scope term = go
   where
     goType = toFreeFoilSigType config scope term
     go = \case
       GadtC conNames argTypes retType
-        | null newConNames -> Nothing
-        | otherwise -> Just (GadtC newConNames newArgTypes theRetType)
+        | null newConNames -> pure Nothing
+        | otherwise -> do
+            forM_ (zip conNames newConNames) $ \(conName, newConName) ->
+              addModFinalizer $ putDoc (DeclDoc newConName)
+                ("Corresponds to '" ++ show conName ++ "'.")
+            return (Just (GadtC newConNames newArgTypes theRetType))
         where
           newArgTypes = mapMaybe (traverse goType) argTypes
           newConNames =
@@ -190,7 +201,7 @@ toFreeFoilSigCon config FreeFoilTermConfig{..} sigName rawRetType scope term = g
       NormalC conName types -> go (GadtC [conName] types rawRetType)
       RecC conName types -> go (NormalC conName (map removeName types))
       InfixC l conName r -> go (GadtC [conName] [l, r] rawRetType)
-      ForallC params ctx con -> ForallC params ctx <$> go con
+      ForallC params ctx con -> fmap (ForallC params ctx) <$> go con
       RecGadtC conNames argTypes retType -> go (GadtC conNames (map removeName argTypes) retType)
 
 toFreeFoilBindingCon :: FreeFoilConfig -> Type -> Type -> Con -> Q Con
@@ -224,7 +235,11 @@ toFreeFoilBindingCon config rawRetType theOuterScope = go
     go = \case
       GadtC conNames argTypes retType -> do
         (theInnerScope, newArgs) <- goTypeArgs 0 theOuterScope argTypes
-        return (GadtC (map (toConName config) conNames) newArgs (goType theInnerScope retType))
+        let newConNames = map (toConName config) conNames
+        forM_ (zip conNames newConNames) $ \(conName, newConName) ->
+          addModFinalizer $ putDoc (DeclDoc newConName)
+            ("Corresponds to '" ++ show conName ++ "'.")
+        return (GadtC newConNames newArgs (goType theInnerScope retType))
       NormalC conName types -> go (GadtC [conName] types rawRetType)
       RecC conName types -> go (NormalC conName (map removeName types))
       InfixC l conName r -> go (GadtC [conName] [l, r] rawRetType)
@@ -249,7 +264,9 @@ mkFreeFoil config@FreeFoilConfig{..} = concat <$> sequence
           rawRetType = PeelConT rawName (map (VarT . tvarName) tvars)
           newParams = tvars ++ [PlainTV outerScope BndrReq]
           toCon = toFreeFoilCon config rawRetType (VarT outerScope) (VarT innerScope)
-          newCons = map toCon cons
+      newCons <- mapM toCon cons
+      addModFinalizer $ putDoc (DeclDoc name)
+        ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. A scope-safe version of '" ++ show rawName ++ "'.")
       return (DataD [] name newParams Nothing newCons [])
 
     mkBindingType FreeFoilTermConfig{..} = do
@@ -259,6 +276,8 @@ mkFreeFoil config@FreeFoilConfig{..} = concat <$> sequence
           newParams = tvars ++ [PlainTV outerScope BndrReq, PlainTV innerScope BndrReq]
           toCon = toFreeFoilBindingCon config rawRetType (VarT outerScope)
       newCons <- mapM toCon cons
+      addModFinalizer $ putDoc (DeclDoc bindingName)
+        ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. A binding type, scope-safe version of '" ++ show rawBindingName ++ "'.")
       return (DataD [] bindingName newParams Nothing newCons [])
 
     mkSignatureTypes termConfig@FreeFoilTermConfig{..} = do
@@ -272,5 +291,7 @@ mkFreeFoil config@FreeFoilConfig{..} = concat <$> sequence
           rawRetType = PeelConT rawName (map (VarT . tvarName) tvars)
           newParams = tvars ++ [PlainTV scope BndrReq, PlainTV term BndrReq]
           toCon = toFreeFoilSigCon config termConfig sigName rawRetType (VarT scope) (VarT term)
-          newCons = mapMaybe toCon cons
+      newCons <- catMaybes <$> mapM toCon cons
+      addModFinalizer $ putDoc (DeclDoc sigName)
+        ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. A signature based on '" ++ show rawName ++ "'.")
       return (DataD [] sigName newParams Nothing newCons [])

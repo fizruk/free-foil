@@ -117,8 +117,6 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      Language.LambdaPi.Impl.FoilSpec
-      Language.LambdaPi.Impl.FreeFoilSpec
       Paths_soas
   hs-source-dirs:
       test
