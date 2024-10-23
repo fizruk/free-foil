@@ -4,4 +4,4 @@ import System.Environment (getArgs)
 import Test.DocTest (mainFromCabal)
 
 main :: IO ()
-main = mainFromCabal "lambda-pi" =<< getArgs
+main = mainFromCabal "soas" =<< getArgs
