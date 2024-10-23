@@ -43,6 +43,7 @@ library
       Control.Monad.Free.Foil.Generic
       Control.Monad.Free.Foil.TH
       Control.Monad.Free.Foil.TH.Convert
+      Control.Monad.Free.Foil.TH.MkFreeFoil
       Control.Monad.Free.Foil.TH.PatternSynonyms
       Control.Monad.Free.Foil.TH.Signature
       Control.Monad.Free.Foil.TH.ZipMatch
