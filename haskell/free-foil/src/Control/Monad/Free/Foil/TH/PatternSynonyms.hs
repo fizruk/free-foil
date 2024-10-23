@@ -69,17 +69,19 @@ mkPatternSynonym signatureType scope term = \case
       Left ((b, _), (x, _)) -> ConP 'ScopedAST [] [VarP b, VarP x]
       Right (x, _) -> VarP x
 
-    toPatternArgType i (_bang, VarT typeName)
+    toPatternArgType i (_bang, type_@(VarT typeName))
       | typeName == scope =
           Left
             ( (mkName ("b" ++ show i), foldl AppT binderT [VarT n, VarT l])
-            , (mkName ("x" ++ show i), PeelConT ''AST [binderT, signatureType, VarT l]))
+            , (mkName ("x" ++ show i), replaceScopeTermInType l type_))
       | typeName == term =
-          Right (mkName ("x" ++ show i), PeelConT ''AST [binderT, signatureType, VarT n])
+          Right (mkName ("x" ++ show i), replaceScopeTermInType l type_)
       where
         l = mkName ("l" ++ show i)
     toPatternArgType i (_bang, type_)
-      = Right (mkName ("z" ++ show i), type_)
+      = Right (mkName ("z" ++ show i), replaceScopeTermInType l type_)
+      where
+        l = mkName ("l" ++ show i)
 
     mkPatternName conName = mkName (dropEnd (length "Sig") (nameBase conName))
     dropEnd k = reverse . drop k . reverse
@@ -87,3 +89,36 @@ mkPatternSynonym signatureType scope term = \case
     collapse = \case
       Left (x, y) -> [x, y]
       Right x -> [x]
+
+    replaceScopeTermInType lscope = \case
+      VarT typeName
+        | typeName == scope -> PeelConT ''AST [binderT, signatureType, VarT lscope]
+        | typeName == term  -> PeelConT ''AST [binderT, signatureType, VarT n]
+      ForallT bndrs ctx type_ -> ForallT bndrs ctx (replaceScopeTermInType lscope type_)
+      ForallVisT bndrs type_ -> ForallVisT bndrs (replaceScopeTermInType lscope type_)
+      AppT f x -> AppT (replaceScopeTermInType lscope f) (replaceScopeTermInType lscope x)
+      AppKindT f k -> AppKindT (replaceScopeTermInType lscope f) k
+      SigT t k -> SigT (replaceScopeTermInType lscope t) k
+      t@ConT{} -> t
+      t@VarT{} -> t
+      t@PromotedT{} -> t
+      InfixT l op r -> InfixT (replaceScopeTermInType lscope l) op (replaceScopeTermInType lscope r)
+      UInfixT l op r -> UInfixT (replaceScopeTermInType lscope l) op (replaceScopeTermInType lscope r)
+      PromotedInfixT l op r -> PromotedInfixT (replaceScopeTermInType lscope l) op (replaceScopeTermInType lscope r)
+      PromotedUInfixT l op r -> PromotedUInfixT (replaceScopeTermInType lscope l) op (replaceScopeTermInType lscope r)
+      ParensT t -> ParensT (replaceScopeTermInType lscope t)
+      t@TupleT{} -> t
+      t@UnboxedTupleT{} -> t
+      t@UnboxedSumT{} -> t
+      t@ArrowT{} -> t
+      t@MulArrowT{} -> t
+      t@EqualityT{} -> t
+      t@ListT{} -> t
+      t@PromotedTupleT{} -> t
+      t@PromotedNilT{} -> t
+      t@PromotedConsT{} -> t
+      t@StarT{} -> t
+      t@ConstraintT{} -> t
+      t@LitT{} -> t
+      t@WildCardT{} -> t
+      ImplicitParamT s t -> ImplicitParamT s (replaceScopeTermInType lscope t)

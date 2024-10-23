@@ -1,6 +1,6 @@
 cabal-version: 1.24
 
--- This file has been generated from package.yaml by hpack version 0.36.0.
+-- This file has been generated from package.yaml by hpack version 0.37.0.
 --
 -- see: https://github.com/sol/hpack
 
@@ -61,6 +61,7 @@ library
     , containers
     , deepseq
     , free-foil >=0.1.0
+    , kind-generics-th
     , template-haskell
     , text >=1.2.3.1
   default-language: Haskell2010
@@ -84,6 +85,7 @@ executable lambda-pi
     , containers
     , deepseq
     , free-foil >=0.1.0
+    , kind-generics-th
     , lambda-pi
     , template-haskell
     , text >=1.2.3.1
@@ -109,6 +111,7 @@ test-suite doctests
     , deepseq
     , doctest-parallel
     , free-foil >=0.1.0
+    , kind-generics-th
     , lambda-pi
     , template-haskell
     , text >=1.2.3.1
@@ -139,6 +142,7 @@ test-suite spec
     , free-foil >=0.1.0
     , hspec
     , hspec-discover
+    , kind-generics-th
     , lambda-pi
     , mtl
     , template-haskell

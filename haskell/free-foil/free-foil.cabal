@@ -1,6 +1,6 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.36.0.
+-- This file has been generated from package.yaml by hpack version 0.37.0.
 --
 -- see: https://github.com/sol/hpack
 
@@ -40,6 +40,7 @@ library
       Control.Monad.Foil.TH.Util
       Control.Monad.Free.Foil
       Control.Monad.Free.Foil.Example
+      Control.Monad.Free.Foil.Generic
       Control.Monad.Free.Foil.TH
       Control.Monad.Free.Foil.TH.Convert
       Control.Monad.Free.Foil.TH.PatternSynonyms
@@ -56,6 +57,7 @@ library
     , bifunctors
     , containers
     , deepseq
+    , kind-generics >=0.5.0
     , template-haskell >=2.21.0.0
     , text >=1.2.3.1
   default-language: Haskell2010
@@ -75,6 +77,7 @@ test-suite doctests
     , deepseq
     , doctest-parallel
     , free-foil
+    , kind-generics >=0.5.0
     , template-haskell >=2.21.0.0
     , text >=1.2.3.1
   default-language: Haskell2010
@@ -94,6 +97,7 @@ test-suite spec
     , containers
     , deepseq
     , free-foil
+    , kind-generics >=0.5.0
     , template-haskell >=2.21.0.0
     , text >=1.2.3.1
   default-language: Haskell2010
