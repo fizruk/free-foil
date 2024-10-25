@@ -1,4 +1,4 @@
-{-# OPTIONS_GHC -Wno-orphans -ddump-splices #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE ScopedTypeVariables         #-}
 {-# LANGUAGE TypeFamilies         #-}
@@ -70,6 +70,8 @@ mkFreeFoil FreeFoilConfig
   , freeFoilNameModifier = id
   , freeFoilScopeNameModifier = ("Scoped" ++ )
   , freeFoilConNameModifier = id
+  , freeFoilConvertFromName = ("from" ++ )
+  , freeFoilConvertToName = ("to" ++ )
   , signatureNameModifier = (++ "Sig")
   , ignoreNames = []
   }
@@ -169,13 +171,13 @@ instance IsString (Term' Raw.BNFC'Position Foil.VoidS) where
 
 -- ** From scope-safe to raw
 
-fromOpArg'Sig :: OpArg'Sig a (Raw.Binders' a, Raw.ScopedTerm' a) (Raw.Term' a) -> Raw.OpArg' a
-fromOpArg'Sig (OpArgSig loc (binders, body)) = Raw.OpArg loc binders body
+-- fromOpArg'Sig :: OpArg'Sig a (Raw.Binders' a, Raw.ScopedTerm' a) (Raw.Term' a) -> Raw.OpArg' a
+-- fromOpArg'Sig (OpArgSig loc (binders, body)) = Raw.OpArg loc binders body
 
-fromTerm'Sig :: Term'Sig a (Raw.Binders' a, Raw.ScopedTerm' a) (Raw.Term' a) -> Raw.Term' a
-fromTerm'Sig = \case
-  OpSig loc op args -> Raw.Op loc op (map fromOpArg'Sig args)
-  MetaVarSig loc m args -> Raw.MetaVar loc m args
+-- fromTerm'Sig :: Term'Sig a (Raw.Binders' a, Raw.ScopedTerm' a) (Raw.Term' a) -> Raw.Term' a
+-- fromTerm'Sig = \case
+--   OpSig loc op args -> Raw.Op loc op (map fromOpArg'Sig args)
+--   MetaVarSig loc m args -> Raw.MetaVar loc m args
 
 fromBinders' :: (Int -> Raw.VarIdent) -> Binders' a n l -> Raw.Binders' a
 fromBinders' mkIdent = \case
