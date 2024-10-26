@@ -1,5 +1,6 @@
-{-# OPTIONS_GHC -Wno-orphans #-}
+{-# OPTIONS_GHC -Wno-orphans -ddump-splices #-}
 {-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE ScopedTypeVariables         #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE DeriveGeneric         #-}
@@ -53,8 +54,6 @@ deriveBifunctor ''Term'Sig
 deriveBifunctor ''OpArgTyping'Sig
 deriveBifunctor ''Type'Sig
 
-mkFreeFoilConversions soasConfig
-
 -- FIXME: derive via GenericK
 instance Foil.CoSinkable (Binders' a) where
   coSinkabilityProof rename (NoBinders loc) cont = cont rename (NoBinders loc)
@@ -71,6 +70,25 @@ instance Foil.CoSinkable (Binders' a) where
           let scope' = Foil.extendScopePattern binder' scope
            in Foil.withPattern withBinder unit comp scope' moreBinders $ \g moreBinders' ->
                 cont (comp f g) (SomeBinders loc binder' moreBinders')
+
+-- FIXME: derive via GenericK
+instance Foil.CoSinkable (TypeBinders' a) where
+  coSinkabilityProof rename (NoTypeBinders loc) cont = cont rename (NoTypeBinders loc)
+  coSinkabilityProof rename (SomeTypeBinders loc binder binders) cont =
+    Foil.coSinkabilityProof rename binder $ \rename' binder' ->
+      Foil.coSinkabilityProof rename' binders $ \rename'' binders' ->
+        cont rename'' (SomeTypeBinders loc binder' binders')
+
+  withPattern withBinder unit comp scope binders cont =
+    case binders of
+      NoTypeBinders loc -> cont unit (NoTypeBinders loc)
+      SomeTypeBinders loc binder moreTypeBinders ->
+        Foil.withPattern withBinder unit comp scope binder $ \f binder' ->
+          let scope' = Foil.extendScopePattern binder' scope
+           in Foil.withPattern withBinder unit comp scope' moreTypeBinders $ \g moreTypeBinders' ->
+                cont (comp f g) (SomeTypeBinders loc binder' moreTypeBinders')
+
+mkFreeFoilConversions soasConfig
 
 -- | Ignore 'Raw.BNFC'Position' when matching terms.
 instance ZipMatchK Raw.BNFC'Position where zipMatchWithK = zipMatchViaChooseLeft
@@ -92,20 +110,6 @@ type Subst = Subst' Raw.BNFC'Position Foil.VoidS
 type Term = Term' Raw.BNFC'Position
 
 -- ** From raw to scope-safe
-
-toBinders' :: Foil.Distinct n =>
-  Foil.Scope n -> Map Raw.VarIdent (Foil.Name n) -> Raw.Binders' a ->
-    (forall l. Foil.DExt n l => Binders' a n l -> Map Raw.VarIdent (Foil.Name l) -> r)
-    -> r
-toBinders' scope env rawBinders cont =
-  case rawBinders of
-    Raw.NoBinders loc -> cont (NoBinders loc) env
-    Raw.SomeBinders loc x xs ->
-      Foil.withFresh scope $ \binder ->
-        let scope' = Foil.extendScope binder scope
-            env' = Map.insert x (Foil.nameOf binder) (Foil.sink <$> env)
-        in toBinders' scope' env' xs $ \binders env'' ->
-            cont (SomeBinders loc binder binders) env''
 
 toOpArg' :: Foil.Distinct n => Foil.Scope n -> Map Raw.VarIdent (Foil.Name n) -> Raw.OpArg' a -> OpArg' a n
 toOpArg' scope env = \case
