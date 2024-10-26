@@ -1,16 +1,16 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-{-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs             #-}
-{-# LANGUAGE KindSignatures    #-}
-{-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE PatternSynonyms   #-}
-{-# LANGUAGE RankNTypes        #-}
-{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE DataKinds          #-}
+{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE DeriveTraversable  #-}
+{-# LANGUAGE FlexibleInstances  #-}
+{-# LANGUAGE GADTs              #-}
+{-# LANGUAGE KindSignatures     #-}
+{-# LANGUAGE LambdaCase         #-}
+{-# LANGUAGE PatternSynonyms    #-}
+{-# LANGUAGE RankNTypes         #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell    #-}
+{-# LANGUAGE TypeFamilies       #-}
 -- | Free foil implementation of the \(\lambda\Pi\)-calculus (with pairs).
 --
 -- Free foil provides __general__ definitions or implementations for the following:
@@ -38,20 +38,20 @@ module Language.LambdaPi.Impl.FreeFoilTH where
 import qualified Control.Monad.Foil              as Foil
 import           Control.Monad.Foil.TH
 import           Control.Monad.Free.Foil
+import           Control.Monad.Free.Foil.Generic
 import           Control.Monad.Free.Foil.TH
 import           Data.Bifunctor.TH
 import           Data.Map                        (Map)
 import qualified Data.Map                        as Map
 import           Data.String                     (IsString (..))
+import           Generics.Kind.TH                (deriveGenericK)
+import qualified GHC.Generics                    as GHC
 import qualified Language.LambdaPi.Syntax.Abs    as Raw
 import qualified Language.LambdaPi.Syntax.Layout as Raw
 import qualified Language.LambdaPi.Syntax.Lex    as Raw
 import qualified Language.LambdaPi.Syntax.Par    as Raw
 import qualified Language.LambdaPi.Syntax.Print  as Raw
 import           System.Exit                     (exitFailure)
-import Control.Monad.Free.Foil.Generic
-import Generics.Kind.TH (deriveGenericK)
-import qualified GHC.Generics as GHC
 
 
 -- $setup
@@ -138,9 +138,11 @@ fromTerm' :: Term' a n -> Raw.Term' a
 fromTerm' = convertFromAST
   convertFromTerm'Sig
   (Raw.Var (error "location missing"))
-  fromFoilPattern'
+  (fromFoilPattern' mkVarIdent)
   (Raw.AScopedTerm (error "location missing"))
-  (\n -> Raw.VarIdent ("x" ++ show n))
+  mkVarIdent
+  where
+    mkVarIdent n = Raw.VarIdent ("x" ++ show n)
 
 -- | Parse scope-safe terms via raw representation.
 --

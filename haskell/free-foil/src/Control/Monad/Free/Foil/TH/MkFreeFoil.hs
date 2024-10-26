@@ -475,8 +475,8 @@ toFreeFoilClauseFromBinding config termConfig@FreeFoilTermConfig{..} rawRetType 
       ForallC _params _ctx con -> go con
       RecGadtC conNames argTypes retType -> go (GadtC conNames (map removeName argTypes) retType)
 
-toFreeFoilClauseFromQualified :: Name -> FreeFoilConfig -> Type -> Con -> Q [Clause]
-toFreeFoilClauseFromQualified rawTypeName config rawRetType = go
+toFreeFoilClauseFromQualified :: FreeFoilConfig -> Type -> Con -> Q [Clause]
+toFreeFoilClauseFromQualified config rawRetType = go
   where
     go = \case
       GadtC conNames rawArgTypes rawRetType' -> concat <$> do
@@ -676,7 +676,7 @@ mkFreeFoilConversions config@FreeFoilConfig{..} = concat <$> sequence
           safeType = toFreeFoilType SortTerm config (VarT outerScope) (VarT innerScope) rawType
       addModFinalizer $ putDoc (DeclDoc funName)
         ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. Convert from scope-safe to raw representation.")
-      clauses <- concat <$> mapM (toFreeFoilClauseFromQualified rawName config rawType) cons
+      clauses <- concat <$> mapM (toFreeFoilClauseFromQualified config rawType) cons
       return
         [ SigD funName (AppT (AppT ArrowT safeType) rawType)
         , FunD funName clauses

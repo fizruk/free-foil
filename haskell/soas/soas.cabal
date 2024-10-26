@@ -35,6 +35,7 @@ custom-setup
 
 library
   exposed-modules:
+      Language.SOAS.FreeFoilConfig
       Language.SOAS.Impl
       Language.SOAS.Syntax.Abs
       Language.SOAS.Syntax.Lex
