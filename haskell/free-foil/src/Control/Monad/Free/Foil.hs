@@ -1,5 +1,4 @@
 {-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE RankNTypes             #-}
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleContexts      #-}
@@ -9,6 +8,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE UndecidableInstances  #-}
@@ -352,7 +352,7 @@ convertFromAST
   -- ^ Peel back one layer of syntax.
   -> (rawIdent -> rawTerm)
   -- ^ Convert identifier into a raw variable term.
-  -> (forall x y. (Int -> rawIdent) -> binder x y -> rawPattern)
+  -> (forall x y. binder x y -> rawPattern)
   -- ^ Convert scope-safe pattern into a raw pattern.
   -> (rawTerm -> rawScopedTerm)
   -- ^ Wrap raw term into a scoped term.
@@ -376,7 +376,7 @@ convertFromScopedAST
   -- ^ Peel back one layer of syntax.
   -> (rawIdent -> rawTerm)
   -- ^ Convert identifier into a raw variable term.
-  -> (forall x y. (Int -> rawIdent) -> binder x y -> rawPattern)
+  -> (forall x y. binder x y -> rawPattern)
   -- ^ Convert scope-safe pattern into a raw pattern.
   -> (rawTerm -> rawScopedTerm)
   -- ^ Wrap raw term into a scoped term.
@@ -387,5 +387,5 @@ convertFromScopedAST
   -> (rawPattern, rawScopedTerm)
 convertFromScopedAST fromSig fromVar makePattern makeScoped f = \case
   ScopedAST binder body ->
-    ( makePattern f binder
+    ( makePattern binder
     , makeScoped (convertFromAST fromSig fromVar makePattern makeScoped f body))

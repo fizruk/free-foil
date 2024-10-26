@@ -30,7 +30,7 @@ import qualified Language.SOAS.Syntax.Print  as Raw
 import           System.Exit                     (exitFailure)
 import Control.Monad.Free.Foil.Generic
 import Generics.Kind.TH (deriveGenericK)
-import qualified GHC.Generics as GHC
+import Language.SOAS.FreeFoilConfig (soasConfig)
 
 -- $setup
 -- >>> :set -XOverloadedStrings
@@ -41,54 +41,19 @@ import qualified GHC.Generics as GHC
 
 -- * Generated code
 
-mkFreeFoil FreeFoilConfig
-  { rawQuantifiedNames =
-      [ ''Raw.Subst'
-      , ''Raw.MetaVarTyping'
-      , ''Raw.OpTyping'
-      , ''Raw.Constraint'
-      , ''Raw.VarTyping'
-      , ''Raw.TermTyping'
-      ]
-  , freeFoilTermConfigs =
-      [ FreeFoilTermConfig
-          { rawIdentName = ''Raw.VarIdent
-          , rawTermName = ''Raw.Term'
-          , rawBindingName = ''Raw.Binders'
-          , rawScopeName = ''Raw.ScopedTerm'
-          , rawVarConName = 'Raw.Var
-          , rawSubTermNames = [ ''Raw.OpArg' ]
-          }
-      , FreeFoilTermConfig
-          { rawIdentName = ''Raw.TypeVarIdent'
-          , rawTermName = ''Raw.Type'
-          , rawBindingName = ''Raw.TypeBinders'
-          , rawScopeName = ''Raw.ScopedType'
-          , rawVarConName = 'Raw.TypeVar
-          , rawSubTermNames = [ ''Raw.OpArgTyping' ]
-          } ]
-  , freeFoilNameModifier = id
-  , freeFoilScopeNameModifier = ("Scoped" ++ )
-  , freeFoilConNameModifier = id
-  , freeFoilConvertFromName = ("from" ++ )
-  , freeFoilConvertToName = ("to" ++ )
-  , signatureNameModifier = (++ "Sig")
-  , ignoreNames = []
-  }
+mkFreeFoil soasConfig
 
-deriving instance GHC.Generic (Term'Sig a scope term)
-deriving instance GHC.Generic (OpArg'Sig a scope term)
-deriving instance GHC.Generic (Type'Sig a scope term)
 deriveGenericK ''Term'Sig
 deriveGenericK ''OpArg'Sig
+deriveGenericK ''OpArgTyping'Sig
 deriveGenericK ''Type'Sig
 
-deriving instance Functor (Term'Sig a scope)
-deriving instance Functor (OpArg'Sig a scope)
-deriving instance Functor (Type'Sig a scope)
 deriveBifunctor ''OpArg'Sig
+deriveBifunctor ''OpArgTyping'Sig
 deriveBifunctor ''Term'Sig
 deriveBifunctor ''Type'Sig
+
+mkFreeFoilConversions soasConfig
 
 -- FIXME: derive via GenericK
 instance Foil.CoSinkable (Binders' a) where
@@ -171,16 +136,8 @@ instance IsString (Term' Raw.BNFC'Position Foil.VoidS) where
 
 -- ** From scope-safe to raw
 
-fromTerm' :: Term' a n -> Raw.Term' a
-fromTerm' = convertFromAST
-  fromTerm'Sig
-  (Raw.Var (error "trying to access an erased annotation on a variable"))
-  fromBinders'
-  (Raw.ScopedTerm (error "trying to access an erased annotation on a scoped term"))
-  (\i -> Raw.VarIdent ("x" <> show i))
-
-instance Show (Term' a n) where
-  show = Raw.printTree . fromTerm'
+instance Show (Term' a n) where show = Raw.printTree . fromTerm'
+instance Show (Subst' a n) where show = Raw.printTree . fromSubst'
 
 -- ** Meta variable substitutions
 
