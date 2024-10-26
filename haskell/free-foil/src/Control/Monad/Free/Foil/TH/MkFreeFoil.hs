@@ -588,6 +588,7 @@ mkFreeFoilConversions :: FreeFoilConfig -> Q [Dec]
 mkFreeFoilConversions config@FreeFoilConfig{..} = concat <$> sequence
   [ concat <$> mapM mkConvertFrom freeFoilTermConfigs
   , concat <$> mapM mkConvertFromQuantified rawQuantifiedNames
+  , concat <$> mapM mkConvertTo freeFoilTermConfigs
   ]
   where
     outerScope = mkName "o"
@@ -693,3 +694,87 @@ mkFreeFoilConversions config@FreeFoilConfig{..} = concat <$> sequence
       return
         [ SigD funName (bindingType --> rawRetType)
         , FunD funName clauses ]
+
+    mkConvertTo termConfig@FreeFoilTermConfig{..} = concat <$> sequence
+      [ mkConvertToSig SortTerm termConfig rawTermName
+      , concat <$> mapM (mkConvertToSig SortSubTerm termConfig) rawSubTermNames
+      -- , mkConvertToBinding termConfig
+      -- , mkConvertToTerm termConfig
+      -- , concat <$> mapM (mkConvertToSubTerm termConfig) rawSubTermNames
+      ]
+
+    mkConvertToSig sort termConfig@FreeFoilTermConfig{..} rawName = do
+      (tvars, cons) <- reifyDataOrNewtype rawName
+      (itvars, _cons) <- reifyDataOrNewtype rawIdentName
+      let rawSigName = toSignatureName config rawName
+          funName = toFreeFoilNameTo config rawSigName
+          rawType = PeelConT rawName (map (VarT . tvarName) tvars)
+          rawIdentType = PeelConT rawIdentName (map (VarT . tvarName) (take (length itvars) tvars)) -- FIXME: undocumented hack :(
+          rawTermType = PeelConT rawTermName (map (VarT . tvarName) tvars)
+          rawScopedTermType = PeelConT rawScopeName (map (VarT . tvarName) tvars)
+          rawBindingType = PeelConT rawBindingName (map (VarT . tvarName) tvars)
+          rawScopeType = TupleT 2 `AppT` rawBindingType `AppT` rawScopedTermType
+      case toFreeFoilSigType SortSubTerm config rawScopeType rawTermType rawType of
+        Just safeType -> do
+          let retType = case sort of
+                SortTerm -> ConT ''Either `AppT` rawIdentType `AppT` safeType
+                _        -> safeType
+          clauses <- concat <$> mapM (sigConToClause sort rawType config termConfig) cons
+          addModFinalizer $ putDoc (DeclDoc funName)
+            ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. A helper used to convert from raw to scope-safe representation.")
+          return
+            [ SigD funName (AppT (AppT ArrowT rawType) retType)
+            , FunD funName clauses ]
+        Nothing -> error "impossible happened"
+
+sigConToClause :: Sort -> Type -> FreeFoilConfig -> FreeFoilTermConfig -> Con -> Q [Clause]
+sigConToClause sort rawRetType config@FreeFoilConfig{..} FreeFoilTermConfig{..} = go
+  where
+    fromArgType :: Bool -> Name -> Type -> Q ([Pat], [Exp])
+    fromArgType isVarCon theIdent = \case
+      PeelConT typeName _params
+        | typeName == rawIdentName, SortTerm <- sort, isVarCon -> do
+            return ([VarP theIdent], [VarE theIdent])
+        | Just _ <- lookupBindingName typeName freeFoilTermConfigs -> do
+            return ([], [])
+        | Just _ <- lookupScopeName typeName freeFoilTermConfigs -> do
+            binder <- newName "binder"
+            body <- newName "body"
+            return ([VarP binder, VarP body], [TupE [Just (VarE binder), Just (VarE body)]])
+        | Just _ <- lookupSubTermName typeName freeFoilTermConfigs -> do
+            let rawSigName = toSignatureName config typeName
+                funName = toFreeFoilNameTo config rawSigName
+            x <- newName "_x"
+            return ([VarP x], [AppE (VarE funName) (VarE x)])
+      AppT _ (PeelConT typeName _params)
+        | Just _ <- lookupSubTermName typeName freeFoilTermConfigs -> do
+            let rawSigName = toSignatureName config typeName
+                funName = toFreeFoilNameTo config rawSigName
+            x <- newName "_x"
+            return ([VarP x], [AppE (AppE (VarE 'fmap) (VarE funName)) (VarE x)])
+      _ -> do
+        x <- newName "_x"
+        return ([VarP x], [VarE x])
+
+    go :: Con -> Q [Clause]
+    go = \case
+      GadtC conNames rawArgTypes _rawRetType -> concat <$> do
+        theIdent <- newName "_theRawIdent"
+        forM conNames $ \conName -> do
+          let newConName = toSignatureName config conName
+              isVarCon = conName == rawVarConName
+          (concat -> pats, concat -> exps) <- unzip <$>
+            mapM (fromArgType isVarCon theIdent . snd) rawArgTypes
+          case sort of
+            SortTerm
+              | isVarCon -> return
+                  [ Clause [ConP conName [] pats] (NormalB (ConE 'Left `AppE` VarE theIdent)) [] ]  -- FIXME!
+              | otherwise -> return
+                  [ Clause [ConP conName [] pats] (NormalB (ConE 'Right `AppE` (foldl AppE (ConE newConName) exps))) [] ]
+            _ -> return
+              [ Clause [ConP conName [] pats] (NormalB (foldl AppE (ConE newConName) exps)) [] ]
+      NormalC conName types -> go (GadtC [conName] types rawRetType)
+      RecC conName types -> go (NormalC conName (map removeName types))
+      InfixC l conName r -> go (GadtC [conName] [l, r] rawRetType)
+      ForallC _params _ctx con -> go con
+      RecGadtC conNames argTypes retType -> go (GadtC conNames (map removeName argTypes) retType)

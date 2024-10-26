@@ -43,14 +43,14 @@ import Language.SOAS.FreeFoilConfig (soasConfig)
 
 mkFreeFoil soasConfig
 
-deriveGenericK ''Term'Sig
 deriveGenericK ''OpArg'Sig
+deriveGenericK ''Term'Sig
 deriveGenericK ''OpArgTyping'Sig
 deriveGenericK ''Type'Sig
 
 deriveBifunctor ''OpArg'Sig
-deriveBifunctor ''OpArgTyping'Sig
 deriveBifunctor ''Term'Sig
+deriveBifunctor ''OpArgTyping'Sig
 deriveBifunctor ''Type'Sig
 
 mkFreeFoilConversions soasConfig
@@ -95,34 +95,30 @@ type Term = Term' Raw.BNFC'Position
 
 toBinders' :: Foil.Distinct n =>
   Foil.Scope n -> Map Raw.VarIdent (Foil.Name n) -> Raw.Binders' a ->
-    (forall l. Foil.DExt n l => Foil.Scope l -> Map Raw.VarIdent (Foil.Name l) -> Binders' a n l -> r)
+    (forall l. Foil.DExt n l => Binders' a n l -> Map Raw.VarIdent (Foil.Name l) -> r)
     -> r
 toBinders' scope env rawBinders cont =
   case rawBinders of
-    Raw.NoBinders loc -> cont scope env (NoBinders loc)
+    Raw.NoBinders loc -> cont (NoBinders loc) env
     Raw.SomeBinders loc x xs ->
       Foil.withFresh scope $ \binder ->
         let scope' = Foil.extendScope binder scope
             env' = Map.insert x (Foil.nameOf binder) (Foil.sink <$> env)
-        in toBinders' scope' env' xs $ \scope'' env'' binders ->
-            cont scope'' env'' (SomeBinders loc binder binders)
+        in toBinders' scope' env' xs $ \binders env'' ->
+            cont (SomeBinders loc binder binders) env''
 
 toOpArg' :: Foil.Distinct n => Foil.Scope n -> Map Raw.VarIdent (Foil.Name n) -> Raw.OpArg' a -> OpArg' a n
 toOpArg' scope env = \case
   Raw.OpArg loc binders (Raw.ScopedTerm _loc body) ->
-    toBinders' scope env binders $ \scope' env' binders' ->
-      OpArg loc binders' (toTerm' scope' env' body)
+    toBinders' scope env binders $ \ binders' env' ->
+      let scope' = Foil.extendScopePattern binders' scope
+       in OpArg loc binders' (toTerm' scope' env' body)
+
+rawScopeToTerm :: Raw.ScopedTerm' a -> Raw.Term' a
+rawScopeToTerm (Raw.ScopedTerm _loc term) = term
 
 toTerm' :: Foil.Distinct n => Foil.Scope n -> Map Raw.VarIdent (Foil.Name n) -> Raw.Term' a -> Term' a n
-toTerm' scope env = \case
-  Raw.Var _loc x ->
-    case Map.lookup x env of
-      Just name -> Var name
-      Nothing -> error ("undefined variable: " ++ Raw.printTree x)
-  Raw.Op loc op args ->
-    Op loc op (map (toOpArg' scope env) args)
-  Raw.MetaVar loc m args ->
-    MetaVar loc m (map (toTerm' scope env) args)
+toTerm' = convertToAST toTerm'Sig toBinders' rawScopeToTerm
 
 -- >>> "?m[App(.Lam(x.x), .Lam(y.y))]" :: Term
 -- ?m [App (. Lam (x0 . x0), . Lam (x0 . x0))]
