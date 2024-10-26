@@ -1,4 +1,4 @@
-{-# OPTIONS_GHC -Wno-orphans -ddump-splices #-}
+{-# OPTIONS_GHC -Wno-orphans -Wno-redundant-constraints #-}
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE ScopedTypeVariables         #-}
