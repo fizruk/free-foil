@@ -171,22 +171,6 @@ instance IsString (Term' Raw.BNFC'Position Foil.VoidS) where
 
 -- ** From scope-safe to raw
 
--- fromOpArg'Sig :: OpArg'Sig a (Raw.Binders' a, Raw.ScopedTerm' a) (Raw.Term' a) -> Raw.OpArg' a
--- fromOpArg'Sig (OpArgSig loc (binders, body)) = Raw.OpArg loc binders body
-
--- fromTerm'Sig :: Term'Sig a (Raw.Binders' a, Raw.ScopedTerm' a) (Raw.Term' a) -> Raw.Term' a
--- fromTerm'Sig = \case
---   OpSig loc op args -> Raw.Op loc op (map fromOpArg'Sig args)
---   MetaVarSig loc m args -> Raw.MetaVar loc m args
-
-fromBinders' :: (Int -> Raw.VarIdent) -> Binders' a n l -> Raw.Binders' a
-fromBinders' mkIdent = \case
-  NoBinders loc -> Raw.NoBinders loc
-  SomeBinders loc binder binders ->
-    Raw.SomeBinders loc
-      (mkIdent (Foil.nameId (Foil.nameOf binder)))
-      (fromBinders' mkIdent binders)
-
 fromTerm' :: Term' a n -> Raw.Term' a
 fromTerm' = convertFromAST
   fromTerm'Sig
