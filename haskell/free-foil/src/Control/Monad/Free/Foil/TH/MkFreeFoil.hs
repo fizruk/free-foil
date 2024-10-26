@@ -14,7 +14,7 @@ import qualified Control.Monad.Foil         as Foil
 import           Control.Monad.Foil.TH.Util
 import qualified Control.Monad.Free.Foil    as Foil
 import           Data.Bifunctor
-import           Data.List                  (find, unzip4, (\\))
+import           Data.List                  (find, unzip4, (\\), nub)
 import           Data.Maybe                 (catMaybes, mapMaybe)
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -593,6 +593,7 @@ mkFreeFoilConversions config@FreeFoilConfig{..} = concat <$> sequence
   [ concat <$> mapM mkConvertFrom freeFoilTermConfigs
   , concat <$> mapM mkConvertFromQuantified rawQuantifiedNames
   , concat <$> mapM mkConvertTo freeFoilTermConfigs
+  , concat <$> mapM mkConvertToQuantified rawQuantifiedNames
   ]
   where
     outerScope = mkName "o"
@@ -813,6 +814,108 @@ mkFreeFoilConversions config@FreeFoilConfig{..} = concat <$> sequence
                 --> VarT r
         , FunD funName clauses ]
 
+    mkConvertToQuantified rawName = do
+      (tvars, cons) <- reifyDataOrNewtype rawName
+      rawIdentNamesOfQuantifiedName rawName config >>= \case
+        [] -> error "unexpected: quantified type not connected to any known terms"
+        [rawIdentName'] -> do
+          (itvars, _cons) <- reifyDataOrNewtype rawIdentName'
+          let funName = toFreeFoilNameTo config rawName
+              rawIdentType = PeelConT rawIdentName' (map (VarT . tvarName) (take (length itvars) tvars)) -- FIXME: undocumented hack :(
+              rawType = PeelConT rawName (map (VarT . tvarName) tvars)
+              safeType = toFreeFoilType SortTerm config (VarT outerScope) (VarT innerScope) rawType
+          addModFinalizer $ putDoc (DeclDoc funName)
+            ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. Convert from scope-safe to raw representation.")
+          clauses <- concat <$> mapM (quantifiedConToClause rawType config) cons
+          return
+            [ SigD funName $
+                ForallT
+                  (PlainTV outerScope InferredSpec : map (InferredSpec <$) tvars)
+                  [ ConT ''Foil.Distinct `AppT` VarT outerScope
+                  , ConT ''Ord `AppT` rawIdentType ] $
+                    (ConT ''Foil.Scope `AppT` VarT outerScope)
+                    --> (ConT ''Map `AppT` rawIdentType `AppT` (ConT ''Foil.Name `AppT` VarT outerScope))
+                    --> rawType
+                    --> safeType
+            , FunD funName clauses
+            ]
+        _ -> do
+          -- error ("unsupported: more than one known term connected to the quantified type: " <> show rawName)
+          return []
+
+quantifiedConToClause :: Type -> FreeFoilConfig -> Con -> Q [Clause]
+quantifiedConToClause rawType config@FreeFoilConfig{..} = go
+  where
+    goArgTypes :: Name -> Name -> Name -> Name -> [Type] -> Q ([Pat], [Exp], Exp -> Exp, Name, Name)
+    goArgTypes _theScope _theEnv scope env [] = return ([], [], id, scope, env)
+    goArgTypes theScope theEnv scope env (t:ts) = case t of
+      PeelConT typeName _params
+        | typeName `elem` map rawIdentName freeFoilTermConfigs -> do
+            x <- newName "_x"
+            (pats, exps, wrap, scope', env') <- goArgTypes theScope theEnv scope env ts
+            return (VarP x : pats, (InfixE (Just (VarE env)) (VarE '(Map.!)) (Just (VarE x))) : exps, wrap, scope', env')
+        | Just _ <- lookupBindingName typeName freeFoilTermConfigs -> do
+            x <- newName "_x"
+            x' <- newName "_x'"
+            scope' <- newName "_scope"
+            env' <- newName "_env"
+            let funName = toFreeFoilNameTo config typeName
+            (pats, exps, wrap, scope'', env'') <- goArgTypes theScope theEnv scope' env' ts
+            return (VarP x : pats, VarE x' : exps, \e ->
+              VarE funName `AppE` VarE scope `AppE` VarE env `AppE` VarE x `AppE`
+                LamE [VarP x', VarP env']
+                  (LetE [ ValD (VarP scope') (NormalB (VarE 'Foil.extendScopePattern `AppE` VarE x' `AppE` VarE scope)) []]
+                    (wrap e)), scope'', env'')
+        | Just FreeFoilTermConfig{..} <- lookupScopeName typeName freeFoilTermConfigs -> do
+            x <- newName "_x"
+            let funName = toFreeFoilNameTo config rawTermName
+            (pats, exps, wrap, scope', env') <- goArgTypes theScope theEnv scope env ts
+            return (VarP x : pats,
+              (VarE funName `AppE` VarE scope' `AppE` VarE env' `AppE` (VarE rawScopeToTermName `AppE` VarE x)) : exps,
+              wrap, scope', env')
+        | Just _ <- lookupTermName typeName freeFoilTermConfigs -> do
+            let funName = toFreeFoilNameTo config typeName
+            x <- newName "x"
+            (pats, exps, wrap, scope', env') <- goArgTypes theScope theEnv scope env ts
+            return (VarP x : pats, (VarE funName `AppE` VarE scope' `AppE` VarE env' `AppE` VarE x) : exps, wrap, scope', env')
+      AppT _ (PeelConT typeName _params)
+        | Just _ <- lookupTermName typeName freeFoilTermConfigs -> do
+            let funName = toFreeFoilNameTo config typeName
+            x <- newName "x"
+            (pats, exps, wrap, scope', env') <- goArgTypes theScope theEnv scope env ts
+            return (VarP x : pats, AppE (AppE (VarE 'fmap) (VarE funName `AppE` VarE theScope `AppE` VarE theEnv)) (VarE x) : exps, wrap, scope', env')
+        | Just _ <- lookupSubTermName typeName freeFoilTermConfigs -> do
+            let funName = toFreeFoilNameTo config typeName
+            x <- newName "x"
+            (pats, exps, wrap, scope', env') <- goArgTypes theScope theEnv scope env ts
+            return (VarP x : pats, AppE (AppE (VarE 'fmap) (VarE funName `AppE` VarE theScope `AppE` VarE theEnv)) (VarE x) : exps, wrap, scope', env')
+        | Just FreeFoilTermConfig{..} <- lookupScopeName typeName freeFoilTermConfigs -> do
+            let funName = toFreeFoilNameTo config rawTermName
+            x <- newName "x"
+            (pats, exps, wrap, scope', env') <- goArgTypes theScope theEnv scope env ts
+            return (VarP x : pats, AppE (AppE (VarE 'fmap) (VarE funName `AppE` VarE scope' `AppE` VarE env')) (VarE x) : exps, wrap, scope', env')
+      _ -> do
+        x <- newName "_x"
+        (pats, exps, wrap, scope', env') <- goArgTypes theScope theEnv scope env ts
+        return (VarP x : pats, VarE x : exps, wrap, scope', env')
+
+    go :: Con -> Q [Clause]
+    go = \case
+      GadtC conNames rawArgTypes _rawRetType -> concat <$> do
+        scope <- newName "_scope"
+        env <- newName "_env"
+        forM conNames $ \conName -> do
+          let newConName = toConName config conName
+          (pats, exps, wrap, _scope', _env') <- goArgTypes scope env scope env (map snd rawArgTypes)
+          return
+            [ Clause [VarP scope, VarP env, ConP conName [] pats]
+                (NormalB (wrap (foldl AppE (ConE newConName) exps))) [] ]
+      NormalC conName types -> go (GadtC [conName] types rawType)
+      RecC conName types -> go (NormalC conName (map removeName types))
+      InfixC l conName r -> go (GadtC [conName] [l, r] rawType)
+      ForallC _params _ctx con -> go con
+      RecGadtC conNames argTypes retType -> go (GadtC conNames (map removeName argTypes) retType)
+
 subTermConToClause :: Type -> FreeFoilConfig -> FreeFoilTermConfig -> Con -> Q [Clause]
 subTermConToClause rawType config FreeFoilTermConfig{..} = go
   where
@@ -967,3 +1070,62 @@ sigConToClause sort rawRetType config@FreeFoilConfig{..} FreeFoilTermConfig{..} 
       InfixC l conName r -> go (GadtC [conName] [l, r] rawRetType)
       ForallC _params _ctx con -> go con
       RecGadtC conNames argTypes retType -> go (GadtC conNames (map removeName argTypes) retType)
+
+rawIdentNamesOfQuantifiedName :: Name -> FreeFoilConfig -> Q [Name]
+rawIdentNamesOfQuantifiedName rawName config = do
+  (_tvars, cons) <- reifyDataOrNewtype rawName
+  return (nub (concatMap go cons))
+  where
+    go :: Con -> [Name]
+    go = \case
+      GadtC _conNames rawArgTypes _rawRetType ->
+        concatMap (rawIdentNamesOfType config . snd) rawArgTypes
+      NormalC conName types -> go (GadtC [conName] types undefined)
+      RecC conName types -> go (NormalC conName (map removeName types))
+      InfixC l conName r -> go (GadtC [conName] [l, r] undefined)
+      ForallC _params _ctx con -> go con
+      RecGadtC conNames argTypes retType -> go (GadtC conNames (map removeName argTypes) retType)
+
+rawIdentNamesOfType :: FreeFoilConfig -> Type -> [Name]
+rawIdentNamesOfType FreeFoilConfig{..} = go
+  where
+    go = \case
+      PeelConT typeName _params
+        | typeName `elem` rawQuantifiedNames -> []
+        | typeName `elem` map rawIdentName freeFoilTermConfigs -> [typeName]
+        | Just FreeFoilTermConfig{..} <- lookupTermName typeName freeFoilTermConfigs ->
+            [rawIdentName]
+        | Just FreeFoilTermConfig{..} <- lookupBindingName typeName freeFoilTermConfigs ->
+            [rawIdentName]
+        | Just FreeFoilTermConfig{..} <- lookupScopeName typeName freeFoilTermConfigs ->
+            [rawIdentName]
+        | Just FreeFoilTermConfig{..} <- lookupSubTermName typeName freeFoilTermConfigs ->
+            [rawIdentName]
+      ForallT _bndrs _ctx type_ -> go type_
+      ForallVisT _bndrs type_ -> go type_
+      AppT f x -> go f <> go x
+      AppKindT f _k -> go f
+      SigT t _k -> go t
+      ConT{} -> []
+      VarT{} -> []
+      PromotedT{} -> []
+      InfixT l _op r -> go l <> go r
+      UInfixT l _op r -> go l <> go r
+      PromotedInfixT l _op r -> go l <> go r
+      PromotedUInfixT l _op r -> go l <> go r
+      ParensT t -> go t
+      TupleT{} -> []
+      UnboxedTupleT{} -> []
+      UnboxedSumT{} -> []
+      ArrowT{} -> []
+      MulArrowT{} -> []
+      EqualityT{} -> []
+      ListT{} -> []
+      PromotedTupleT{} -> []
+      PromotedNilT{} -> []
+      PromotedConsT{} -> []
+      StarT{} -> []
+      ConstraintT{} -> []
+      LitT{} -> []
+      WildCardT{} -> []
+      ImplicitParamT _s t -> go t

@@ -113,12 +113,16 @@ type Term = Term' Raw.BNFC'Position
 -- >>> "?m[App(.Lam(x.x), .Lam(y.y))]" :: Term
 -- ?m [App (. Lam (x0 . x0), . Lam (x0 . x0))]
 instance IsString (Term' Raw.BNFC'Position Foil.VoidS) where
-  fromString = toTerm' Foil.emptyScope Map.empty . unsafeParseRawTerm
-    where
-      unsafeParseRawTerm input =
-        case Raw.pTerm (Raw.myLexer input) of
-          Left err -> error err
-          Right term -> term
+  fromString = toTerm' Foil.emptyScope Map.empty . unsafeParse Raw.pTerm
+
+-- instance IsString (Subst' Raw.BNFC'Position Foil.VoidS) where
+--   fromString = toSubst' Foil.emptyScope Map.empty . unsafeParse Raw.pSubst
+
+unsafeParse :: ([Raw.Token] -> Either String a) -> String -> a
+unsafeParse parse input =
+  case parse (Raw.myLexer input) of
+    Left err -> error err
+    Right x -> x
 
 -- ** From scope-safe to raw
 
