@@ -22,6 +22,12 @@ rawScopedTerm = Raw.ScopedTerm (error "trying to access an erased annotation")
 rawScopedType :: Raw.Type' a -> Raw.ScopedType' a
 rawScopedType = Raw.ScopedType (error "trying to access an erased annotation")
 
+rawScopeToTerm :: Raw.ScopedTerm' a -> Raw.Term' a
+rawScopeToTerm (Raw.ScopedTerm _loc term) = term
+
+rawScopeToType :: Raw.ScopedType' a -> Raw.Type' a
+rawScopeToType (Raw.ScopedType _loc type_) = type_
+
 soasConfig :: FreeFoilConfig
 soasConfig = FreeFoilConfig
   { rawQuantifiedNames =
@@ -43,6 +49,7 @@ soasConfig = FreeFoilConfig
           , intToRawIdentName = 'intToVarIdent
           , rawVarIdentToTermName = 'rawVar
           , rawTermToScopeName = 'rawScopedTerm
+          , rawScopeToTermName = 'rawScopeToTerm
           }
       , FreeFoilTermConfig
           { rawIdentName = ''Raw.TypeVarIdent'
@@ -54,6 +61,7 @@ soasConfig = FreeFoilConfig
           , intToRawIdentName = 'intToTypeVarIdent
           , rawVarIdentToTermName = 'rawTypeVar
           , rawTermToScopeName = 'rawScopedType
+          , rawScopeToTermName = 'rawScopeToType
           } ]
   , freeFoilNameModifier = id
   , freeFoilScopeNameModifier = ("Scoped" ++ )

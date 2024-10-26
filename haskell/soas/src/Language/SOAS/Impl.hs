@@ -18,7 +18,6 @@ module Language.SOAS.Impl where
 import Data.List (find)
 import Data.Bifunctor
 import Data.Bifunctor.TH
-import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.String (IsString(..))
 import qualified Control.Monad.Foil as Foil
@@ -110,19 +109,6 @@ type Subst = Subst' Raw.BNFC'Position Foil.VoidS
 type Term = Term' Raw.BNFC'Position
 
 -- ** From raw to scope-safe
-
-toOpArg' :: Foil.Distinct n => Foil.Scope n -> Map Raw.VarIdent (Foil.Name n) -> Raw.OpArg' a -> OpArg' a n
-toOpArg' scope env = \case
-  Raw.OpArg loc binders (Raw.ScopedTerm _loc body) ->
-    toBinders' scope env binders $ \ binders' env' ->
-      let scope' = Foil.extendScopePattern binders' scope
-       in OpArg loc binders' (toTerm' scope' env' body)
-
-rawScopeToTerm :: Raw.ScopedTerm' a -> Raw.Term' a
-rawScopeToTerm (Raw.ScopedTerm _loc term) = term
-
-toTerm' :: Foil.Distinct n => Foil.Scope n -> Map Raw.VarIdent (Foil.Name n) -> Raw.Term' a -> Term' a n
-toTerm' = convertToAST toTerm'Sig toBinders' rawScopeToTerm
 
 -- >>> "?m[App(.Lam(x.x), .Lam(y.y))]" :: Term
 -- ?m [App (. Lam (x0 . x0), . Lam (x0 . x0))]
