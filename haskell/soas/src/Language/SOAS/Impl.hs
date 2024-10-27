@@ -41,10 +41,16 @@ type Constraint = Constraint' Raw.BNFC'Position Foil.VoidS
 type OpTyping = OpTyping' Raw.BNFC'Position Foil.VoidS
 
 -- | Lookup a substitution by its 'Raw.MetaVarIdent'.
+--
+-- >>> lookupSubst "?m" ["?n[] ↦ Zero()", "?m[x y] ↦ App(y, x)"]
+-- Just ?m [x0 x1] ↦ App (x1, x0)
 lookupSubst :: Raw.MetaVarIdent -> [Subst] -> Maybe Subst
 lookupSubst m = find $ \(Subst _loc m' _ _) -> m == m'
 
 -- | Apply meta variable substitutions to a term.
+--
+-- >>> applySubsts Foil.emptyScope ["?m[x y] ↦ Lam(z. App(z, App(x, y)))"] "Lam(x. ?m[App(x, ?m[x, x]), x])"
+-- Lam (x0 . Lam (x2 . App (x2, App (App (x0, ?m [x0, x0]), x0))))
 applySubsts :: Foil.Distinct n => Foil.Scope n -> [Subst] -> Term n -> Term n
 applySubsts scope substs term =
   case term of
