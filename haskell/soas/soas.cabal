@@ -37,6 +37,7 @@ library
   exposed-modules:
       Language.SOAS.FreeFoilConfig
       Language.SOAS.Impl
+      Language.SOAS.Impl.Generated
       Language.SOAS.Syntax.Abs
       Language.SOAS.Syntax.Lex
       Language.SOAS.Syntax.Par
