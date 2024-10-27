@@ -1,4 +1,6 @@
 {-# LANGUAGE BlockArguments             #-}
+{-# LANGUAGE TypeOperators             #-}
+{-# LANGUAGE FlexibleContexts             #-}
 {-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE EmptyCase                  #-}
@@ -43,7 +45,10 @@ import qualified Data.IntMap     as IntMap
 import           Data.IntSet
 import qualified Data.IntSet     as IntSet
 import           Data.Kind       (Type)
+import           Data.Bifunctor
+import Generics.Kind
 import           Unsafe.Coerce
+import           GHC.TypeError
 
 -- * Safe types and operations
 
@@ -599,6 +604,10 @@ class Sinkable (e :: S -> Type) where
     -> e n                  -- ^ Expression with free variables in scope @n@.
     -> e l
 
+  default sinkabilityProof
+    :: (GenericK e, GSinkable (RepK e)) => (Name n -> Name l) -> e n -> e l
+  sinkabilityProof rename = toK . gsinkabilityProof rename . fromK
+
 -- | Sinking a 'Name' is as simple as applying the renaming.
 instance Sinkable Name where
   sinkabilityProof rename = rename
@@ -907,3 +916,77 @@ type DExt n l = (Distinct l, Ext n l)
 class InjectName (e :: S -> Type) where
   -- | Inject names into expressions.
   injectName :: Name n -> e n
+
+-- * Generic 'Sinkable'
+
+class GSinkable (f :: LoT (S -> Type) -> Type) where
+  gsinkabilityProof :: (Name n -> Name l) -> f (n :&&: LoT0) -> f (l :&&: LoT0)
+
+instance GSinkable V1 where
+  gsinkabilityProof _f _v1 = error "absurd: Generics.Kind.V1"
+
+instance GSinkable U1 where
+  gsinkabilityProof _f U1 = U1
+
+instance (GSinkable f, GSinkable g) => GSinkable (f :+: g) where
+  gsinkabilityProof f (L1 x) = L1 (gsinkabilityProof f x)
+  gsinkabilityProof f (R1 y) = R1 (gsinkabilityProof f y)
+
+instance (GSinkable f, GSinkable g) => GSinkable (f :*: g) where
+  gsinkabilityProof f (x :*: y) =
+    gsinkabilityProof f x :*: gsinkabilityProof f y
+
+instance GSinkable f => GSinkable (M1 i c f) where
+  gsinkabilityProof f (M1 m) = M1 (gsinkabilityProof f m)
+
+instance GSinkableField f => GSinkable (Field f) where
+  gsinkabilityProof = gsinkabilityProofField
+
+instance TypeError
+  ('Text "Generic Sinkable is not supported for constrainted data constructors"
+  :$$: 'Text "  when attempting to use a generic instance for"
+  :$$: 'ShowType (c :=>: f)) => GSinkable (c :=>: f) where
+  gsinkabilityProof = undefined
+
+instance TypeError
+  ('Text "Generic Sinkable is not supported for existential data constructors"
+  :$$: 'Text "  when attempting to use a generic instance for"
+  :$$: 'ShowType (Exists k f)) => GSinkable (Exists k f) where
+  gsinkabilityProof = undefined
+
+class GSinkableField f where
+  gsinkabilityProofField :: (Name n -> Name l) -> Field f (n :&&: LoT0) -> Field f (l :&&: LoT0)
+
+instance Sinkable f => GSinkableField (Kon f :@: Var0) where
+  gsinkabilityProofField f (Field x) = Field (sinkabilityProof f x)
+
+instance (Functor f, GSinkableField x) => GSinkableField (Kon f :@: x) where
+  gsinkabilityProofField f (Field x) = Field (fmap (unField . gsinkabilityProofField @x f . Field) x)
+
+instance (Bifunctor f, GSinkableField x, GSinkableField y) => GSinkableField (Kon f :@: x :@: y) where
+  gsinkabilityProofField f (Field x) = Field
+    (bimap (unField . gsinkabilityProofField @x f . Field) (unField . gsinkabilityProofField @y f . Field) x)
+
+instance {-# OVERLAPPABLE #-} TypeError
+  ('Text "Generic Sinkable is not supported for fields of shape (f :@: x) in general"
+  :$$: 'Text "  when attempting to use a generic instance for"
+  :$$: 'ShowType (f :@: x)) => GSinkableField (f :@: x) where
+  gsinkabilityProofField = undefined
+
+instance TypeError
+  ('Text "Generic Sinkable is not supported for fields of shape (ForAll f) in general"
+  :$$: 'Text "  when attempting to use a generic instance for"
+  :$$: 'ShowType (ForAll f)) => GSinkableField (ForAll f) where
+  gsinkabilityProofField = undefined
+
+instance TypeError
+  ('Text "Generic Sinkable is not supported for fields of shape (c :=>>: f) in general"
+  :$$: 'Text "  when attempting to use a generic instance for"
+  :$$: 'ShowType (c :=>>: f)) => GSinkableField (c :=>>: f) where
+  gsinkabilityProofField = undefined
+
+instance TypeError
+  ('Text "Generic Sinkable is not supported for fields of shape (Eval e) in general"
+  :$$: 'Text "  when attempting to use a generic instance for"
+  :$$: 'ShowType (Eval e)) => GSinkableField (Eval e) where
+  gsinkabilityProofField = undefined
