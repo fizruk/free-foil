@@ -33,6 +33,7 @@ import Language.SOAS.FreeFoilConfig (soasConfig)
 -- >>> :set -XOverloadedStrings
 -- >>> :set -XDataKinds
 -- >>> import qualified Control.Monad.Foil as Foil
+-- >>> import qualified Language.SOAS.Syntax.Abs as Raw
 -- >>> import Control.Monad.Free.Foil
 -- >>> import Data.String (fromString)
 
@@ -107,9 +108,10 @@ instance ZipMatchK a => ZipMatchK (Type'Sig a)
 instance ZipMatchK a => ZipMatch (Term'Sig a) where zipMatch = genericZipMatch2
 instance ZipMatchK a => ZipMatch (Type'Sig a) where zipMatch = genericZipMatch2
 
--- >>> "?m[App(Lam(x.x), Lam(y.y))]" :: Term
--- ?m [App (. Lam (x0 . x0), . Lam (x0 . x0))]
--- >>> "Lam(y. Let(Lam(x. x), f. ?m[y, App(f, y)]))" :: SOAS.Term Foil.VoidS
+-- |
+-- >>> "?m[App(Lam(x.x), Lam(y.y))]" :: Term' Raw.BNFC'Position Foil.VoidS
+-- ?m [App (Lam (x0 . x0), Lam (x0 . x0))]
+-- >>> "Lam(y. Let(Lam(x. x), f. ?m[y, App(f, y)]))" :: Term' Raw.BNFC'Position Foil.VoidS
 -- Lam (x0 . Let (Lam (x1 . x1), x1 . ?m [x0, App (x1, x0)]))
 instance IsString (Term' Raw.BNFC'Position Foil.VoidS) where
   fromString = toTerm' Foil.emptyScope Map.empty . unsafeParse Raw.pTerm
@@ -117,17 +119,20 @@ instance IsString (Term' Raw.BNFC'Position Foil.VoidS) where
 instance IsString (Type' Raw.BNFC'Position Foil.VoidS) where
   fromString = toType' Foil.emptyScope Map.empty . unsafeParse Raw.pType
 
--- >>> "Lam : ∀ a b. (a.b) → a→b" :: SOAS.OpTyping
+-- |
+-- >>> "Lam : ∀ a b. (a.b) → a→b" :: OpTyping' Raw.BNFC'Position Foil.VoidS
 -- Lam : ∀ x0 x1 . (x0 . x1) → x0 → x1
 instance IsString (OpTyping' Raw.BNFC'Position Foil.VoidS) where
   fromString = toOpTyping' Foil.emptyScope Map.empty . unsafeParse Raw.pOpTyping
 
--- >>> "?m[x y] ↦ App(y, x)" :: SOAS.Subst
+-- |
+-- >>> "?m[x y] ↦ App(y, x)" :: Subst' Raw.BNFC'Position Foil.VoidS
 -- ?m [x0 x1] ↦ App (x1, x0)
 instance IsString (Subst' Raw.BNFC'Position Foil.VoidS) where
   fromString = toSubst' Foil.emptyScope Map.empty . unsafeParse Raw.pSubst
 
--- >>> "∀ x y. ?m[x, y] = App(y, x)" :: SOAS.Constraint
+-- |
+-- >>> "∀ x y. ?m[x, y] = App(y, x)" :: Constraint' Raw.BNFC'Position Foil.VoidS
 -- ∀ x0 x1 . ?m [x0, x1] = App (x1, x0)
 instance IsString (Constraint' Raw.BNFC'Position Foil.VoidS) where
   fromString = toConstraint' Foil.emptyScope Map.empty . unsafeParse Raw.pConstraint
