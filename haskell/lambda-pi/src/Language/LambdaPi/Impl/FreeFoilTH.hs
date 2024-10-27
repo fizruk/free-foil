@@ -38,12 +38,12 @@ module Language.LambdaPi.Impl.FreeFoilTH where
 import qualified Control.Monad.Foil              as Foil
 import           Control.Monad.Foil.TH
 import           Control.Monad.Free.Foil
-import           Control.Monad.Free.Foil.Generic
 import           Control.Monad.Free.Foil.TH
 import           Data.Bifunctor.TH
 import           Data.Map                        (Map)
 import qualified Data.Map                        as Map
 import           Data.String                     (IsString (..))
+import           Data.ZipMatchK
 import           Generics.Kind.TH                (deriveGenericK)
 import qualified GHC.Generics                    as GHC
 import qualified Language.LambdaPi.Syntax.Abs    as Raw
@@ -101,9 +101,6 @@ instance ZipMatchK Raw.BNFC'Position where zipMatchWithK = zipMatchViaChooseLeft
 
 -- | Generic 'ZipMatchK' instance.
 instance ZipMatchK a => ZipMatchK (Term'Sig a)
-
-instance ZipMatchK a => ZipMatch (Term'Sig a) where
-  zipMatch = genericZipMatch2
 
 -- * User-defined code
 

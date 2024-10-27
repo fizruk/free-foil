@@ -1,4 +1,6 @@
 {-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE KindSignatures    #-}
+{-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs             #-}
@@ -35,13 +37,16 @@ import           Data.Bifunctor.Sum
 import           Data.Bifunctor.TH
 import           Data.Map                        (Map)
 import qualified Data.Map                        as Map
+import           Data.ZipMatchK
 import           Data.String                     (IsString (..))
+import           Generics.Kind.TH                (deriveGenericK)
 import qualified Language.LambdaPi.Syntax.Abs    as Raw
 import qualified Language.LambdaPi.Syntax.Layout as Raw
 import qualified Language.LambdaPi.Syntax.Lex    as Raw
 import qualified Language.LambdaPi.Syntax.Par    as Raw
 import qualified Language.LambdaPi.Syntax.Print  as Raw
 import           System.Exit                     (exitFailure)
+import Data.ZipMatchK.Bifunctor ()
 
 -- $setup
 -- >>> import qualified Control.Monad.Foil as Foil
@@ -59,13 +64,8 @@ data LambdaPiF scope term
 deriveBifunctor ''LambdaPiF
 deriveBifoldable ''LambdaPiF
 deriveBitraversable ''LambdaPiF
-
-instance ZipMatch LambdaPiF where
-  zipMatch (AppF l r) (AppF l' r') = Just (AppF (l, l') (r, r'))
-  zipMatch (LamF t) (LamF t')      = Just (LamF (t, t'))
-  zipMatch (PiF l r) (PiF l' r')   = Just (PiF (l, l') (r, r'))
-  zipMatch UniverseF UniverseF     = Just UniverseF
-  zipMatch _ _                     = Nothing
+deriveGenericK ''LambdaPiF
+instance ZipMatchK LambdaPiF
 
 -- | The signature 'Bifunctor' for pairs.
 data PairF scope term
@@ -77,13 +77,8 @@ data PairF scope term
 deriveBifunctor ''PairF
 deriveBifoldable ''PairF
 deriveBitraversable ''PairF
-
-instance ZipMatch PairF where
-  zipMatch (PairF l r) (PairF l' r')       = Just (PairF (l, l') (r, r'))
-  zipMatch (FirstF t) (FirstF t')          = Just (FirstF (t, t'))
-  zipMatch (SecondF t) (SecondF t')        = Just (SecondF (t, t'))
-  zipMatch (ProductF l r) (ProductF l' r') = Just (ProductF (l, l') (r, r'))
-  zipMatch _ _                             = Nothing
+deriveGenericK ''PairF
+instance ZipMatchK PairF
 
 -- | Sum of signature bifunctors.
 type (:+:) = Sum

@@ -20,12 +20,11 @@ import qualified Data.Map as Map
 import Data.String (IsString(..))
 import qualified Control.Monad.Foil as Foil
 import           Control.Monad.Free.Foil.TH.MkFreeFoil
-import           Control.Monad.Free.Foil
 import qualified Language.SOAS.Syntax.Abs    as Raw
 import qualified Language.SOAS.Syntax.Lex    as Raw
 import qualified Language.SOAS.Syntax.Par    as Raw
 import qualified Language.SOAS.Syntax.Print  as Raw
-import Control.Monad.Free.Foil.Generic
+import Data.ZipMatchK
 import Generics.Kind.TH (deriveGenericK)
 import Language.SOAS.FreeFoilConfig (soasConfig)
 
@@ -104,9 +103,6 @@ instance ZipMatchK Raw.MetaVarIdent where zipMatchWithK = zipMatchViaEq
 instance ZipMatchK a => ZipMatchK (Term'Sig a)
 instance ZipMatchK a => ZipMatchK (OpArg'Sig a)
 instance ZipMatchK a => ZipMatchK (Type'Sig a)
-
-instance ZipMatchK a => ZipMatch (Term'Sig a) where zipMatch = genericZipMatch2
-instance ZipMatchK a => ZipMatch (Type'Sig a) where zipMatch = genericZipMatch2
 
 -- |
 -- >>> "?m[App(Lam(x.x), Lam(y.y))]" :: Term' Raw.BNFC'Position Foil.VoidS
