@@ -68,5 +68,4 @@ soasConfig = FreeFoilConfig
   , freeFoilConvertFromName = ("from" ++ )
   , freeFoilConvertToName = ("to" ++ )
   , signatureNameModifier = (++ "Sig")
-  , ignoreNames = []
   }

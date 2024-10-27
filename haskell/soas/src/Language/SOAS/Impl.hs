@@ -13,6 +13,8 @@
 {-# LANGUAGE PatternSynonyms   #-}
 {-# LANGUAGE RankNTypes        #-}
 {-# LANGUAGE TemplateHaskell   #-}
+-- | Functions over Second-Order Abstract Syntax (SOAS)
+-- represented using scope-safe Haskell types (via Free Foil).
 module Language.SOAS.Impl where
 
 import Data.List (find)
@@ -33,12 +35,21 @@ import           System.Exit                     (exitFailure)
 -- >>> import Control.Monad.Free.Foil
 -- >>> import Data.String (fromString)
 
+-- * Standard Types
+
+-- | Standard terms with source code location annotations.
 type Term = Term' Raw.BNFC'Position
+-- | Standard types with source code location annotations.
 type Type = Type' Raw.BNFC'Position
 
+-- | Standard metavariable substitutions with source code location annotations.
 type Subst = Subst' Raw.BNFC'Position Foil.VoidS
+-- | Standard unification constraints with source code location annotations.
 type Constraint = Constraint' Raw.BNFC'Position Foil.VoidS
+-- | Standard operator typings with source code location annotations.
 type OpTyping = OpTyping' Raw.BNFC'Position Foil.VoidS
+
+-- * Metavariable substitutions
 
 -- | Lookup a substitution by its 'Raw.MetaVarIdent'.
 --
@@ -64,6 +75,8 @@ applySubsts scope substs term =
         Foil.Distinct ->
           let scope' = Foil.extendScopePattern binders scope
            in ScopedAST binders (applySubsts scope' substs body)
+
+-- * Entrypoint
 
 -- | A SOAS interpreter implemented via the free foil.
 defaultMain :: IO ()

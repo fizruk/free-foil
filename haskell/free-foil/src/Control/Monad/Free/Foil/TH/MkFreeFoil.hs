@@ -4,7 +4,13 @@
 {-# LANGUAGE ViewPatterns    #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use ++" #-}
-module Control.Monad.Free.Foil.TH.MkFreeFoil where
+-- | Template Haskell generation for Free Foil (generic scope-safe representation of syntax).
+module Control.Monad.Free.Foil.TH.MkFreeFoil (
+  FreeFoilConfig(..),
+  FreeFoilTermConfig(..),
+  mkFreeFoil,
+  mkFreeFoilConversions,
+) where
 
 import           Language.Haskell.TH
 import           Language.Haskell.TH.Syntax (addModFinalizer)
@@ -20,30 +26,85 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified GHC.Generics               as GHC
 
-data FreeFoilTermConfig = FreeFoilTermConfig
-  { rawIdentName          :: Name
-  , rawTermName           :: Name
-  , rawBindingName        :: Name
-  , rawScopeName          :: Name
-  , rawVarConName         :: Name
-  , rawSubTermNames       :: [Name]
-  , rawSubScopeNames      :: [Name]
-  , intToRawIdentName     :: Name
-  , rawVarIdentToTermName :: Name
-  , rawTermToScopeName    :: Name
-  , rawScopeToTermName    :: Name
-  }
-
+-- | Config for the Template Haskell generation of data types,
+-- pattern synonyms, and conversion functions for the Free Foil representation,
+-- based on a raw recursive representation.
 data FreeFoilConfig = FreeFoilConfig
   { rawQuantifiedNames        :: [Name]
+  -- ^ Names of raw types that may include other binders and terms as components.
+  -- Some examples of syntax that might be suitable here:
+  --
+  --  1. a type scheme in HM-style type system (to explicitly disallow nested forall)
+  --  2. defining equation of a function (which itself is not a term)
+  --  3. data or type synonym declaration (which itself is not a type)
+  --  4. unification constraints (quantified or not)
   , freeFoilTermConfigs       :: [FreeFoilTermConfig]
+  -- ^ Configurations for each term (e.g. expressions, types) group.
   , freeFoilNameModifier      :: String -> String
+  -- ^ Name modifier for the Free Foil conterpart of a raw type name.
+  -- Normally, this is just 'id'.
   , freeFoilScopeNameModifier :: String -> String
+  -- ^ Name modifier for the scoped Free Foil conterpart of a raw type name.
+  -- Normally, this is something like @("Scoped" ++)@.
   , signatureNameModifier     :: String -> String
+  -- ^ Name modifier for the signature conterpart of a raw type name or raw constructor name.
+  -- Normally, this is something like @(++ "Sig")@.
   , freeFoilConNameModifier   :: String -> String
+  -- ^ Name modifier for the Free Foil conterpart (pattern synonym) of a raw constructor name.
+  -- Normally, this is just 'id'.
   , freeFoilConvertToName     :: String -> String
+  -- ^ Name of a conversion function (from raw to scope-safe) for a raw type name.
+  -- Normally, this is something like @("to" ++)@.
   , freeFoilConvertFromName   :: String -> String
-  , ignoreNames               :: [Name]
+  -- ^ Name of a conversion function (from scope-safe to raw) for a raw type name.
+  -- Normally, this is something like @("from" ++)@.
+  }
+
+-- | Config for a single term group,
+-- for the Template Haskell generation of data types,
+-- pattern synonyms, and conversion functions for the Free Foil representation,
+-- based on a raw recursive representation.
+data FreeFoilTermConfig = FreeFoilTermConfig
+  { rawIdentName          :: Name
+    -- ^ The type name for the identifiers.
+    -- When identifiers occur in a term, they are converted to 'Foil.Name' (with an appropriate type-level scope parameter).
+    -- When identifiers occur in a pattern, they are converted to 'Foil.NameBinder' (with appropriate type-level scope parameters).
+  , rawTermName           :: Name
+    -- ^ The type name for the term.
+    -- This will be the main recursive type to be converted into an 'Foil.AST'.
+  , rawBindingName        :: Name
+    -- ^ The type name for the binders (patterns).
+    -- This will be the main binder type to used in 'Foil.AST'-representation of the terms.
+  , rawScopeName          :: Name
+    -- ^ The type name for the scoped term.
+    -- This will be replaced with either 'Foil.ScopedAST' (with outer scope) or 'Foil.AST' (with inner scope)
+    -- depending on its occurrence in a regular (sub)term or some quantified syntax.
+  , rawVarConName         :: Name
+    -- ^ The constructor name for the variables in a term.
+    -- This constructor will be replaced with the standard 'Foil.Var'.
+    -- It is expected to have exactly one field of type 'rawIdentName'.
+  , rawSubTermNames       :: [Name]
+    -- ^ Type names for subterm syntax.
+    -- This will rely on the main term type ('rawTermName') for recursive occurrences.
+    -- Template Haskell will also generate signatures for these.
+  , rawSubScopeNames      :: [Name]
+    -- ^ Type names for scoped subterm syntax.
+    -- This will rely on the main term type ('rawTermName') for recursive occurrences.
+    -- Template Haskell will also generate signatures for these.
+  , intToRawIdentName     :: Name
+    -- ^ Name of a function that converts 'Int' to a raw identifier.
+    -- Normally, this is something like @(\i -> VarIdent ("x" ++ show i))@.
+    -- This is required to generate standard conversions from scope-safe to raw representation.
+  , rawVarIdentToTermName :: Name
+    -- ^ Name of a function that converts a raw identifier into a raw term.
+    -- Normally, this is some kind of @Var@ or @TypeVar@ data constructor.
+    -- This is required to generate standard conversions from scope-safe to raw representation.
+  , rawTermToScopeName    :: Name
+    -- ^ Name of a function that converts a raw term into a raw scoped term.
+    -- Normally, this is some kind of @ScopedTerm@ or @ScopedType@ data constructor.
+  , rawScopeToTermName    :: Name
+    -- ^ Name of a function that extracts a raw term from a raw scoped term.
+    -- Normally, this is something like @(\(ScopedTerm term) -> term)@.
   }
 
 toFreeFoilName :: FreeFoilConfig -> Name -> Name
@@ -535,6 +596,13 @@ toFreeFoilClauseFromQuantified config rawRetType = go
       ForallC _params _ctx con -> go con
       RecGadtC conNames argTypes retType -> go (GadtC conNames (map removeName argTypes) retType)
 
+-- | Generate scope-safe types and pattern synonyms for a given raw set of types:
+--
+--  1. Scope-safe quantified types (e.g. type schemas, defining equations of functions, unification constraints, data/type declarations)
+--  2. Scope-safe terms, scoped terms, subterms, scoped subterms.
+--  3. Scope-safe patterns.
+--  4. Signatures for terms, subterms, and scoped subterms.
+--  5. Pattern synonyms for terms, subterms, and scoped subterms.
 mkFreeFoil :: FreeFoilConfig -> Q [Dec]
 mkFreeFoil config@FreeFoilConfig{..} = concat <$> sequence
   [ mapM mkQuantifiedType rawQuantifiedNames
@@ -629,6 +697,12 @@ reifyDataOrNewtype name = reify name >>= \case
   TyConI (NewtypeD _ctx _name tvars _kind con _deriv) -> return (tvars, [con])
   _ -> error ("not a data or newtype: " ++ show name)
 
+-- | Generate conversions to and from scope-safe representation:
+--
+--  1. Conversions for scope-safe quantified types (e.g. type schemas, defining equations of functions, unification constraints, data/type declarations)
+--  2. Conversions for scope-safe terms, scoped terms, subterms, scoped subterms.
+--  3. CPS-style conversions for scope-safe patterns.
+--  4. Helpers for signatures of terms, subterms, and scoped subterms.
 mkFreeFoilConversions :: FreeFoilConfig -> Q [Dec]
 mkFreeFoilConversions config@FreeFoilConfig{..} = concat <$> sequence
   [ concat <$> mapM mkConvertFrom freeFoilTermConfigs
