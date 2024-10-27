@@ -1,5 +1,4 @@
 {-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE RankNTypes             #-}
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleContexts      #-}
@@ -9,6 +8,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE UndecidableInstances  #-}
@@ -121,6 +121,20 @@ instance (Bifunctor sig, Foil.CoSinkable binder) => Foil.RelMonad Foil.Name (AST
           let scope' = Foil.extendScopePattern binder' scope
               subst' = extendSubst subst
            in ScopedAST binder' (Foil.rbind scope' body subst')
+
+-- | Substitution for a single generalized pattern.
+substitutePattern
+  :: (Bifunctor sig, Foil.Distinct o, Foil.CoSinkable binder', Foil.CoSinkable binder)
+  => Foil.Scope o                           -- ^ Resulting scope.
+  -> Foil.Substitution (AST binder sig) n o -- ^ Environment mapping names in scope @n@.
+  -> binder' n i                            -- ^ Binders that extend scope @n@ to scope @i@.
+  -> [AST binder sig o]                     -- ^ A list of terms intended to serve as
+  -> AST binder sig i
+  -> AST binder sig o
+substitutePattern scope env binders args body =
+  substitute scope env' body
+  where
+    env' = Foil.addSubstPattern env binders args
 
 -- * \(\alpha\)-equivalence
 
@@ -338,7 +352,7 @@ convertFromAST
   -- ^ Peel back one layer of syntax.
   -> (rawIdent -> rawTerm)
   -- ^ Convert identifier into a raw variable term.
-  -> (forall x y. (Int -> rawIdent) -> binder x y -> rawPattern)
+  -> (forall x y. binder x y -> rawPattern)
   -- ^ Convert scope-safe pattern into a raw pattern.
   -> (rawTerm -> rawScopedTerm)
   -- ^ Wrap raw term into a scoped term.
@@ -362,7 +376,7 @@ convertFromScopedAST
   -- ^ Peel back one layer of syntax.
   -> (rawIdent -> rawTerm)
   -- ^ Convert identifier into a raw variable term.
-  -> (forall x y. (Int -> rawIdent) -> binder x y -> rawPattern)
+  -> (forall x y. binder x y -> rawPattern)
   -- ^ Convert scope-safe pattern into a raw pattern.
   -> (rawTerm -> rawScopedTerm)
   -- ^ Wrap raw term into a scoped term.
@@ -373,5 +387,5 @@ convertFromScopedAST
   -> (rawPattern, rawScopedTerm)
 convertFromScopedAST fromSig fromVar makePattern makeScoped f = \case
   ScopedAST binder body ->
-    ( makePattern f binder
+    ( makePattern binder
     , makeScoped (convertFromAST fromSig fromVar makePattern makeScoped f body))

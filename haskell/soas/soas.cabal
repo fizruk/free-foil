@@ -1,14 +1,14 @@
-cabal-version: 1.12
+cabal-version: 1.24
 
 -- This file has been generated from package.yaml by hpack version 0.37.0.
 --
 -- see: https://github.com/sol/hpack
 
-name:           free-foil
+name:           soas
 version:        0.1.0
-synopsis:       Efficient Type-Safe Capture-Avoiding Substitution for Free (Scoped Monads)
+synopsis:       Second-Order Abstract Syntax implemented via Free Foil (a version of SOAS).
 description:    Please see the README on GitHub at <https://github.com/fizruk/free-foil#readme>
-category:       Parsing
+category:       Language
 homepage:       https://github.com/fizruk/free-foil#readme
 bug-reports:    https://github.com/fizruk/free-foil/issues
 author:         Nikolai Kudasov
@@ -16,50 +16,76 @@ maintainer:     nickolay.kudasov@gmail.com
 copyright:      2023–2024 Nikolai Kudasov, Renata Shakirova, Egor Shalagin, Karina Tyulebaeva
 license:        BSD3
 license-file:   LICENSE
-build-type:     Simple
+build-type:     Custom
 extra-source-files:
     README.md
-    ChangeLog.md
     LICENSE
+    grammar/SOAS/Syntax.cf
 
 source-repository head
   type: git
   location: https://github.com/fizruk/free-foil
 
+custom-setup
+  setup-depends:
+      Cabal >=2.4.0.1 && <4.0
+    , PyF
+    , base >=4.11.0.0 && <5.0
+    , process >=1.6.3.0
+
 library
   exposed-modules:
-      Control.Monad.Foil
-      Control.Monad.Foil.Example
-      Control.Monad.Foil.Internal
-      Control.Monad.Foil.Relative
-      Control.Monad.Foil.TH
-      Control.Monad.Foil.TH.MkFoilData
-      Control.Monad.Foil.TH.MkFromFoil
-      Control.Monad.Foil.TH.MkInstancesFoil
-      Control.Monad.Foil.TH.MkToFoil
-      Control.Monad.Foil.TH.Util
-      Control.Monad.Free.Foil
-      Control.Monad.Free.Foil.Example
-      Control.Monad.Free.Foil.Generic
-      Control.Monad.Free.Foil.TH
-      Control.Monad.Free.Foil.TH.Convert
-      Control.Monad.Free.Foil.TH.MkFreeFoil
-      Control.Monad.Free.Foil.TH.PatternSynonyms
-      Control.Monad.Free.Foil.TH.Signature
-      Control.Monad.Free.Foil.TH.ZipMatch
+      Language.SOAS.FreeFoilConfig
+      Language.SOAS.Impl
+      Language.SOAS.Impl.Generated
+      Language.SOAS.Syntax.Abs
+      Language.SOAS.Syntax.Lex
+      Language.SOAS.Syntax.Par
+      Language.SOAS.Syntax.Print
   other-modules:
-      Paths_free_foil
+      Paths_soas
   hs-source-dirs:
       src
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -optP-Wno-nonportable-include-path
+  build-tools:
+      alex >=3.2.4
+    , happy >=1.19.9
+  build-tool-depends:
+      BNFC:bnfc >=2.9.4.1
   build-depends:
       array >=0.5.3.0
     , base >=4.7 && <5
     , bifunctors
     , containers
     , deepseq
-    , kind-generics >=0.5.0
-    , template-haskell >=2.21.0.0
+    , free-foil >=0.1.0
+    , kind-generics-th
+    , template-haskell
+    , text >=1.2.3.1
+  default-language: Haskell2010
+
+executable soas
+  main-is: SOAS.hs
+  other-modules:
+      Paths_soas
+  hs-source-dirs:
+      app
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -optP-Wno-nonportable-include-path -threaded -rtsopts -with-rtsopts=-N
+  build-tools:
+      alex >=3.2.4
+    , happy >=1.19.9
+  build-tool-depends:
+      BNFC:bnfc >=2.9.4.1
+  build-depends:
+      array >=0.5.3.0
+    , base >=4.7 && <5
+    , bifunctors
+    , containers
+    , deepseq
+    , free-foil >=0.1.0
+    , kind-generics-th
+    , soas
+    , template-haskell
     , text >=1.2.3.1
   default-language: Haskell2010
 
@@ -70,6 +96,11 @@ test-suite doctests
       src/
       test/doctests
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -optP-Wno-nonportable-include-path
+  build-tools:
+      alex >=3.2.4
+    , happy >=1.19.9
+  build-tool-depends:
+      BNFC:bnfc >=2.9.4.1
   build-depends:
       array >=0.5.3.0
     , base >=4.7 && <5
@@ -77,9 +108,10 @@ test-suite doctests
     , containers
     , deepseq
     , doctest-parallel
-    , free-foil
-    , kind-generics >=0.5.0
-    , template-haskell >=2.21.0.0
+    , free-foil >=0.1.0
+    , kind-generics-th
+    , soas
+    , template-haskell
     , text >=1.2.3.1
   default-language: Haskell2010
 
@@ -87,18 +119,28 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      Paths_free_foil
+      Paths_soas
   hs-source-dirs:
       test
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -optP-Wno-nonportable-include-path -threaded -rtsopts -with-rtsopts=-N
+  build-tools:
+      alex >=3.2.4
+    , happy >=1.19.9
+  build-tool-depends:
+      BNFC:bnfc >=2.9.4.1
   build-depends:
-      array >=0.5.3.0
+      QuickCheck
+    , array >=0.5.3.0
     , base >=4.7 && <5
     , bifunctors
     , containers
     , deepseq
-    , free-foil
-    , kind-generics >=0.5.0
-    , template-haskell >=2.21.0.0
+    , free-foil >=0.1.0
+    , hspec
+    , hspec-discover
+    , kind-generics-th
+    , mtl
+    , soas
+    , template-haskell
     , text >=1.2.3.1
   default-language: Haskell2010

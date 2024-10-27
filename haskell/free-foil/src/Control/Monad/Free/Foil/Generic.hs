@@ -1,13 +1,13 @@
 {-# OPTIONS_GHC -Wno-missing-methods #-}
 {-# LANGUAGE AllowAmbiguousTypes      #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE ConstraintKinds      #-}
-{-# LANGUAGE GADTs      #-}
-{-# LANGUAGE InstanceSigs      #-}
-{-# LANGUAGE DefaultSignatures      #-}
-{-# LANGUAGE FlexibleInstances      #-}
+{-# LANGUAGE ConstraintKinds          #-}
 {-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE DefaultSignatures        #-}
 {-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE FlexibleInstances        #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE InstanceSigs             #-}
+{-# LANGUAGE MultiParamTypeClasses    #-}
 {-# LANGUAGE PolyKinds                #-}
 {-# LANGUAGE RankNTypes               #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
@@ -18,7 +18,7 @@
 {-# LANGUAGE UndecidableInstances     #-}
 module Control.Monad.Free.Foil.Generic where
 
-import           Data.Kind     (Constraint, Type)
+import           Data.Kind              (Constraint, Type)
 import           Generics.Kind
 import           Generics.Kind.Examples ()
 import           GHC.TypeError

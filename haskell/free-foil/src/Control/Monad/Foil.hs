@@ -47,7 +47,10 @@ module Control.Monad.Foil (
   Substitution,
   lookupSubst,
   identitySubst,
+  voidSubst,
   addSubst,
+  addSubstPattern,
+  addSubstList,
   addRename,
   -- * Unification of binders
   UnifyNameBinders(..),
@@ -66,6 +69,10 @@ module Control.Monad.Foil (
   emptyNameMap,
   lookupName,
   addNameBinder,
+  nameMapToSubstitution,
+  addNameBinders,
+  addNameBinderList,
+  NameBinderList(..),
   -- * Constraints
   Ext,
   ExtEvidence(..),
