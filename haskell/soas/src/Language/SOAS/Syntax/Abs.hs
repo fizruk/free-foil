@@ -25,7 +25,7 @@ import qualified GHC.Generics as C (Generic)
 
 type TermTyping = TermTyping' BNFC'Position
 data TermTyping' a
-    = TermTyping a (TypeBinders' a) (Context' a) (ScopedTerm' a) (Type' a)
+    = TermTyping a (TypeBinders' a) (Context' a) (ScopedTerm' a) (ScopedType' a)
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
 
 type Context = Context' BNFC'Position
@@ -79,21 +79,16 @@ type ScopedTerm = ScopedTerm' BNFC'Position
 data ScopedTerm' a = ScopedTerm a (Term' a)
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
 
-type TypeVarIdent = TypeVarIdent' BNFC'Position
-data TypeVarIdent' a = TypeVarIdent a VarIdent
-  deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
-
 type Type = Type' BNFC'Position
 data Type' a
     = TypeFun a (Type' a) (Type' a)
     | TypeProduct a (Type' a) (Type' a)
-    | TypeVar a (TypeVarIdent' a)
+    | TypeVar a VarIdent
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
 
 type TypeBinders = TypeBinders' BNFC'Position
 data TypeBinders' a
-    = NoTypeBinders a
-    | SomeTypeBinders a (TypeVarIdent' a) (TypeBinders' a)
+    = NoTypeBinders a | SomeTypeBinders a VarIdent (TypeBinders' a)
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
 
 type ScopedOpArgTyping = ScopedOpArgTyping' BNFC'Position
@@ -183,10 +178,6 @@ instance HasPosition Binders where
 instance HasPosition ScopedTerm where
   hasPosition = \case
     ScopedTerm p _ -> p
-
-instance HasPosition TypeVarIdent where
-  hasPosition = \case
-    TypeVarIdent p _ -> p
 
 instance HasPosition Type where
   hasPosition = \case

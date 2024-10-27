@@ -130,7 +130,8 @@ instance IsString (Term' Raw.BNFC'Position Foil.VoidS) where
 instance IsString (Type' Raw.BNFC'Position Foil.VoidS) where
   fromString = toType' Foil.emptyScope Map.empty . unsafeParse Raw.pType
 
--- | FIXME: does not work because Eq TypeVarIdent instance compares source locations.
+-- >>> "Lam : ∀ a b. (a.b) → a→b" :: SOAS.OpTyping
+-- Lam : ∀ x0 x1 . (x0 . x1) → x0 → x1
 instance IsString (OpTyping' Raw.BNFC'Position Foil.VoidS) where
   fromString = toOpTyping' Foil.emptyScope Map.empty . unsafeParse Raw.pOpTyping
 

@@ -25,7 +25,6 @@ module Language.SOAS.Syntax.Par
   , pListOpArg
   , pBinders
   , pScopedTerm
-  , pTypeVarIdent
   , pType
   , pType1
   , pType2
@@ -62,7 +61,6 @@ import Language.SOAS.Syntax.Lex
 %name pListOpArg_internal ListOpArg
 %name pBinders_internal Binders
 %name pScopedTerm_internal ScopedTerm
-%name pTypeVarIdent_internal TypeVarIdent
 %name pType_internal Type
 %name pType1_internal Type1
 %name pType2_internal Type2
@@ -108,7 +106,7 @@ MetaVarIdent  : L_MetaVarIdent { (uncurry Language.SOAS.Syntax.Abs.BNFC'Position
 
 TermTyping :: { (Language.SOAS.Syntax.Abs.BNFC'Position, Language.SOAS.Syntax.Abs.TermTyping) }
 TermTyping
-  : '∀' TypeBinders '.' Context '⊢' ScopedTerm ':' Type { (uncurry Language.SOAS.Syntax.Abs.BNFC'Position (tokenLineCol $1), Language.SOAS.Syntax.Abs.TermTyping (uncurry Language.SOAS.Syntax.Abs.BNFC'Position (tokenLineCol $1)) (snd $2) (snd $4) (snd $6) (snd $8)) }
+  : '∀' TypeBinders '.' Context '⊢' ScopedTerm ':' ScopedType { (uncurry Language.SOAS.Syntax.Abs.BNFC'Position (tokenLineCol $1), Language.SOAS.Syntax.Abs.TermTyping (uncurry Language.SOAS.Syntax.Abs.BNFC'Position (tokenLineCol $1)) (snd $2) (snd $4) (snd $6) (snd $8)) }
 
 Context :: { (Language.SOAS.Syntax.Abs.BNFC'Position, Language.SOAS.Syntax.Abs.Context) }
 Context
@@ -188,10 +186,6 @@ ScopedTerm :: { (Language.SOAS.Syntax.Abs.BNFC'Position, Language.SOAS.Syntax.Ab
 ScopedTerm
   : Term { (fst $1, Language.SOAS.Syntax.Abs.ScopedTerm (fst $1) (snd $1)) }
 
-TypeVarIdent :: { (Language.SOAS.Syntax.Abs.BNFC'Position, Language.SOAS.Syntax.Abs.TypeVarIdent) }
-TypeVarIdent
-  : VarIdent { (fst $1, Language.SOAS.Syntax.Abs.TypeVarIdent (fst $1) (snd $1)) }
-
 Type :: { (Language.SOAS.Syntax.Abs.BNFC'Position, Language.SOAS.Syntax.Abs.Type) }
 Type
   : Type1 '→' Type1 { (fst $1, Language.SOAS.Syntax.Abs.TypeFun (fst $1) (snd $1) (snd $3)) }
@@ -204,7 +198,7 @@ Type1
 
 Type2 :: { (Language.SOAS.Syntax.Abs.BNFC'Position, Language.SOAS.Syntax.Abs.Type) }
 Type2
-  : TypeVarIdent { (fst $1, Language.SOAS.Syntax.Abs.TypeVar (fst $1) (snd $1)) }
+  : VarIdent { (fst $1, Language.SOAS.Syntax.Abs.TypeVar (fst $1) (snd $1)) }
   | '(' Type ')' { (uncurry Language.SOAS.Syntax.Abs.BNFC'Position (tokenLineCol $1), (snd $2)) }
 
 ListType :: { (Language.SOAS.Syntax.Abs.BNFC'Position, [Language.SOAS.Syntax.Abs.Type]) }
@@ -216,7 +210,7 @@ ListType
 TypeBinders :: { (Language.SOAS.Syntax.Abs.BNFC'Position, Language.SOAS.Syntax.Abs.TypeBinders) }
 TypeBinders
   : {- empty -} { (Language.SOAS.Syntax.Abs.BNFC'NoPosition, Language.SOAS.Syntax.Abs.NoTypeBinders Language.SOAS.Syntax.Abs.BNFC'NoPosition) }
-  | TypeVarIdent TypeBinders { (fst $1, Language.SOAS.Syntax.Abs.SomeTypeBinders (fst $1) (snd $1) (snd $2)) }
+  | VarIdent TypeBinders { (fst $1, Language.SOAS.Syntax.Abs.SomeTypeBinders (fst $1) (snd $1) (snd $2)) }
 
 ScopedOpArgTyping :: { (Language.SOAS.Syntax.Abs.BNFC'Position, Language.SOAS.Syntax.Abs.ScopedOpArgTyping) }
 ScopedOpArgTyping
@@ -308,9 +302,6 @@ pBinders = fmap snd . pBinders_internal
 
 pScopedTerm :: [Token] -> Err Language.SOAS.Syntax.Abs.ScopedTerm
 pScopedTerm = fmap snd . pScopedTerm_internal
-
-pTypeVarIdent :: [Token] -> Err Language.SOAS.Syntax.Abs.TypeVarIdent
-pTypeVarIdent = fmap snd . pTypeVarIdent_internal
 
 pType :: [Token] -> Err Language.SOAS.Syntax.Abs.Type
 pType = fmap snd . pType_internal

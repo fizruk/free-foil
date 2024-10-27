@@ -7,13 +7,10 @@ import           Control.Monad.Free.Foil.TH.MkFreeFoil
 intToVarIdent :: Int -> Raw.VarIdent
 intToVarIdent i = Raw.VarIdent ("x" <> show i)
 
-intToTypeVarIdent :: Int -> Raw.TypeVarIdent' a
-intToTypeVarIdent = Raw.TypeVarIdent (error "trying to access an erased annotation") . intToVarIdent
-
 rawVar :: Raw.VarIdent -> Raw.Term' a
 rawVar = Raw.Var (error "trying to access an erased annotation")
 
-rawTypeVar :: Raw.TypeVarIdent' a -> Raw.Type' a
+rawTypeVar :: Raw.VarIdent -> Raw.Type' a
 rawTypeVar = Raw.TypeVar (error "trying to access an erased annotation")
 
 rawScopedTerm :: Raw.Term' a -> Raw.ScopedTerm' a
@@ -53,14 +50,14 @@ soasConfig = FreeFoilConfig
           , rawScopeToTermName = 'rawScopeToTerm
           }
       , FreeFoilTermConfig
-          { rawIdentName = ''Raw.TypeVarIdent'
+          { rawIdentName = ''Raw.VarIdent
           , rawTermName = ''Raw.Type'
           , rawBindingName = ''Raw.TypeBinders'
           , rawScopeName = ''Raw.ScopedType'
           , rawVarConName = 'Raw.TypeVar
           , rawSubTermNames = [ ''Raw.OpArgTyping' ]
           , rawSubScopeNames = [ ''Raw.ScopedOpArgTyping' ]
-          , intToRawIdentName = 'intToTypeVarIdent
+          , intToRawIdentName = 'intToVarIdent
           , rawVarIdentToTermName = 'rawTypeVar
           , rawTermToScopeName = 'rawScopedType
           , rawScopeToTermName = 'rawScopeToType
