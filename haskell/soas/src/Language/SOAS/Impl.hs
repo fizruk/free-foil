@@ -1,4 +1,4 @@
-{-# OPTIONS_GHC -Wno-orphans -Wno-redundant-constraints #-}
+{-# OPTIONS_GHC -Wno-orphans -Wno-redundant-constraints -ddump-splices #-}
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE ScopedTypeVariables         #-}
@@ -51,11 +51,15 @@ deriveGenericK ''Type'Sig
 deriveBifunctor ''OpArg'Sig
 deriveBifunctor ''Term'Sig
 deriveBifunctor ''OpArgTyping'Sig
+deriveBifunctor ''ScopedOpArgTyping'Sig
 deriveBifunctor ''Type'Sig
 
 -- FIXME: derive via GenericK
 instance Foil.CoSinkable (Binders' a) where
   coSinkabilityProof rename (NoBinders loc) cont = cont rename (NoBinders loc)
+  -- coSinkabilityProof rename (OneBinder loc binder) cont =
+  --   Foil.coSinkabilityProof rename binder $ \rename' binder' ->
+  --     cont rename' (OneBinder loc binder')
   coSinkabilityProof rename (SomeBinders loc binder binders) cont =
     Foil.coSinkabilityProof rename binder $ \rename' binder' ->
       Foil.coSinkabilityProof rename' binders $ \rename'' binders' ->
@@ -64,6 +68,9 @@ instance Foil.CoSinkable (Binders' a) where
   withPattern withBinder unit comp scope binders cont =
     case binders of
       NoBinders loc -> cont unit (NoBinders loc)
+      -- OneBinder loc binder ->
+      --   Foil.withPattern withBinder unit comp scope binder $ \f binder' ->
+      --     cont f (OneBinder loc binder')
       SomeBinders loc binder moreBinders ->
         Foil.withPattern withBinder unit comp scope binder $ \f binder' ->
           let scope' = Foil.extendScopePattern binder' scope
@@ -105,29 +112,45 @@ instance ZipMatchK a => ZipMatch (Type'Sig a) where zipMatch = genericZipMatch2
 
 -- * User-defined code
 
+type Constraint = Constraint' Raw.BNFC'Position Foil.VoidS
 type Subst = Subst' Raw.BNFC'Position Foil.VoidS
 type Term = Term' Raw.BNFC'Position
+type Type = Type' Raw.BNFC'Position
+type OpTyping = OpTyping' Raw.BNFC'Position Foil.VoidS
 
 -- ** From raw to scope-safe
 
--- >>> "?m[App(.Lam(x.x), .Lam(y.y))]" :: Term
+-- >>> "?m[App(Lam(x.x), Lam(y.y))]" :: Term
 -- ?m [App (. Lam (x0 . x0), . Lam (x0 . x0))]
+-- >>> "Lam(y. Let(Lam(x. x), f. ?m[y, App(f, y)]))" :: SOAS.Term Foil.VoidS
+-- Lam (x0 . Let (Lam (x1 . x1), x1 . ?m [x0, App (x1, x0)]))
 instance IsString (Term' Raw.BNFC'Position Foil.VoidS) where
   fromString = toTerm' Foil.emptyScope Map.empty . unsafeParse Raw.pTerm
 
--- instance IsString (Subst' Raw.BNFC'Position Foil.VoidS) where
---   fromString = toSubst' Foil.emptyScope Map.empty . unsafeParse Raw.pSubst
+instance IsString (Type' Raw.BNFC'Position Foil.VoidS) where
+  fromString = toType' Foil.emptyScope Map.empty . unsafeParse Raw.pType
 
-unsafeParse :: ([Raw.Token] -> Either String a) -> String -> a
-unsafeParse parse input =
-  case parse (Raw.myLexer input) of
-    Left err -> error err
-    Right x -> x
+-- | FIXME: does not work because Eq TypeVarIdent instance compares source locations.
+instance IsString (OpTyping' Raw.BNFC'Position Foil.VoidS) where
+  fromString = toOpTyping' Foil.emptyScope Map.empty . unsafeParse Raw.pOpTyping
+
+-- >>> "?m[x y] ↦ App(y, x)" :: SOAS.Subst
+-- ?m [x0 x1] ↦ App (x1, x0)
+instance IsString (Subst' Raw.BNFC'Position Foil.VoidS) where
+  fromString = toSubst' Foil.emptyScope Map.empty . unsafeParse Raw.pSubst
+
+-- >>> "∀ x y. ?m[x, y] = App(y, x)" :: SOAS.Constraint
+-- ∀ x0 x1 . ?m [x0, x1] = App (x1, x0)
+instance IsString (Constraint' Raw.BNFC'Position Foil.VoidS) where
+  fromString = toConstraint' Foil.emptyScope Map.empty . unsafeParse Raw.pConstraint
 
 -- ** From scope-safe to raw
 
 instance Show (Term' a n) where show = Raw.printTree . fromTerm'
+instance Show (Type' a n) where show = Raw.printTree . fromType'
 instance Show (Subst' a n) where show = Raw.printTree . fromSubst'
+instance Show (Constraint' a n) where show = Raw.printTree . fromConstraint'
+instance Show (OpTyping' a n) where show = Raw.printTree . fromOpTyping'
 
 -- ** Meta variable substitutions
 
@@ -159,3 +182,11 @@ defaultMain = do
       putStrLn err
       exitFailure
     Right typing -> putStrLn (Raw.printTree typing)
+
+-- * Helpers
+
+unsafeParse :: ([Raw.Token] -> Either String a) -> String -> a
+unsafeParse parse input =
+  case parse (Raw.myLexer input) of
+    Left err -> error err
+    Right x -> x

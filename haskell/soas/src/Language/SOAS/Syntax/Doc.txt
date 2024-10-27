@@ -57,7 +57,7 @@ All other symbols are terminals.
   | //[MetaVarTyping]// | -> | **eps**
   |  |  **|**  | //MetaVarTyping//
   |  |  **|**  | //MetaVarTyping// ``,`` //[MetaVarTyping]//
-  | //OpTyping// | -> | //OpIdent// ``:`` ``∀`` //TypeBinders// ``.`` ``(`` //[OpArgTyping]// ``)`` ``→`` //ScopedType//
+  | //OpTyping// | -> | //OpIdent// ``:`` ``∀`` //TypeBinders// ``.`` ``(`` //[ScopedOpArgTyping]// ``)`` ``→`` //ScopedType//
   | //Constraint// | -> | ``∀`` //Binders// ``.`` //ScopedTerm// ``=`` //ScopedTerm//
   | //Unifier// | -> | ``[`` //[Subst]// ``]``
   | //Subst// | -> | //MetaVarIdent// ``[`` //Binders// ``]`` ``↦`` //ScopedTerm//
@@ -71,6 +71,7 @@ All other symbols are terminals.
   |  |  **|**  | //Term//
   |  |  **|**  | //Term// ``,`` //[Term]//
   | //OpArg// | -> | //Binders// ``.`` //ScopedTerm//
+  |  |  **|**  | //Term//
   | //[OpArg]// | -> | **eps**
   |  |  **|**  | //OpArg//
   |  |  **|**  | //OpArg// ``,`` //[OpArg]//
@@ -89,11 +90,14 @@ All other symbols are terminals.
   |  |  **|**  | //Type// ``,`` //[Type]//
   | //TypeBinders// | -> | **eps**
   |  |  **|**  | //TypeVarIdent// //TypeBinders//
-  | //OpArgTyping// | -> | //TypeBinders// ``.`` //ScopedType//
-  | //[OpArgTyping]// | -> | **eps**
-  |  |  **|**  | //OpArgTyping//
-  |  |  **|**  | //OpArgTyping// ``,`` //[OpArgTyping]//
+  | //ScopedOpArgTyping// | -> | //OpArgTyping//
+  | //[ScopedOpArgTyping]// | -> | **eps**
+  |  |  **|**  | //ScopedOpArgTyping//
+  |  |  **|**  | //ScopedOpArgTyping// ``,`` //[ScopedOpArgTyping]//
+  | //OpArgTyping// | -> | //[Type]// ``.`` //Type//
   | //ScopedType// | -> | //Type//
+  | //[ScopedType]// | -> | **eps**
+  |  |  **|**  | //ScopedType// //[ScopedType]//
 
 
 

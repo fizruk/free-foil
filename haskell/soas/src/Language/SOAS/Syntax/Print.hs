@@ -171,7 +171,7 @@ instance Print [Language.SOAS.Syntax.Abs.MetaVarTyping' a] where
 
 instance Print (Language.SOAS.Syntax.Abs.OpTyping' a) where
   prt i = \case
-    Language.SOAS.Syntax.Abs.OpTyping _ opident typebinders opargtypings scopedtype -> prPrec i 0 (concatD [prt 0 opident, doc (showString ":"), doc (showString "\8704"), prt 0 typebinders, doc (showString "."), doc (showString "("), prt 0 opargtypings, doc (showString ")"), doc (showString "\8594"), prt 0 scopedtype])
+    Language.SOAS.Syntax.Abs.OpTyping _ opident typebinders scopedopargtypings scopedtype -> prPrec i 0 (concatD [prt 0 opident, doc (showString ":"), doc (showString "\8704"), prt 0 typebinders, doc (showString "."), doc (showString "("), prt 0 scopedopargtypings, doc (showString ")"), doc (showString "\8594"), prt 0 scopedtype])
 
 instance Print (Language.SOAS.Syntax.Abs.Constraint' a) where
   prt i = \case
@@ -204,6 +204,7 @@ instance Print [Language.SOAS.Syntax.Abs.Term' a] where
 instance Print (Language.SOAS.Syntax.Abs.OpArg' a) where
   prt i = \case
     Language.SOAS.Syntax.Abs.OpArg _ binders scopedterm -> prPrec i 0 (concatD [prt 0 binders, doc (showString "."), prt 0 scopedterm])
+    Language.SOAS.Syntax.Abs.PlainOpArg _ term -> prPrec i 0 (concatD [prt 0 term])
 
 instance Print [Language.SOAS.Syntax.Abs.OpArg' a] where
   prt _ [] = concatD []
@@ -239,15 +240,23 @@ instance Print (Language.SOAS.Syntax.Abs.TypeBinders' a) where
     Language.SOAS.Syntax.Abs.NoTypeBinders _ -> prPrec i 0 (concatD [])
     Language.SOAS.Syntax.Abs.SomeTypeBinders _ typevarident typebinders -> prPrec i 0 (concatD [prt 0 typevarident, prt 0 typebinders])
 
-instance Print (Language.SOAS.Syntax.Abs.OpArgTyping' a) where
+instance Print (Language.SOAS.Syntax.Abs.ScopedOpArgTyping' a) where
   prt i = \case
-    Language.SOAS.Syntax.Abs.OpArgTyping _ typebinders scopedtype -> prPrec i 0 (concatD [prt 0 typebinders, doc (showString "."), prt 0 scopedtype])
+    Language.SOAS.Syntax.Abs.ScopedOpArgTyping _ opargtyping -> prPrec i 0 (concatD [prt 0 opargtyping])
 
-instance Print [Language.SOAS.Syntax.Abs.OpArgTyping' a] where
+instance Print [Language.SOAS.Syntax.Abs.ScopedOpArgTyping' a] where
   prt _ [] = concatD []
   prt _ [x] = concatD [prt 0 x]
   prt _ (x:xs) = concatD [prt 0 x, doc (showString ","), prt 0 xs]
 
+instance Print (Language.SOAS.Syntax.Abs.OpArgTyping' a) where
+  prt i = \case
+    Language.SOAS.Syntax.Abs.OpArgTyping _ types type_ -> prPrec i 0 (concatD [prt 0 types, doc (showString "."), prt 0 type_])
+
 instance Print (Language.SOAS.Syntax.Abs.ScopedType' a) where
   prt i = \case
     Language.SOAS.Syntax.Abs.ScopedType _ type_ -> prPrec i 0 (concatD [prt 0 type_])
+
+instance Print [Language.SOAS.Syntax.Abs.ScopedType' a] where
+  prt _ [] = concatD []
+  prt _ (x:xs) = concatD [prt 0 x, prt 0 xs]

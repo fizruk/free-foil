@@ -31,9 +31,11 @@ module Language.SOAS.Syntax.Par
   , pType2
   , pListType
   , pTypeBinders
+  , pScopedOpArgTyping
+  , pListScopedOpArgTyping
   , pOpArgTyping
-  , pListOpArgTyping
   , pScopedType
+  , pListScopedType
   ) where
 
 import Prelude
@@ -66,9 +68,11 @@ import Language.SOAS.Syntax.Lex
 %name pType2_internal Type2
 %name pListType_internal ListType
 %name pTypeBinders_internal TypeBinders
+%name pScopedOpArgTyping_internal ScopedOpArgTyping
+%name pListScopedOpArgTyping_internal ListScopedOpArgTyping
 %name pOpArgTyping_internal OpArgTyping
-%name pListOpArgTyping_internal ListOpArgTyping
 %name pScopedType_internal ScopedType
+%name pListScopedType_internal ListScopedType
 -- no lexer declaration
 %monad { Err } { (>>=) } { return }
 %tokentype {Token}
@@ -132,7 +136,7 @@ ListMetaVarTyping
 
 OpTyping :: { (Language.SOAS.Syntax.Abs.BNFC'Position, Language.SOAS.Syntax.Abs.OpTyping) }
 OpTyping
-  : OpIdent ':' '∀' TypeBinders '.' '(' ListOpArgTyping ')' '→' ScopedType { (fst $1, Language.SOAS.Syntax.Abs.OpTyping (fst $1) (snd $1) (snd $4) (snd $7) (snd $10)) }
+  : OpIdent ':' '∀' TypeBinders '.' '(' ListScopedOpArgTyping ')' '→' ScopedType { (fst $1, Language.SOAS.Syntax.Abs.OpTyping (fst $1) (snd $1) (snd $4) (snd $7) (snd $10)) }
 
 Constraint :: { (Language.SOAS.Syntax.Abs.BNFC'Position, Language.SOAS.Syntax.Abs.Constraint) }
 Constraint
@@ -167,6 +171,7 @@ ListTerm
 OpArg :: { (Language.SOAS.Syntax.Abs.BNFC'Position, Language.SOAS.Syntax.Abs.OpArg) }
 OpArg
   : Binders '.' ScopedTerm { (fst $1, Language.SOAS.Syntax.Abs.OpArg (fst $1) (snd $1) (snd $3)) }
+  | Term { (fst $1, Language.SOAS.Syntax.Abs.PlainOpArg (fst $1) (snd $1)) }
 
 ListOpArg :: { (Language.SOAS.Syntax.Abs.BNFC'Position, [Language.SOAS.Syntax.Abs.OpArg]) }
 ListOpArg
@@ -213,19 +218,28 @@ TypeBinders
   : {- empty -} { (Language.SOAS.Syntax.Abs.BNFC'NoPosition, Language.SOAS.Syntax.Abs.NoTypeBinders Language.SOAS.Syntax.Abs.BNFC'NoPosition) }
   | TypeVarIdent TypeBinders { (fst $1, Language.SOAS.Syntax.Abs.SomeTypeBinders (fst $1) (snd $1) (snd $2)) }
 
+ScopedOpArgTyping :: { (Language.SOAS.Syntax.Abs.BNFC'Position, Language.SOAS.Syntax.Abs.ScopedOpArgTyping) }
+ScopedOpArgTyping
+  : OpArgTyping { (fst $1, Language.SOAS.Syntax.Abs.ScopedOpArgTyping (fst $1) (snd $1)) }
+
+ListScopedOpArgTyping :: { (Language.SOAS.Syntax.Abs.BNFC'Position, [Language.SOAS.Syntax.Abs.ScopedOpArgTyping]) }
+ListScopedOpArgTyping
+  : {- empty -} { (Language.SOAS.Syntax.Abs.BNFC'NoPosition, []) }
+  | ScopedOpArgTyping { (fst $1, (:[]) (snd $1)) }
+  | ScopedOpArgTyping ',' ListScopedOpArgTyping { (fst $1, (:) (snd $1) (snd $3)) }
+
 OpArgTyping :: { (Language.SOAS.Syntax.Abs.BNFC'Position, Language.SOAS.Syntax.Abs.OpArgTyping) }
 OpArgTyping
-  : TypeBinders '.' ScopedType { (fst $1, Language.SOAS.Syntax.Abs.OpArgTyping (fst $1) (snd $1) (snd $3)) }
-
-ListOpArgTyping :: { (Language.SOAS.Syntax.Abs.BNFC'Position, [Language.SOAS.Syntax.Abs.OpArgTyping]) }
-ListOpArgTyping
-  : {- empty -} { (Language.SOAS.Syntax.Abs.BNFC'NoPosition, []) }
-  | OpArgTyping { (fst $1, (:[]) (snd $1)) }
-  | OpArgTyping ',' ListOpArgTyping { (fst $1, (:) (snd $1) (snd $3)) }
+  : ListType '.' Type { (fst $1, Language.SOAS.Syntax.Abs.OpArgTyping (fst $1) (snd $1) (snd $3)) }
 
 ScopedType :: { (Language.SOAS.Syntax.Abs.BNFC'Position, Language.SOAS.Syntax.Abs.ScopedType) }
 ScopedType
   : Type { (fst $1, Language.SOAS.Syntax.Abs.ScopedType (fst $1) (snd $1)) }
+
+ListScopedType :: { (Language.SOAS.Syntax.Abs.BNFC'Position, [Language.SOAS.Syntax.Abs.ScopedType]) }
+ListScopedType
+  : {- empty -} { (Language.SOAS.Syntax.Abs.BNFC'NoPosition, []) }
+  | ScopedType ListScopedType { (fst $1, (:) (snd $1) (snd $2)) }
 
 {
 
@@ -313,13 +327,19 @@ pListType = fmap snd . pListType_internal
 pTypeBinders :: [Token] -> Err Language.SOAS.Syntax.Abs.TypeBinders
 pTypeBinders = fmap snd . pTypeBinders_internal
 
+pScopedOpArgTyping :: [Token] -> Err Language.SOAS.Syntax.Abs.ScopedOpArgTyping
+pScopedOpArgTyping = fmap snd . pScopedOpArgTyping_internal
+
+pListScopedOpArgTyping :: [Token] -> Err [Language.SOAS.Syntax.Abs.ScopedOpArgTyping]
+pListScopedOpArgTyping = fmap snd . pListScopedOpArgTyping_internal
+
 pOpArgTyping :: [Token] -> Err Language.SOAS.Syntax.Abs.OpArgTyping
 pOpArgTyping = fmap snd . pOpArgTyping_internal
 
-pListOpArgTyping :: [Token] -> Err [Language.SOAS.Syntax.Abs.OpArgTyping]
-pListOpArgTyping = fmap snd . pListOpArgTyping_internal
-
 pScopedType :: [Token] -> Err Language.SOAS.Syntax.Abs.ScopedType
 pScopedType = fmap snd . pScopedType_internal
+
+pListScopedType :: [Token] -> Err [Language.SOAS.Syntax.Abs.ScopedType]
+pListScopedType = fmap snd . pListScopedType_internal
 }
 

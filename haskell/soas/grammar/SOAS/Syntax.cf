@@ -15,7 +15,7 @@ separator VarTyping "," ;
 MetaVarTyping. MetaVarTyping ::= MetaVarIdent ":" "[" [Type] "]" Type ;
 separator MetaVarTyping "," ;
 
-OpTyping. OpTyping ::= OpIdent ":" "∀" TypeBinders "." "(" [OpArgTyping] ")" "→" ScopedType ;
+OpTyping. OpTyping ::= OpIdent ":" "∀" TypeBinders "." "(" [ScopedOpArgTyping] ")" "→" ScopedType ;
 
 ConstraintEq. Constraint ::= "∀" Binders "." ScopedTerm "=" ScopedTerm ;
 
@@ -30,9 +30,11 @@ MetaVar.  Term ::= MetaVarIdent "[" [Term] "]" ;
 separator Term "," ;
 
 OpArg. OpArg ::= Binders "." ScopedTerm ;
+PlainOpArg. OpArg ::= Term ;
 separator OpArg "," ;
 
 NoBinders. Binders ::= ;
+-- OneBinder. Binders ::= VarIdent ;
 SomeBinders. Binders ::= VarIdent Binders ;
 
 ScopedTerm. ScopedTerm ::= Term ;
@@ -48,7 +50,10 @@ separator Type "," ;
 NoTypeBinders. TypeBinders ::= ;
 SomeTypeBinders. TypeBinders ::= TypeVarIdent TypeBinders ;
 
-OpArgTyping. OpArgTyping ::= TypeBinders "." ScopedType ;
-separator OpArgTyping "," ;
+ScopedOpArgTyping. ScopedOpArgTyping ::= OpArgTyping ;
+separator ScopedOpArgTyping "," ;
+
+OpArgTyping. OpArgTyping ::= [Type] "." Type ;
 
 ScopedType. ScopedType ::= Type ;
+separator ScopedType "" ;

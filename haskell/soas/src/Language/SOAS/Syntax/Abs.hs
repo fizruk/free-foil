@@ -43,7 +43,7 @@ data MetaVarTyping' a
 
 type OpTyping = OpTyping' BNFC'Position
 data OpTyping' a
-    = OpTyping a OpIdent (TypeBinders' a) [OpArgTyping' a] (ScopedType' a)
+    = OpTyping a OpIdent (TypeBinders' a) [ScopedOpArgTyping' a] (ScopedType' a)
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
 
 type Constraint = Constraint' BNFC'Position
@@ -67,7 +67,8 @@ data Term' a
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
 
 type OpArg = OpArg' BNFC'Position
-data OpArg' a = OpArg a (Binders' a) (ScopedTerm' a)
+data OpArg' a
+    = OpArg a (Binders' a) (ScopedTerm' a) | PlainOpArg a (Term' a)
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
 
 type Binders = Binders' BNFC'Position
@@ -95,9 +96,12 @@ data TypeBinders' a
     | SomeTypeBinders a (TypeVarIdent' a) (TypeBinders' a)
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
 
+type ScopedOpArgTyping = ScopedOpArgTyping' BNFC'Position
+data ScopedOpArgTyping' a = ScopedOpArgTyping a (OpArgTyping' a)
+  deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
+
 type OpArgTyping = OpArgTyping' BNFC'Position
-data OpArgTyping' a
-    = OpArgTyping a (TypeBinders' a) (ScopedType' a)
+data OpArgTyping' a = OpArgTyping a [Type' a] (Type' a)
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
 
 type ScopedType = ScopedType' BNFC'Position
@@ -169,6 +173,7 @@ instance HasPosition Term where
 instance HasPosition OpArg where
   hasPosition = \case
     OpArg p _ _ -> p
+    PlainOpArg p _ -> p
 
 instance HasPosition Binders where
   hasPosition = \case
@@ -193,6 +198,10 @@ instance HasPosition TypeBinders where
   hasPosition = \case
     NoTypeBinders p -> p
     SomeTypeBinders p _ _ -> p
+
+instance HasPosition ScopedOpArgTyping where
+  hasPosition = \case
+    ScopedOpArgTyping p _ -> p
 
 instance HasPosition OpArgTyping where
   hasPosition = \case
