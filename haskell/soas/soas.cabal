@@ -5,7 +5,7 @@ cabal-version: 1.24
 -- see: https://github.com/sol/hpack
 
 name:           soas
-version:        0.1.0
+version:        0.2.0
 synopsis:       Second-Order Abstract Syntax implemented via Free Foil (a version of SOAS).
 description:    Please see the README on GitHub at <https://github.com/fizruk/free-foil#readme>
 category:       Language
@@ -58,7 +58,7 @@ library
     , bifunctors
     , containers
     , deepseq
-    , free-foil >=0.1.0
+    , free-foil >=0.2.0
     , kind-generics-th
     , template-haskell
     , text >=1.2.3.1
@@ -82,7 +82,7 @@ executable soas
     , bifunctors
     , containers
     , deepseq
-    , free-foil >=0.1.0
+    , free-foil >=0.2.0
     , kind-generics-th
     , soas
     , template-haskell
@@ -108,7 +108,7 @@ test-suite doctests
     , containers
     , deepseq
     , doctest-parallel
-    , free-foil >=0.1.0
+    , free-foil >=0.2.0
     , kind-generics-th
     , soas
     , template-haskell
@@ -135,7 +135,7 @@ test-suite spec
     , bifunctors
     , containers
     , deepseq
-    , free-foil >=0.1.0
+    , free-foil >=0.2.0
     , hspec
     , hspec-discover
     , kind-generics-th

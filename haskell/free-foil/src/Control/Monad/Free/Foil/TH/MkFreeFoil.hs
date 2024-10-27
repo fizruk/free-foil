@@ -521,10 +521,10 @@ termConToPatQuantified config@FreeFoilConfig{..} = go
       ForallC _params _ctx con -> go con
       RecGadtC conNames argTypes retType -> go (GadtC conNames (map removeName argTypes) retType)
 
-mkPatternSynonym :: Name -> FreeFoilConfig -> FreeFoilTermConfig -> Type -> Con -> Q [Dec]
+mkPatternSynonym :: Name -> FreeFoilConfig -> FreeFoilTermConfig -> Type -> Con -> Q [(Name, [Dec])]
 mkPatternSynonym rawTypeName config termConfig@FreeFoilTermConfig{..} rawRetType = go
   where
-    go :: Con -> Q [Dec]
+    go :: Con -> Q [(Name, [Dec])]
     go = \case
       GadtC conNames rawArgTypes _rawRetType -> concat <$> do
         forM (conNames \\ [rawVarConName]) $ \conName -> do
@@ -537,10 +537,10 @@ mkPatternSynonym rawTypeName config termConfig@FreeFoilTermConfig{..} rawRetType
           [(vars, pat, _, _)] <- termConToPat rawTypeName config termConfig (GadtC [conName] rawArgTypes rawRetType)    -- FIXME: unsafe matching!
           addModFinalizer $ putDoc (DeclDoc patName)
             ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. Pattern synonym for an '" ++ show ''Foil.AST ++ "' node of type '" ++ show conName ++ "'.")
-          return
+          return [(patName,
             [ PatSynSigD patName (toFreeFoilType SortTerm config outerScope innerScope rawConType)
             , PatSynD patName (PrefixPatSyn vars) ImplBidir pat
-            ]
+            ])]
 
       NormalC conName types -> go (GadtC [conName] types rawRetType)
       RecC conName types -> go (NormalC conName (map removeName types))
@@ -624,7 +624,11 @@ mkFreeFoil config@FreeFoilConfig{..} = concat <$> sequence
     mkPatternSynonyms' FreeFoilTermConfig{..} rawName = do
       (tvars, cons) <- reifyDataOrNewtype rawName
       let rawRetType = PeelConT rawName (map (VarT . tvarName) tvars)
-      concat <$> mapM (mkPatternSynonym rawName config FreeFoilTermConfig{..} rawRetType) cons
+      (unzip -> (patNames, decls)) <- concat <$> mapM (mkPatternSynonym rawName config FreeFoilTermConfig{..} rawRetType) cons
+      let completeDecl
+            | rawName == rawTermName = PragmaD (CompleteP ('Foil.Var : patNames) Nothing)
+            | otherwise = PragmaD (CompleteP patNames Nothing)
+      return (concat decls ++ [completeDecl])
 
     mkQuantifiedType rawName = do
       (tvars, cons) <- reifyDataOrNewtype rawName

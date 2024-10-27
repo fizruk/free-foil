@@ -1,5 +1,11 @@
 # CHANGELOG for `free-foil`
 
+# 0.2.0 — 2024-10-27
+
+- Generate [`COMPLETE` pragma](https://ghc.gitlab.haskell.org/ghc/doc/users_guide/exts/pragmas.html#complete-pragmas) in `mkPatternSynonyms` (see [#26](https://github.com/fizruk/free-foil/pull/26))
+- Polykind `ZipMatchK` class with default generic implementation via [`kind-generics`](https://hackage.haskell.org/package/kind-generics) (see [#27](https://github.com/fizruk/free-foil/pull/27))
+- New experimental TH generation for Free Foil with support for rich syntax in `Control.Monad.Free.Foil.TH.MkFreeFoil` (see [#28](https://github.com/fizruk/free-foil/pull/28))
+
 # 0.1.0 — 2024-08-18
 
 - Generalize functions for binders, support general patterns (see [#16](https://github.com/fizruk/free-foil/pull/16))
