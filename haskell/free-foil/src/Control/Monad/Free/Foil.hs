@@ -24,7 +24,7 @@ import qualified Control.Monad.Foil.Internal as Foil
 import qualified Control.Monad.Foil.Relative as Foil
 import           Data.Bifoldable
 import           Data.Bifunctor
-import           Data.Bifunctor.Sum
+import Data.ZipMatchK
 import           Data.Coerce                 (coerce)
 import           Data.Map                    (Map)
 import qualified Data.Map                    as Map
@@ -165,7 +165,7 @@ refreshScopedAST scope (ScopedAST binder body) =
 -- Compared to 'alphaEquiv', this function may perform some unnecessary
 -- changes of bound variables when the binders are the same on both sides.
 alphaEquivRefreshed
-  :: (Bifunctor sig, Bifoldable sig, ZipMatch sig, Foil.Distinct n, Foil.UnifiablePattern binder)
+  :: (Bifunctor sig, Bifoldable sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder)
   => Foil.Scope n
   -> AST binder sig n
   -> AST binder sig n
@@ -178,21 +178,21 @@ alphaEquivRefreshed scope t1 t2 = refreshAST scope t1 `unsafeEqAST` refreshAST s
 -- Compared to 'alphaEquivRefreshed', this function might skip unnecessary
 -- changes of bound variables when both binders in two matching scoped terms coincide.
 alphaEquiv
-  :: (Bifunctor sig, Bifoldable sig, ZipMatch sig, Foil.Distinct n, Foil.UnifiablePattern binder)
+  :: (Bifunctor sig, Bifoldable sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder)
   => Foil.Scope n
   -> AST binder sig n
   -> AST binder sig n
   -> Bool
 alphaEquiv _scope (Var x) (Var y) = x == coerce y
 alphaEquiv scope (Node l) (Node r) =
-  case zipMatch l r of
+  case zipMatch2 l r of
     Nothing -> False
     Just tt -> getAll (bifoldMap (All . uncurry (alphaEquivScoped scope)) (All . uncurry (alphaEquiv scope)) tt)
 alphaEquiv _ _ _ = False
 
 -- | Same as 'alphaEquiv' but for scoped terms.
 alphaEquivScoped
-  :: (Bifunctor sig, Bifoldable sig, ZipMatch sig, Foil.Distinct n, Foil.UnifiablePattern binder)
+  :: (Bifunctor sig, Bifoldable sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder)
   => Foil.Scope n
   -> ScopedAST binder sig n
   -> ScopedAST binder sig n
@@ -237,20 +237,20 @@ alphaEquivScoped scope
 -- scope extensions under binders (which might happen due to substitution
 -- under a binder in absence of name conflicts).
 unsafeEqAST
-  :: (Bifoldable sig, ZipMatch sig, Foil.UnifiablePattern binder, Foil.Distinct n, Foil.Distinct l)
+  :: (Bifoldable sig, ZipMatchK sig, Foil.UnifiablePattern binder, Foil.Distinct n, Foil.Distinct l)
   => AST binder sig n
   -> AST binder sig l
   -> Bool
 unsafeEqAST (Var x) (Var y) = x == coerce y
 unsafeEqAST (Node t1) (Node t2) =
-  case zipMatch t1 t2 of
+  case zipMatch2 t1 t2 of
     Nothing -> False
     Just tt -> getAll (bifoldMap (All . uncurry unsafeEqScopedAST) (All . uncurry unsafeEqAST) tt)
 unsafeEqAST _ _ = False
 
 -- | A version of 'unsafeEqAST' for scoped terms.
 unsafeEqScopedAST
-  :: (Bifoldable sig, ZipMatch sig, Foil.UnifiablePattern binder, Foil.Distinct n, Foil.Distinct l)
+  :: (Bifoldable sig, ZipMatchK sig, Foil.UnifiablePattern binder, Foil.Distinct n, Foil.Distinct l)
   => ScopedAST binder sig n
   -> ScopedAST binder sig l
   -> Bool
@@ -259,20 +259,6 @@ unsafeEqScopedAST (ScopedAST binder1 body1) (ScopedAST binder2 body2) = and
   , case (Foil.assertDistinct binder1, Foil.assertDistinct binder2) of
       (Foil.Distinct, Foil.Distinct) -> body1 `unsafeEqAST` body2
   ]
-
--- ** Syntactic matching (unification)
-
--- | Perform one-level matching for the two (non-variable) terms.
-class ZipMatch sig where
-  zipMatch
-    :: sig scope term     -- ^ Left non-variable term.
-    -> sig scope' term'   -- ^ Right non-variable term.
-    -> Maybe (sig (scope, scope') (term, term'))
-
-instance (ZipMatch f, ZipMatch g) => ZipMatch (Sum f g) where
-  zipMatch (L2 f) (L2 f') = L2 <$> zipMatch f f'
-  zipMatch (R2 g) (R2 g') = R2 <$> zipMatch g g'
-  zipMatch _ _            = Nothing
 
 -- * Converting to and from free foil
 

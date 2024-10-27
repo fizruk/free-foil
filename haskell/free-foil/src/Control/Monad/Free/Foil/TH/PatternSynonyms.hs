@@ -83,7 +83,7 @@ mkPatternSynonym signatureType scope term = \case
       where
         l = mkName ("l" ++ show i)
 
-    mkPatternName conName = mkName (dropEnd (length "Sig") (nameBase conName))
+    mkPatternName conName = mkName (dropEnd (length ("Sig" :: String)) (nameBase conName))
     dropEnd k = reverse . drop k . reverse
 
     collapse = \case
