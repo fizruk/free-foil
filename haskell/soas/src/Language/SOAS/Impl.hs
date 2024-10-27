@@ -1,4 +1,4 @@
-{-# OPTIONS_GHC -Wno-orphans -Wno-redundant-constraints -ddump-splices #-}
+{-# OPTIONS_GHC -Wno-orphans -Wno-redundant-constraints #-}
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE ScopedTypeVariables         #-}
@@ -16,6 +16,7 @@
 -- | Functions over Second-Order Abstract Syntax (SOAS)
 -- represented using scope-safe Haskell types (via Free Foil).
 module Language.SOAS.Impl where
+
 
 import Data.List (find)
 import Data.Bifunctor
@@ -68,6 +69,7 @@ applySubsts scope substs term =
     MetaVar _loc m args | Just (Subst _ _ binders body) <- lookupSubst m substs ->
       substitutePattern scope Foil.voidSubst binders args body
     Var{} -> term
+    -- NOTE: generic recursive processing!
     Node node -> Node (bimap goScoped (applySubsts scope substs) node)
   where
     goScoped (ScopedAST binders body) =

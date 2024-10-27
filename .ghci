@@ -1,0 +1,3 @@
+:set -XOverloadedStrings
+:set -XDataKinds
+import qualified Language.SOAS.Impl as SOAS
