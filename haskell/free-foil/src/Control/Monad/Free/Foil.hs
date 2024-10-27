@@ -23,6 +23,7 @@ import           Control.DeepSeq
 import qualified Control.Monad.Foil.Internal as Foil
 import qualified Control.Monad.Foil.Relative as Foil
 import           Data.Bifoldable
+import           Data.Bitraversable
 import           Data.Bifunctor
 import Data.ZipMatchK
 import           Data.Coerce                 (coerce)
@@ -165,7 +166,7 @@ refreshScopedAST scope (ScopedAST binder body) =
 -- Compared to 'alphaEquiv', this function may perform some unnecessary
 -- changes of bound variables when the binders are the same on both sides.
 alphaEquivRefreshed
-  :: (Bifunctor sig, Bifoldable sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder)
+  :: (Bitraversable sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder)
   => Foil.Scope n
   -> AST binder sig n
   -> AST binder sig n
@@ -178,7 +179,7 @@ alphaEquivRefreshed scope t1 t2 = refreshAST scope t1 `unsafeEqAST` refreshAST s
 -- Compared to 'alphaEquivRefreshed', this function might skip unnecessary
 -- changes of bound variables when both binders in two matching scoped terms coincide.
 alphaEquiv
-  :: (Bifunctor sig, Bifoldable sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder)
+  :: (Bitraversable sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder)
   => Foil.Scope n
   -> AST binder sig n
   -> AST binder sig n
@@ -192,7 +193,7 @@ alphaEquiv _ _ _ = False
 
 -- | Same as 'alphaEquiv' but for scoped terms.
 alphaEquivScoped
-  :: (Bifunctor sig, Bifoldable sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder)
+  :: (Bitraversable sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder)
   => Foil.Scope n
   -> ScopedAST binder sig n
   -> ScopedAST binder sig n
@@ -237,7 +238,7 @@ alphaEquivScoped scope
 -- scope extensions under binders (which might happen due to substitution
 -- under a binder in absence of name conflicts).
 unsafeEqAST
-  :: (Bifoldable sig, ZipMatchK sig, Foil.UnifiablePattern binder, Foil.Distinct n, Foil.Distinct l)
+  :: (Bitraversable sig, ZipMatchK sig, Foil.UnifiablePattern binder, Foil.Distinct n, Foil.Distinct l)
   => AST binder sig n
   -> AST binder sig l
   -> Bool
@@ -250,7 +251,7 @@ unsafeEqAST _ _ = False
 
 -- | A version of 'unsafeEqAST' for scoped terms.
 unsafeEqScopedAST
-  :: (Bifoldable sig, ZipMatchK sig, Foil.UnifiablePattern binder, Foil.Distinct n, Foil.Distinct l)
+  :: (Bitraversable sig, ZipMatchK sig, Foil.UnifiablePattern binder, Foil.Distinct n, Foil.Distinct l)
   => ScopedAST binder sig n
   -> ScopedAST binder sig l
   -> Bool

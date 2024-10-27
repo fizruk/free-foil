@@ -47,6 +47,7 @@ library
       Control.Monad.Free.Foil.TH.Signature
       Data.ZipMatchK
       Data.ZipMatchK.Bifunctor
+      Data.ZipMatchK.Functor
       Data.ZipMatchK.Generic
       Data.ZipMatchK.Mappings
   other-modules:

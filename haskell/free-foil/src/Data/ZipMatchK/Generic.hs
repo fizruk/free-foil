@@ -1,4 +1,4 @@
-{-# OPTIONS_GHC -Wno-missing-methods #-}
+{-# OPTIONS_GHC -Wno-missing-methods -Wno-orphans #-}
 {-# LANGUAGE AllowAmbiguousTypes      #-}
 {-# LANGUAGE ConstraintKinds          #-}
 {-# LANGUAGE DataKinds                #-}
@@ -19,23 +19,36 @@
 module Data.ZipMatchK.Generic where
 
 import           Data.Kind              (Constraint, Type)
+import           Data.List.NonEmpty
 import           Generics.Kind
 import           Generics.Kind.Examples ()
 import           GHC.TypeError
 import           Data.ZipMatchK.Mappings
 
+-- | Kind-polymorphic syntactic (first-order) unification of two values.
+--
+-- Note: @f@ is expected to be a traversable n-functor,
+-- but at the moment we lack a @TraversableK@ constraint.
 class ZipMatchK (f :: k) where
+  -- | Perform one level of equality testing:
+  --
+  -- * when @k = 'Type'@, values are compared directly (e.g. via 'Eq');
+  -- * when @k = 'Type' -> 'Type'@, we compare term constructors;
+  --   if term constructors are unequal, we return 'Nothing';
+  --   otherwise, we pair up all components with a given function.
   zipMatchWithK :: forall as bs cs. Mappings as bs cs -> f :@@: as -> f :@@: bs -> Maybe (f :@@: cs)
   default zipMatchWithK :: forall as bs cs.
     (GenericK f, GZipMatch (RepK f), ReqsZipMatchWith (RepK f) as bs cs)
     => Mappings as bs cs -> f :@@: as -> f :@@: bs -> Maybe (f :@@: cs)
   zipMatchWithK = genericZipMatchWithK @f @as @bs @cs
 
+-- | Generic implementation of 'Data.ZipMatch.zipMatchK'.
 genericZipMatchK :: forall f as bs.
     (GenericK f, GZipMatch (RepK f), ReqsZipMatch (RepK f) as bs, PairMappings as bs)
     => f :@@: as -> f :@@: bs -> Maybe (f :@@: (ZipLoT as bs))
 genericZipMatchK = genericZipMatchWithK @f @as @bs pairMappings
 
+-- | Generic implementation of 'zipMatchWithK'.
 genericZipMatchWithK :: forall f as bs cs.
     (GenericK f, GZipMatch (RepK f), ReqsZipMatchWith (RepK f) as bs cs)
     => Mappings as bs cs -> f :@@: as -> f :@@: bs -> Maybe (f :@@: cs)
@@ -43,17 +56,20 @@ genericZipMatchWithK mappings x y = toK @_ @f @cs <$> gzipMatchWith mappings
   (fromK @_ @f @as x)
   (fromK @_ @f @bs y)
 
-genericZipMatch2
-   :: forall sig scope scope' term term'.
-   (GenericK sig, GZipMatch (RepK sig), ReqsZipMatch (RepK sig) (scope :&&: term :&&: 'LoT0) (scope' :&&: term' :&&: 'LoT0))
-   => sig scope term -> sig scope' term' -> Maybe (sig (scope, scope') (term, term'))
-genericZipMatch2 = genericZipMatchK @sig @(scope :&&: term :&&: 'LoT0) @(scope' :&&: term' :&&: 'LoT0)
+instance GenericK (,) where
+  type RepK (,) = Field Var0 :*: Field Var1
+instance GenericK ((,) a) where
+  type RepK ((,) a) = Field (Kon a) :*: Field Var0
+instance GenericK NonEmpty where
+  type RepK NonEmpty = Field Var0 :*: Field ([] :$: Var0)
 
--- instance ZipMatchK (,)     -- missing GenericK instance upstream
+instance ZipMatchK (,)
+instance ZipMatchK a => ZipMatchK ((,) a)
 instance ZipMatchK []
 instance ZipMatchK Maybe
 instance ZipMatchK Either
 instance ZipMatchK a => ZipMatchK (Either a)
+instance ZipMatchK NonEmpty
 
 type ReqsZipMatch f as bs = ReqsZipMatchWith f as bs (ZipLoT as bs)
 class GZipMatch (f :: LoT k -> Type) where
@@ -110,7 +126,7 @@ instance ZipMatchK k => ZipMatchFields (Kon k) where
   type ReqsZipMatchFieldsWith (Kon k) as bs cs = ()
   zipMatchFieldsWith _ (Field l) (Field r) = Field <$> zipMatchWithK @_ @k M0 l r
 
-instance (ZipMatchFields t, ZipMatchK k) => ZipMatchFields (Kon k :@: t) where
+instance {-# OVERLAPPING #-} (ZipMatchFields t, ZipMatchK k) => ZipMatchFields (Kon k :@: t) where
   type ReqsZipMatchFieldsWith (Kon k :@: t) as bs cs = ReqsZipMatchFieldsWith t as bs cs
 
   zipMatchFieldsWith :: forall as bs cs. ReqsZipMatchFieldsWith (Kon k :@: t) as bs cs =>
@@ -131,6 +147,24 @@ instance {-# OVERLAPPING #-} (ZipMatchFields t1, ZipMatchFields t2, ZipMatchK k)
         :^: M0)) l r
 
 instance {-# OVERLAPPABLE #-} TypeError
+  ('Text "The type constructor is kind-polymorphic:"
+  :$$: 'Text "  " :<>: 'ShowType k :<>: 'Text " : " :<>: 'ShowType (kk -> Type)
+  :$$: 'Text "Possible fix:"
+  :$$: 'Text "  add an explicit kind signature"
+  :$$: 'Text "    " :<>: 'ShowType k :<>: 'Text " : " :<>: 'ShowType (Type -> Type))
+  => ZipMatchFields (Kon (k :: kk -> Type) :@: t) where
+  zipMatchFieldsWith = undefined
+
+instance {-# OVERLAPPABLE #-} TypeError
+  ('Text "The type constructor is kind-polymorphic:"
+  :$$: 'Text "  " :<>: 'ShowType k :<>: 'Text " : " :<>: 'ShowType (kk1 -> kk2 -> Type)
+  :$$: 'Text "Possible fix:"
+  :$$: 'Text "  add an explicit kind signature"
+  :$$: 'Text "    " :<>: 'ShowType k :<>: 'Text " : " :<>: 'ShowType (Type -> Type -> Type))
+  => ZipMatchFields ((Kon (k :: kk1 -> kk2 -> Type) :@: t1) :@: t2) where
+  zipMatchFieldsWith = undefined
+
+instance {-# OVERLAPPABLE #-} TypeError
   ('Text "Atom :@: is not supported by ZipMatchFields is a general form:"
   :$$: 'Text "  when attempting to use a generic instance for"
   :$$: 'ShowType (f :@: t)
@@ -139,24 +173,21 @@ instance {-# OVERLAPPABLE #-} TypeError
   -- type ReqsZipMatchFieldsWith (f :@: t) as bs cs = TypeError ('Text "Atom :@: is not supported by ZipMatchFields is a general form")
   zipMatchFieldsWith = undefined
 
-instance TypeError ('Text "Atom ForAll is not supported by ZipMatchFields") => ZipMatchFields (ForAll a) where
+instance TypeError
+  ('Text "Atom ForAll is not supported by ZipMatchFields"
+  :$$: 'Text "  when attempting to use a generic instance for"
+  :$$: 'ShowType (ForAll a)) => ZipMatchFields (ForAll a) where
   type ReqsZipMatchFieldsWith (ForAll a) as bs cs = TypeError ('Text "Atom ForAll is not supported by ZipMatchFields")
   zipMatchFieldsWith = undefined
-instance TypeError ('Text "Atom :=>>: is not supported by ZipMatchFields") => ZipMatchFields (c :=>>: a) where
+instance TypeError
+  ('Text "Atom :=>>: is not supported by ZipMatchFields"
+  :$$: 'Text "  when attempting to use a generic instance for"
+  :$$: 'ShowType (c :=>>: a)) => ZipMatchFields (c :=>>: a) where
   type ReqsZipMatchFieldsWith (c :=>>: a) as bs cs = TypeError ('Text "Atom :=>>: is not supported by ZipMatchFields")
   zipMatchFieldsWith = undefined
-instance TypeError ('Text "Atom Eval is not supported by ZipMatchFields") => ZipMatchFields (Eval a) where
+instance TypeError
+  ('Text "Atom Eval is not supported by ZipMatchFields"
+  :$$: 'Text "  when attempting to use a generic instance for"
+  :$$: 'ShowType (Eval a)) => ZipMatchFields (Eval a) where
   type ReqsZipMatchFieldsWith (Eval a) as bs cs = TypeError ('Text "Atom Eval is not supported by ZipMatchFields")
   zipMatchFieldsWith = undefined
-
--- instance ZipMatchFields (ForAll f) where
---   type ReqsZipMatchFields (ForAll f) as bs = ???
---   zipMatchFields = ???
-
--- instance ZipMatchFields (c :=>>: f) where
---   type ReqsZipMatchFields (c :=>>: f) as bs = ???
---   zipMatchFields = ???
-
--- instance ZipMatchFields (Eval f) where
---   type ReqsZipMatchFields (Eval f) as bs = ???
---   zipMatchFields = ???
