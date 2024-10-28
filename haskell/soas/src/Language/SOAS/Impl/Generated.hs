@@ -64,29 +64,12 @@ instance Foil.SinkableK (Binders' a)
 instance Foil.SinkableK (TypeBinders' a)
 
 -- FIXME: derive via GenericK
-instance Foil.CoSinkable (Binders' a) where
-  withPattern withBinder unit comp scope binders cont =
-    case binders of
-      NoBinders loc -> cont unit (NoBinders loc)
-      -- OneBinder loc binder ->
-      --   Foil.withPattern withBinder unit comp scope binder $ \f binder' ->
-      --     cont f (OneBinder loc binder')
-      SomeBinders loc binder moreBinders ->
-        Foil.withPattern withBinder unit comp scope binder $ \f binder' ->
-          let scope' = Foil.extendScopePattern binder' scope
-           in Foil.withPattern withBinder unit comp scope' moreBinders $ \g moreBinders' ->
-                cont (comp f g) (SomeBinders loc binder' moreBinders')
+instance Foil.UnsafeHasNameBinders (Binders' a)
+instance Foil.CoSinkable (Binders' a)
 
 -- FIXME: derive via GenericK
-instance Foil.CoSinkable (TypeBinders' a) where
-  withPattern withBinder unit comp scope binders cont =
-    case binders of
-      NoTypeBinders loc -> cont unit (NoTypeBinders loc)
-      SomeTypeBinders loc binder moreTypeBinders ->
-        Foil.withPattern withBinder unit comp scope binder $ \f binder' ->
-          let scope' = Foil.extendScopePattern binder' scope
-           in Foil.withPattern withBinder unit comp scope' moreTypeBinders $ \g moreTypeBinders' ->
-                cont (comp f g) (SomeTypeBinders loc binder' moreTypeBinders')
+instance Foil.UnsafeHasNameBinders (TypeBinders' a)
+instance Foil.CoSinkable (TypeBinders' a)
 
 mkFreeFoilConversions soasConfig
 

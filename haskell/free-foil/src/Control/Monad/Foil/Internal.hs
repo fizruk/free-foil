@@ -730,6 +730,16 @@ class CoSinkable (pattern :: S -> S -> Type) where
     -> (forall o'. DExt o o' => f n l o o' -> pattern o o' -> r)
     -- ^ Continuation, accepting result for the entire pattern and a (possibly refreshed) pattern.
     -> r
+  default withPattern
+    :: (Distinct o, GenericK pattern, GUnsafeHasNameBinders (RepK pattern))
+    => (forall x y z r'. Distinct z => Scope z -> NameBinder x y -> (forall z'. DExt z z' => f x y z z' -> NameBinder z z' -> r') -> r')
+    -> (forall x z z'. DExt z z' => f x x z z')
+    -> (forall x y y' z z' z''. (DExt z z', DExt z' z'') => f x y z z' -> f y y' z' z'' -> f x y' z z'')
+    -> Scope o
+    -> pattern n l
+    -> (forall o'. DExt o o' => f n l o o' -> pattern o o' -> r)
+    -> r
+  withPattern = gunsafeWithPatternViaUnsafeHasNameBinders
 
 -- | Auxiliary data structure for collecting name binders. Used in 'nameBinderListOf'.
 newtype WithNameBinderList r n l (o :: S) (o' :: S) = WithNameBinderList (NameBinderList l r -> NameBinderList n r)
@@ -954,6 +964,9 @@ class SinkableK (f :: S -> k) where
     gsinkabilityProofK rename (fromK @_ @f e) $ \rename' e' ->
       cont rename' (toK @_ @f e')
 
+sinkK :: GSinkableK f => RenamingsK xs as -> RenamingsK xs bs -> f :@@: as -> f :@@: bs
+sinkK _ _ = unsafeCoerce
+
 instance SinkableK Name where
   sinkabilityProofK renameK@(RCons rename RNil) name cont = cont renameK (rename name)
 instance SinkableK NameBinder where
@@ -1099,3 +1112,119 @@ instance (Bifunctor f, GSinkableK (Field x), GSinkableK (Field y)) => GSinkableK
       (unField . gsinkabilityProofK' @(Field x) irename . Field)
       (unField . gsinkabilityProofK' @(Field y) irename . Field)
       x))
+
+-- * Kind-polymorphic types with binders
+
+-- ** Safe
+
+getNameBinders :: UnsafeHasNameBinders f => f n l -> NameBinders n l
+getNameBinders = UnsafeNameBinders . IntSet.fromList . unsafeGetNameBinders
+
+setNameBinders :: UnsafeHasNameBinders f => f n l -> NameBinders n l' -> f n l'
+setNameBinders e (UnsafeNameBinders m) = fst (unsafeSetNameBinders e (IntSet.toList m))
+
+ggetNameBinders :: forall f n l. (GenericK f, GUnsafeHasNameBinders (RepK f)) => f n l -> NameBinders n l
+ggetNameBinders = UnsafeNameBinders . IntSet.fromList . gunsafeGetNameBinders . fromK @_ @f @(n :&&: l :&&: LoT0)
+
+gsetNameBinders :: forall f n l l'. (GenericK f, GUnsafeHasNameBinders (RepK f)) => f n l -> NameBinders n l' -> f n l'
+gsetNameBinders e (UnsafeNameBinders m) = toK @_ @f @(n :&&: l' :&&: LoT0) $
+  fst (gunsafeSetNameBinders (fromK @_ @f @(n :&&: l :&&: LoT0) e) (IntSet.toList m))
+
+-- | Generic generalized processing of a pattern via 'GUnsafeHasNameBinders'.
+--
+-- This can be used as a default implementation of 'withPattern'.
+gunsafeWithPatternViaUnsafeHasNameBinders
+  :: forall pattern f o n l r.
+      (Distinct o, GenericK pattern, GUnsafeHasNameBinders (RepK pattern))
+  => (forall x y z r'. Distinct z => Scope z -> NameBinder x y -> (forall z'. DExt z z' => f x y z z' -> NameBinder z z' -> r') -> r')
+  -- ^ Processing of a single 'NameBinder', this will be applied to each binder in a pattern.
+  -> (forall x z z'. DExt z z' => f x x z z')
+  -- ^ Result in case no binders are present. This can be seen as scope-indexed 'mempty'.
+  -> (forall x y y' z z' z''. (DExt z z', DExt z' z'') => f x y z z' -> f y y' z' z'' -> f x y' z z'')
+  -- ^ Composition of results for nested binders/patterns. This can be seen as scope-indexed 'mappend'.
+  -> Scope o
+  -- ^ Ambient scope.
+  -> pattern n l
+  -- ^ Pattern to process.
+  -> (forall o'. DExt o o' => f n l o o' -> pattern o o' -> r)
+  -- ^ Continuation, accepting result for the entire pattern and a (possibly refreshed) pattern.
+  -> r
+gunsafeWithPatternViaUnsafeHasNameBinders withBinder id_ comp_ scope pat cont =
+  withPattern withBinder id_ comp_ scope (ggetNameBinders pat) $ \result binders ->
+    cont result (gsetNameBinders (unsafeCoerce pat) binders) -- FIXME: safer version
+
+-- ** Unsafe
+
+class UnsafeHasNameBinders f where
+  unsafeGetNameBinders :: f n l -> [RawName]
+  default unsafeGetNameBinders :: forall n l. (GenericK f, GUnsafeHasNameBinders (RepK f)) => f n l -> [RawName]
+  unsafeGetNameBinders = gunsafeGetNameBinders . fromK @_ @f @(n :&&: l :&&: LoT0)
+  unsafeSetNameBinders :: f n l -> [RawName] -> (f n l', [RawName])
+  default unsafeSetNameBinders :: forall n l l'. (GenericK f, GUnsafeHasNameBinders (RepK f)) => f n l -> [RawName] -> (f n l', [RawName])
+  unsafeSetNameBinders e names =
+    let (e', names') = gunsafeSetNameBinders (fromK @_ @f @(n :&&: l :&&: LoT0) e) names
+     in (toK @_ @f @(n :&&: l' :&&: LoT0) e', names')
+
+instance UnsafeHasNameBinders NameBinder where
+  unsafeGetNameBinders (UnsafeNameBinder (UnsafeName name)) = [name]
+  unsafeSetNameBinders _ (name:names) = (UnsafeNameBinder (UnsafeName name), names)
+
+instance UnsafeHasNameBinders NameBinderList
+
+class GUnsafeHasNameBinders f where
+  gunsafeGetNameBinders :: f as -> [RawName]
+  gunsafeSetNameBinders :: f as -> [RawName] -> (f bs, [RawName])
+
+instance GUnsafeHasNameBinders V1 where
+  gunsafeGetNameBinders _ = error "absurd: Generics.Kind.V1"
+  gunsafeSetNameBinders _ _ = error "absurd: Generics.Kind.V1"
+instance GUnsafeHasNameBinders U1 where
+  gunsafeGetNameBinders U1 = []
+  gunsafeSetNameBinders U1 names = (U1, names)
+
+instance (GUnsafeHasNameBinders f, GUnsafeHasNameBinders g) => GUnsafeHasNameBinders (f :+: g) where
+  gunsafeGetNameBinders (L1 x) = gunsafeGetNameBinders x
+  gunsafeGetNameBinders (R1 x) = gunsafeGetNameBinders x
+
+  gunsafeSetNameBinders (L1 x) names = first L1 (gunsafeSetNameBinders x names)
+  gunsafeSetNameBinders (R1 x) names = first R1 (gunsafeSetNameBinders x names)
+
+instance (GUnsafeHasNameBinders f, GUnsafeHasNameBinders g) => GUnsafeHasNameBinders (f :*: g) where
+  gunsafeGetNameBinders (x :*: y) = gunsafeGetNameBinders x <> gunsafeGetNameBinders y
+  gunsafeSetNameBinders (x :*: y) names =
+    let (x', names') = gunsafeSetNameBinders x names
+        (y', names'') = gunsafeSetNameBinders y names'
+     in (x' :*: y', names'')
+
+instance GUnsafeHasNameBinders f => GUnsafeHasNameBinders (M1 i c f) where
+  gunsafeGetNameBinders (M1 x) = gunsafeGetNameBinders x
+  gunsafeSetNameBinders (M1 x) names =
+    let (x', names') = gunsafeSetNameBinders x names
+     in (M1 x', names')
+
+instance GUnsafeHasNameBinders f => GUnsafeHasNameBinders (a :~~: b :=>: f) where
+  gunsafeGetNameBinders (SuchThat x) = gunsafeGetNameBinders x
+
+  gunsafeSetNameBinders :: forall as bs. (a :~~: b :=>: f) as -> [RawName] -> ((a :~~: b :=>: f) bs, [RawName])
+  gunsafeSetNameBinders (SuchThat x) names =
+    -- this is sort of safe...
+    case unsafeCoerce (Type.Refl :: Interpret a bs Type.:~: Interpret a bs) :: Interpret a bs Type.:~: Interpret b bs of
+      Type.Refl ->
+        let (x', names') = gunsafeSetNameBinders x names
+         in (SuchThat x', names')
+
+instance GUnsafeHasNameBinders f => GUnsafeHasNameBinders (Exists k f) where
+  gunsafeGetNameBinders (Exists x) = gunsafeGetNameBinders x
+  gunsafeSetNameBinders (Exists x) names =
+    let (x', names') = gunsafeSetNameBinders x names
+     in (Exists x', names')
+
+instance GUnsafeHasNameBinders (Field (Kon a)) where
+  gunsafeGetNameBinders (Field _x) = []
+  gunsafeSetNameBinders (Field x) names = (Field x, names)
+
+instance UnsafeHasNameBinders f => GUnsafeHasNameBinders (Field (Kon f :@: Var i :@: Var j)) where
+  gunsafeGetNameBinders (Field x) = unsafeGetNameBinders x
+  gunsafeSetNameBinders (Field x) names =
+    let (x', names') = unsafeSetNameBinders x names
+     in (Field (unsafeCoerce x'), names') -- FIXME: safer version?
