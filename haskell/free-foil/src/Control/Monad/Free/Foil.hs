@@ -72,6 +72,9 @@ instance GenericK (AST binder sig) where
 instance (Bifunctor sig, Foil.CoSinkable binder) => Foil.Sinkable (ScopedAST binder sig)
 instance (Bifunctor sig, Foil.CoSinkable binder) => Foil.Sinkable (AST binder sig)
 
+instance (Bifunctor sig, Foil.CoSinkable binder) => Foil.SinkableK (ScopedAST binder sig)
+instance (Bifunctor sig, Foil.CoSinkable binder) => Foil.SinkableK (AST binder sig)
+
 instance Foil.InjectName (AST binder sig) where
   injectName = Var
 
