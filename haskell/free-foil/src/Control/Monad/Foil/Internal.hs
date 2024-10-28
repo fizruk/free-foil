@@ -966,21 +966,111 @@ type GSinkableExistsTypeError k f =
   ('Text "Generic Sinkable is not supported for existential data constructors"
   :$$: 'Text "  when attempting to use a generic instance for"
   :$$: 'ShowType (Exists k f))
-instance GSinkableExistsTypeError k f => GSinkable (Exists k f) where
-  type GSinkableReqs (Exists k f) n l = GSinkableExistsTypeError k f
+instance {-# OVERLAPPABLE #-} GSinkableExistsTypeError k f => GSinkable (Exists k f) where
   gsinkabilityProof = undefined
+
+instance GSinkableExists f => GSinkable (Exists S f) where
+  type GSinkableReqs (Exists S f) n l = GSinkableExistsReqs f n l
+  gsinkabilityProof f (Exists e) =
+    gcosinkabilityExistsProof f id e $ \_f' e' ->
+      Exists e'
+
+class GSinkableExists f where
+  type GSinkableExistsReqs f (n :: S) (l :: S) :: Constraint
+  gcosinkabilityExistsProof
+    :: GSinkableExistsReqs f n l
+    => (Name n -> Name l) -> (Name i -> Name i') -> f (i :&&: n :&&: LoT0)
+    -> (forall i''. (Name i -> Name i'') -> f (i'' :&&: l :&&: LoT0) -> r)
+    -> r
+
+instance (GSinkableExists f, GSinkableExists g) => GSinkableExists (f :*: g) where
+  type GSinkableExistsReqs (f :*: g) n l
+    = (GSinkableExistsReqs f n l, GSinkableExistsReqs g n l)
+  gcosinkabilityExistsProof rename irename (x :*: y) cont =
+    gcosinkabilityExistsProof rename irename x $ \irename' x' ->
+      gcosinkabilityExistsProof rename irename' y $ \irename'' y' ->
+        cont irename'' (unsafeCoerce {- FIXME: sink? -} x' :*: y')
+
+instance (GSinkableExists f) => GSinkableExists (M1 i' c f) where
+  type GSinkableExistsReqs (M1 i' c f) n l = (GSinkableExistsReqs f n l)
+  gcosinkabilityExistsProof rename irename (M1 f) cont =
+    gcosinkabilityExistsProof rename irename f $ \irename' f' ->
+      cont irename' (M1 f')
+
+instance GSinkableExists (Field (Kon a)) where
+  type GSinkableExistsReqs (Field (Kon a)) n l = ()
+  gcosinkabilityExistsProof _rename irename (Field x) cont =
+    cont irename (Field x)
+
+instance (Functor f, Sinkable g) => GSinkableExists (Field (Kon f :@: (Kon g :@: Var0))) where
+  type GSinkableExistsReqs (Field (Kon f :@: (Kon g :@: Var0))) n l = ()
+  gcosinkabilityExistsProof _rename irename (Field x) cont =
+    cont irename (Field (fmap (sinkabilityProof irename) x))
+instance (Bifunctor f, Sinkable g, Sinkable g') => GSinkableExists (Field (Kon f :@: (Kon g :@: Var0) :@: (Kon g' :@: Var0))) where
+  type GSinkableExistsReqs (Field (Kon f :@: (Kon g :@: Var0) :@: (Kon g' :@: Var0))) n l = ()
+  gcosinkabilityExistsProof _rename irename (Field x) cont =
+    cont irename (Field (bimap (sinkabilityProof irename) (sinkabilityProof irename) x))
+-- FIXME: this instance is too specific, need better generic decomposition
+instance (Functor f, Bifunctor f', Sinkable g, Sinkable g') => GSinkableExists (Field (Kon f :@: (Kon f' :@: (Kon g :@: Var0) :@: (Kon g' :@: Var0)))) where
+  type GSinkableExistsReqs (Field (Kon f :@: (Kon f' :@: (Kon g :@: Var0) :@: (Kon g' :@: Var0)))) n l = ()
+  gcosinkabilityExistsProof _rename irename (Field x) cont =
+    cont irename (Field (fmap (bimap (sinkabilityProof irename) (sinkabilityProof irename)) x))
+
+instance Sinkable f => GSinkableExists (Field (Kon f :@: Var0)) where
+  type GSinkableExistsReqs (Field (Kon f :@: Var0)) n l = ()
+  gcosinkabilityExistsProof _rename irename (Field x) cont =
+    cont irename (Field (sinkabilityProof irename x))
+
+instance Sinkable f => GSinkableExists (Field (Kon f :@: Var1)) where
+  type GSinkableExistsReqs (Field (Kon f :@: Var1)) n l = ()
+  gcosinkabilityExistsProof rename irename (Field x) cont =
+    cont irename (Field (sinkabilityProof rename x))
+
+instance Sinkable (f a) => GSinkableExists (Field (Kon f :@: Kon a :@: Var0)) where
+  type GSinkableExistsReqs (Field (Kon f :@: Kon a :@: Var0)) n l = ()
+  gcosinkabilityExistsProof _rename irename (Field x) cont =
+    cont irename (Field (sinkabilityProof irename x))
+
+instance Sinkable (f a) => GSinkableExists (Field (Kon f :@: Kon a :@: Var1)) where
+  type GSinkableExistsReqs (Field (Kon f :@: Kon a :@: Var1)) n l = ()
+  gcosinkabilityExistsProof rename irename (Field x) cont =
+    cont irename (Field (sinkabilityProof rename x))
+
+instance Sinkable (f a b) => GSinkableExists (Field (Kon f :@: Kon a :@: Kon b :@: Var0)) where
+  type GSinkableExistsReqs (Field (Kon f :@: Kon a :@: Kon b :@: Var0)) n l = ()
+  gcosinkabilityExistsProof _rename irename (Field x) cont =
+    cont irename (Field (sinkabilityProof irename x))
+
+instance Sinkable (f a b) => GSinkableExists (Field (Kon f :@: Kon a :@: Kon b :@: Var1)) where
+  type GSinkableExistsReqs (Field (Kon f :@: Kon a :@: Kon b :@: Var1)) n l = ()
+  gcosinkabilityExistsProof rename irename (Field x) cont =
+    cont irename (Field (sinkabilityProof rename x))
+
+instance CoSinkable f => GSinkableExists (Field (Kon f :@: Var1 :@: Var0)) where
+  type GSinkableExistsReqs (Field (Kon f :@: Var1 :@: Var0)) n l = ()
+  gcosinkabilityExistsProof rename _irename (Field x) cont =
+    coSinkabilityProof rename x $ \rename' x' ->
+      cont rename' (Field x')
 
 class GSinkableField f where
   type GSinkableFieldReqs f (n :: S) (l :: S) :: Constraint
   gsinkabilityProofField :: GSinkableFieldReqs f n l => (Name n -> Name l) -> Field f (n :&&: LoT0) -> Field f (l :&&: LoT0)
 
+instance GSinkableField (Kon a) where
+  type GSinkableFieldReqs (Kon a) n l = ()
+  gsinkabilityProofField _f (Field x) = Field x
+
+instance GSinkableField (Kon a :@: Kon b) where
+  type GSinkableFieldReqs (Kon a :@: Kon b) n l = ()
+  gsinkabilityProofField _f (Field x) = Field x
+
 instance GSinkableField (f :@: Var0) where
   type GSinkableFieldReqs (f :@: Var0) n l = (Sinkable (Interpret f (n :&&: LoT0)), Interpret f (n :&&: LoT0) ~ Interpret f (l :&&: LoT0))
   gsinkabilityProofField f (Field x) = Field (sinkabilityProof f x)
 
-instance (Functor f, GSinkableField x) => GSinkableField (Kon f :@: x) where
-  type GSinkableFieldReqs (Kon f :@: x) n l = GSinkableFieldReqs x n l
-  gsinkabilityProofField f (Field x) = Field (fmap (unField . gsinkabilityProofField @x f . Field) x)
+instance (Functor f, GSinkableField (x :@: Var0)) => GSinkableField (Kon f :@: (x :@: Var0)) where
+  type GSinkableFieldReqs (Kon f :@: (x :@: Var0)) n l = GSinkableFieldReqs (x :@: Var0) n l
+  gsinkabilityProofField f (Field x) = Field (fmap (unField . gsinkabilityProofField @(x :@: Var0) f . Field) x)
 
 instance (GSinkableField x, GSinkableField y) => GSinkableField (f :@: x :@: y) where
   type GSinkableFieldReqs (f :@: x :@: y) n l =

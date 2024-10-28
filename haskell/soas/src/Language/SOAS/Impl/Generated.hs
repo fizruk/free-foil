@@ -44,12 +44,19 @@ deriveGenericK ''OpArg'Sig
 deriveGenericK ''Term'Sig
 deriveGenericK ''OpArgTyping'Sig
 deriveGenericK ''Type'Sig
+deriveGenericK ''Subst'
+deriveGenericK ''Constraint'
+deriveGenericK ''OpTyping'
 
 deriveBifunctor ''OpArg'Sig
 deriveBifunctor ''Term'Sig
 deriveBifunctor ''OpArgTyping'Sig
 deriveBifunctor ''ScopedOpArgTyping'Sig
 deriveBifunctor ''Type'Sig
+
+instance Foil.Sinkable (Subst' a)
+instance Foil.Sinkable (Constraint' a)
+instance Foil.Sinkable (OpTyping' a)
 
 -- FIXME: derive via GenericK
 instance Foil.CoSinkable (Binders' a) where

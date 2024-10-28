@@ -69,11 +69,7 @@ instance GenericK (AST binder sig) where
                 :$: (Kon ScopedAST :@: Kon binder :@: Kon sig :@: Var0)
                 :@: (Kon AST :@: Kon binder :@: Kon sig :@: Var0))
 
-instance (Bifunctor sig, Foil.CoSinkable binder) => Foil.Sinkable (ScopedAST binder sig) where
-  sinkabilityProof rename (ScopedAST binder body) =
-    Foil.extendRenaming rename binder $ \rename' binder' ->
-      ScopedAST binder' (Foil.sinkabilityProof rename' body)
-
+instance (Bifunctor sig, Foil.CoSinkable binder) => Foil.Sinkable (ScopedAST binder sig)
 instance (Bifunctor sig, Foil.CoSinkable binder) => Foil.Sinkable (AST binder sig)
 
 instance Foil.InjectName (AST binder sig) where
