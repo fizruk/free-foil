@@ -54,6 +54,7 @@ import           Data.Bifunctor
 import Generics.Kind
 import           Unsafe.Coerce
 import           GHC.TypeError
+import qualified Type.Reflection as Type
 
 -- * Safe types and operations
 
@@ -1244,11 +1245,9 @@ instance GenericK U2 where
   toK (SuchThat U1) = U2
   fromK U2 = SuchThat U1
 
-instance SinkableK NameBinderList where
-  sinkabilityProofK _ _ _ = undefined
+instance SinkableK NameBinderList
 instance SinkableK V2
-instance SinkableK U2 where
-  sinkabilityProofK _ _ _ = undefined
+instance SinkableK U2
 
 sinkabilityProof1 :: SinkableK f => (Name n -> Name n') -> f n -> f n'
 sinkabilityProof1 rename e = sinkabilityProofK (RCons rename RNil) e $ \_ e' -> unsafeCoerce e'
@@ -1302,10 +1301,12 @@ instance GSinkableK f => GSinkableK (Exists S f) where
     gsinkabilityProofK (RCons id irename) x $ \(RCons _ irename') x' ->
       cont irename' (Exists x')
 
--- instance GSinkableK f => GSinkableK (c :=>: f) where
---   gsinkabilityProofK irename (SuchThat x) cont =
---     gsinkabilityProofK irename x $ \irename' x' ->
---       cont irename' (SuchThat x')
+instance GSinkableK f => GSinkableK (((~) :$: a :@: b) :=>: f) where
+  gsinkabilityProofK irename (SuchThat x) cont =
+    gsinkabilityProofK irename x $ \irename' x' ->
+      -- this is sort of safe...
+      case unsafeCoerce (Type.Refl :: a Type.:~: a) :: a Type.:~: b of
+        Type.Refl -> cont irename' (SuchThat x')
 
 instance GSinkableK (Field (Kon a)) where
   gsinkabilityProofK irename (Field x) cont =
