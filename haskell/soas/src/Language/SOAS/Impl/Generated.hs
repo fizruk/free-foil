@@ -47,6 +47,8 @@ deriveGenericK ''Type'Sig
 deriveGenericK ''Subst'
 deriveGenericK ''Constraint'
 deriveGenericK ''OpTyping'
+deriveGenericK ''Binders'
+deriveGenericK ''TypeBinders'
 
 deriveBifunctor ''OpArg'Sig
 deriveBifunctor ''Term'Sig
@@ -58,17 +60,11 @@ instance Foil.Sinkable (Subst' a)
 instance Foil.Sinkable (Constraint' a)
 instance Foil.Sinkable (OpTyping' a)
 
+instance Foil.SinkableK (Binders' a)
+instance Foil.SinkableK (TypeBinders' a)
+
 -- FIXME: derive via GenericK
 instance Foil.CoSinkable (Binders' a) where
-  coSinkabilityProof rename (NoBinders loc) cont = cont rename (NoBinders loc)
-  -- coSinkabilityProof rename (OneBinder loc binder) cont =
-  --   Foil.coSinkabilityProof rename binder $ \rename' binder' ->
-  --     cont rename' (OneBinder loc binder')
-  coSinkabilityProof rename (SomeBinders loc binder binders) cont =
-    Foil.coSinkabilityProof rename binder $ \rename' binder' ->
-      Foil.coSinkabilityProof rename' binders $ \rename'' binders' ->
-        cont rename'' (SomeBinders loc binder' binders')
-
   withPattern withBinder unit comp scope binders cont =
     case binders of
       NoBinders loc -> cont unit (NoBinders loc)
@@ -83,12 +79,6 @@ instance Foil.CoSinkable (Binders' a) where
 
 -- FIXME: derive via GenericK
 instance Foil.CoSinkable (TypeBinders' a) where
-  coSinkabilityProof rename (NoTypeBinders loc) cont = cont rename (NoTypeBinders loc)
-  coSinkabilityProof rename (SomeTypeBinders loc binder binders) cont =
-    Foil.coSinkabilityProof rename binder $ \rename' binder' ->
-      Foil.coSinkabilityProof rename' binders $ \rename'' binders' ->
-        cont rename'' (SomeTypeBinders loc binder' binders')
-
   withPattern withBinder unit comp scope binders cont =
     case binders of
       NoTypeBinders loc -> cont unit (NoTypeBinders loc)

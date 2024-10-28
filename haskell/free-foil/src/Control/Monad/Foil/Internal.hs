@@ -1,4 +1,5 @@
-{-# OPTIONS_GHC -Wno-missing-methods #-}
+{-# OPTIONS_GHC -Wno-missing-methods #-}  -- disabled to avoid overlapping type instances
+{-# OPTIONS_GHC -Wno-overlapping-patterns -Wno-inaccessible-code #-}  -- disabled because I think GHC is wrong
 {-# LANGUAGE AllowAmbiguousTypes             #-}
 {-# LANGUAGE InstanceSigs             #-}
 {-# LANGUAGE BlockArguments             #-}
@@ -54,7 +55,7 @@ import           Data.Bifunctor
 import Generics.Kind
 import           Unsafe.Coerce
 import           GHC.TypeError
-import qualified Type.Reflection as Type
+import qualified Data.Type.Equality as Type
 
 -- * Safe types and operations
 
@@ -691,7 +692,7 @@ extendRenamingNameBinder _ (UnsafeNameBinder name) cont =
 -- what 'Sinkable' is to expressions.
 --
 -- See Section 2.3 of [«Free Foil: Generating Efficient and Scope-Safe Abstract Syntax»](https://arxiv.org/abs/2405.16384) for more details.
-class SinkableK pattern => CoSinkable (pattern :: S -> S -> Type) where
+class CoSinkable (pattern :: S -> S -> Type) where
   -- | An implementation of this method that typechecks
   -- proves to the compiler that the pattern is indeed
   -- 'CoSinkable'. However, instead of this implementation,
@@ -704,13 +705,13 @@ class SinkableK pattern => CoSinkable (pattern :: S -> S -> Type) where
     -- and a (possibly refreshed) pattern that extends @n'@ to @l'@.
     -> r
   default coSinkabilityProof
-    :: (GenericK pattern, GCoSinkable (RepK pattern), GCoSinkableReqs (RepK pattern) n n' l)
+    :: (GenericK pattern, GSinkableK (RepK pattern))
     => (Name n -> Name n')
     -> pattern n l
     -> (forall l'. (Name l -> Name l') -> pattern n' l' -> r)
     -> r
-  coSinkabilityProof f p cont = gcoSinkabilityProof f (fromK p) $ \f' p' ->
-    cont f' (toK p')
+  coSinkabilityProof rename p cont = gsinkabilityProof2 rename (fromK @_ @pattern p) $ \rename' p' ->
+    cont rename' (toK @_ @pattern p')
 
   -- | Generalized processing of a pattern.
   --
@@ -1228,7 +1229,7 @@ instance SinkableK NameBinders where
     cont (RCons unsafeCoerce RNil) (UnsafeNameBinders s)
 
 instance GenericK NameBinderList where
-  type RepK NameBinderList = (((~) :$: Var0 :@: Var1) :=>: U1) :+: Exists S
+  type RepK NameBinderList = ((Var0 :~~: Var1) :=>: U1) :+: Exists S
     (Field (NameBinder :$: Var1 :@: Var0) :*: Field (NameBinderList :$: Var0 :@: Var2))
   toK (L1 (SuchThat U1)) = NameBinderListEmpty
   toK (R1 (Exists (Field x :*: Field xs))) = NameBinderListCons x xs
@@ -1241,7 +1242,7 @@ instance GenericK V2 where
   fromK = absurd2
 
 instance GenericK U2 where
-  type RepK U2 = (((~) :$: Var0 :@: Var1) :=>: U1)
+  type RepK U2 = ((Var0 :~~: Var1) :=>: U1)
   toK (SuchThat U1) = U2
   fromK U2 = SuchThat U1
 
@@ -1254,6 +1255,16 @@ sinkabilityProof1 rename e = sinkabilityProofK (RCons rename RNil) e $ \_ e' -> 
 
 gsinkabilityProof1 :: GSinkableK f => (Name n -> Name n') -> f (n :&&: LoT0) -> f (n' :&&: LoT0)
 gsinkabilityProof1 rename e = gsinkabilityProofK (RCons rename RNil) e $ \_ e' -> unsafeCoerce e'
+
+gsinkabilityProof2
+  :: forall f n n' l r. GSinkableK f
+  => (Name n -> Name n') -> f (n :&&: l :&&: LoT0)
+  -> (forall l'. (Name l -> Name l') -> f (n' :&&: l' :&&: LoT0) -> r)
+  -> r
+gsinkabilityProof2 rename e cont =
+  gsinkabilityProofK (RCons rename (RCons id RNil)) e $ \(RCons (_ :: Name n -> Name n'') (RCons rename' RNil)) e' ->
+    case unsafeCoerce (Type.Refl :: n' Type.:~: n') :: n' Type.:~: n'' of
+      Type.Refl -> cont rename' e'
 
 gsinkabilityProofK' :: GSinkableK f => RenamingsK as bs -> f as -> f bs
 gsinkabilityProofK' renameK e = gsinkabilityProofK renameK e $ \_ e' -> unsafeCoerce e'
@@ -1301,11 +1312,11 @@ instance GSinkableK f => GSinkableK (Exists S f) where
     gsinkabilityProofK (RCons id irename) x $ \(RCons _ irename') x' ->
       cont irename' (Exists x')
 
-instance GSinkableK f => GSinkableK (((~) :$: a :@: b) :=>: f) where
+instance GSinkableK f => GSinkableK ((a :~~: b) :=>: f) where
   gsinkabilityProofK irename (SuchThat x) cont =
-    gsinkabilityProofK irename x $ \irename' x' ->
+    gsinkabilityProofK irename x $ \(irename' :: RenamingsK as cs) x' ->
       -- this is sort of safe...
-      case unsafeCoerce (Type.Refl :: a Type.:~: a) :: a Type.:~: b of
+      case unsafeCoerce (Type.Refl :: Interpret a cs Type.:~: Interpret a cs) :: Interpret a cs Type.:~: Interpret b cs of
         Type.Refl -> cont irename' (SuchThat x')
 
 instance GSinkableK (Field (Kon a)) where
@@ -1328,6 +1339,10 @@ instance SinkableK (f a b) => GSinkableK (Field (Kon f :@: Kon a :@: Kon b :@: V
       cont rename' (Field x')
 
 -- FIXME: generalize to arbitary variables
+instance SinkableK f => GSinkableK (Field (Kon f :@: Var0 :@: Var1)) where
+  gsinkabilityProofK irename@(RCons _ (RCons _ RNil)) (Field x) cont =
+    sinkabilityProofK irename x $ \irename' x' ->
+      cont irename' (Field x')
 instance SinkableK f => GSinkableK (Field (Kon f :@: Var1 :@: Var0)) where
   gsinkabilityProofK (RCons f (RCons g RNil)) (Field x) cont =
     sinkabilityProofK (RCons g (RCons f RNil)) x $ \(RCons g' (RCons f' RNil)) x' ->

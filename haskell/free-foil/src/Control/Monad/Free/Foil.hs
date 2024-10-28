@@ -69,11 +69,11 @@ instance GenericK (AST binder sig) where
                 :$: (Kon ScopedAST :@: Kon binder :@: Kon sig :@: Var0)
                 :@: (Kon AST :@: Kon binder :@: Kon sig :@: Var0))
 
-instance (Bifunctor sig, Foil.CoSinkable binder) => Foil.Sinkable (ScopedAST binder sig)
-instance (Bifunctor sig, Foil.CoSinkable binder) => Foil.Sinkable (AST binder sig)
+instance (Bifunctor sig, Foil.CoSinkable binder, Foil.SinkableK binder) => Foil.Sinkable (ScopedAST binder sig)
+instance (Bifunctor sig, Foil.CoSinkable binder, Foil.SinkableK binder) => Foil.Sinkable (AST binder sig)
 
-instance (Bifunctor sig, Foil.CoSinkable binder) => Foil.SinkableK (ScopedAST binder sig)
-instance (Bifunctor sig, Foil.CoSinkable binder) => Foil.SinkableK (AST binder sig)
+instance (Bifunctor sig, Foil.CoSinkable binder, Foil.SinkableK binder) => Foil.SinkableK (ScopedAST binder sig)
+instance (Bifunctor sig, Foil.CoSinkable binder, Foil.SinkableK binder) => Foil.SinkableK (AST binder sig)
 
 instance Foil.InjectName (AST binder sig) where
   injectName = Var
@@ -82,7 +82,7 @@ instance Foil.InjectName (AST binder sig) where
 
 -- | Substitution for free (scoped monads).
 substitute
-  :: (Bifunctor sig, Foil.Distinct o, Foil.CoSinkable binder)
+  :: (Bifunctor sig, Foil.Distinct o, Foil.CoSinkable binder, Foil.SinkableK binder)
   => Foil.Scope o
   -> Foil.Substitution (AST binder sig) i o
   -> AST binder sig i
@@ -107,7 +107,7 @@ substitute scope subst = \case
 --
 -- In general, 'substitute' is more efficient since it does not always refresh binders.
 substituteRefreshed
-  :: (Bifunctor sig, Foil.Distinct o, Foil.CoSinkable binder)
+  :: (Bifunctor sig, Foil.Distinct o, Foil.CoSinkable binder, Foil.SinkableK binder)
   => Foil.Scope o
   -> Foil.Substitution (AST binder sig) i o
   -> AST binder sig i
@@ -124,7 +124,8 @@ substituteRefreshed scope subst = \case
         in ScopedAST binder' body'
 
 -- | @'AST' sig@ is a monad relative to 'Foil.Name'.
-instance (Bifunctor sig, Foil.CoSinkable binder) => Foil.RelMonad Foil.Name (AST binder sig) where
+instance (Bifunctor sig, Foil.CoSinkable binder, Foil.SinkableK binder)
+  => Foil.RelMonad Foil.Name (AST binder sig) where
   rreturn = Var
   rbind scope term subst =
     case term of
@@ -140,7 +141,7 @@ instance (Bifunctor sig, Foil.CoSinkable binder) => Foil.RelMonad Foil.Name (AST
 
 -- | Substitution for a single generalized pattern.
 substitutePattern
-  :: (Bifunctor sig, Foil.Distinct o, Foil.CoSinkable binder', Foil.CoSinkable binder)
+  :: (Bifunctor sig, Foil.Distinct o, Foil.CoSinkable binder', Foil.CoSinkable binder, Foil.SinkableK binder)
   => Foil.Scope o                           -- ^ Resulting scope.
   -> Foil.Substitution (AST binder sig) n o -- ^ Environment mapping names in scope @n@.
   -> binder' n i                            -- ^ Binders that extend scope @n@ to scope @i@.
@@ -156,7 +157,7 @@ substitutePattern scope env binders args body =
 
 -- | Refresh (force) all binders in a term, minimizing the used indices.
 refreshAST
-  :: (Bifunctor sig, Foil.Distinct n, Foil.CoSinkable binder)
+  :: (Bifunctor sig, Foil.Distinct n, Foil.CoSinkable binder, Foil.SinkableK binder)
   => Foil.Scope n
   -> AST binder sig n
   -> AST binder sig n
@@ -165,7 +166,7 @@ refreshAST scope = \case
   Node t -> Node (bimap (refreshScopedAST scope) (refreshAST scope) t)
 
 -- | Similar to `refreshAST`, but for scoped terms.
-refreshScopedAST :: (Bifunctor sig, Foil.Distinct n, Foil.CoSinkable binder)
+refreshScopedAST :: (Bifunctor sig, Foil.Distinct n, Foil.CoSinkable binder, Foil.SinkableK binder)
   => Foil.Scope n
   -> ScopedAST binder sig n
   -> ScopedAST binder sig n
@@ -181,7 +182,7 @@ refreshScopedAST scope (ScopedAST binder body) =
 -- Compared to 'alphaEquiv', this function may perform some unnecessary
 -- changes of bound variables when the binders are the same on both sides.
 alphaEquivRefreshed
-  :: (Bitraversable sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder)
+  :: (Bitraversable sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder)
   => Foil.Scope n
   -> AST binder sig n
   -> AST binder sig n
@@ -194,7 +195,7 @@ alphaEquivRefreshed scope t1 t2 = refreshAST scope t1 `unsafeEqAST` refreshAST s
 -- Compared to 'alphaEquivRefreshed', this function might skip unnecessary
 -- changes of bound variables when both binders in two matching scoped terms coincide.
 alphaEquiv
-  :: (Bitraversable sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder)
+  :: (Bitraversable sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder)
   => Foil.Scope n
   -> AST binder sig n
   -> AST binder sig n
@@ -208,7 +209,7 @@ alphaEquiv _ _ _ = False
 
 -- | Same as 'alphaEquiv' but for scoped terms.
 alphaEquivScoped
-  :: (Bitraversable sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder)
+  :: (Bitraversable sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder)
   => Foil.Scope n
   -> ScopedAST binder sig n
   -> ScopedAST binder sig n

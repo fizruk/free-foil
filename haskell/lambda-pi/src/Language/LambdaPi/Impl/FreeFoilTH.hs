@@ -84,6 +84,9 @@ deriveCoSinkable ''Raw.VarIdent ''Raw.Pattern'
 mkToFoilPattern ''Raw.VarIdent ''Raw.Pattern'
 mkFromFoilPattern ''Raw.VarIdent ''Raw.Pattern'
 
+deriveGenericK ''FoilPattern'
+instance Foil.SinkableK (FoilPattern' a)
+
 -- | Ignoring location information when unifying patterns.
 instance Foil.UnifiableInPattern Raw.BNFC'Position where
   unifyInPattern _ _  = True
