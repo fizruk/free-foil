@@ -1,4 +1,6 @@
 {-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleContexts      #-}
@@ -26,6 +28,8 @@ import           Data.Bifoldable
 import           Data.Bitraversable
 import           Data.Bifunctor
 import Data.ZipMatchK
+import qualified Generics.Kind as Kind
+import Generics.Kind (GenericK(..), Field, Exists, Var0, Var1, (:$:), Atom((:@:), Kon), (:+:), (:*:))
 import           Data.Coerce                 (coerce)
 import           Data.Map                    (Map)
 import qualified Data.Map                    as Map
@@ -51,14 +55,26 @@ deriving instance Generic (AST binder sig n)
 deriving instance (forall x y. NFData (binder x y), forall scope term. (NFData scope, NFData term) => NFData (sig scope term))
   => NFData (AST binder sig n)
 
-instance (Bifunctor sig, Foil.CoSinkable binder) => Foil.Sinkable (AST binder sig) where
-  sinkabilityProof rename = \case
-    Var name -> Var (rename name)
-    Node node -> Node (bimap f (Foil.sinkabilityProof rename) node)
-    where
-      f (ScopedAST binder body) =
-        Foil.extendRenaming rename binder $ \rename' binder' ->
-          ScopedAST binder' (Foil.sinkabilityProof rename' body)
+instance GenericK (ScopedAST binder sig) where
+  type RepK (ScopedAST binder sig) =
+    Exists Foil.S
+      (Field (Kon binder :@: Var1 :@: Var0) :*: Field (Kon AST :@: Kon binder :@: Kon sig :@: Var0))
+  toK (Kind.Exists (Kind.Field binder Kind.:*: Kind.Field ast)) = ScopedAST binder ast
+  fromK (ScopedAST binder ast) = Kind.Exists (Kind.Field binder Kind.:*: Kind.Field ast)
+
+instance GenericK (AST binder sig) where
+  type RepK (AST binder sig) =
+    Field (Foil.Name :$: Var0)
+    :+: Field (sig
+                :$: (Kon ScopedAST :@: Kon binder :@: Kon sig :@: Var0)
+                :@: (Kon AST :@: Kon binder :@: Kon sig :@: Var0))
+
+instance (Bifunctor sig, Foil.CoSinkable binder) => Foil.Sinkable (ScopedAST binder sig) where
+  sinkabilityProof rename (ScopedAST binder body) =
+    Foil.extendRenaming rename binder $ \rename' binder' ->
+      ScopedAST binder' (Foil.sinkabilityProof rename' body)
+
+instance (Bifunctor sig, Foil.CoSinkable binder) => Foil.Sinkable (AST binder sig)
 
 instance Foil.InjectName (AST binder sig) where
   injectName = Var
