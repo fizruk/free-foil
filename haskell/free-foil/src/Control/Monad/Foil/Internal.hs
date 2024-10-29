@@ -1086,10 +1086,11 @@ instance GSinkableK (Field (Var a)) where
   gsinkabilityProofK irename (Field x) cont =
     cont irename (Field (unsafeCoerce x)) -- FIXME: unsafeCoerce?
 
-instance SinkableK f => GSinkableK (Field (Kon f :@: Var0)) where
-  gsinkabilityProofK irename@(RCons _ RNil) (Field x) cont =
-    sinkabilityProofK irename x $ \rename' x' ->
-      cont rename' (Field x')
+instance (SinkableK f, ExtractRenamingK i) => GSinkableK (Field (Kon f :@: Var i)) where
+  gsinkabilityProofK irename (Field x) cont =
+    sinkabilityProofK (RCons (extractRenamingK @_ @i irename) RNil) x $ \case
+      RCons rename' RNil -> \x' ->
+        cont (putBackRenamingK @_ @i rename' irename) (Field (unsafeCoerce x')) -- unsafeCoerce?
 
 instance SinkableK (f a) => GSinkableK (Field (Kon f :@: Kon a :@: Var0)) where
   gsinkabilityProofK irename@(RCons _ RNil) (Field x) cont =
@@ -1306,6 +1307,10 @@ instance GHasNameBinders (Field (Kon a)) where
 instance GHasNameBinders (Field (Var x)) where
   ggetNameBindersRaw (Field _x) = []
   greallyUnsafeSetNameBindersRaw (Field x) names = (Field (unsafeCoerce x), names)  -- FIXME: unsafeCoerce?
+
+instance GHasNameBinders (Field (Kon f :@: Var i)) where
+  ggetNameBindersRaw (Field _x) = []
+  greallyUnsafeSetNameBindersRaw (Field x) names = (Field (unsafeCoerce x), names) -- FIXME: unsafeCoerce?
 
 instance HasNameBinders f => GHasNameBinders (Field (Kon f :@: Var i :@: Var j)) where
   ggetNameBindersRaw (Field x) = getNameBindersRaw x
