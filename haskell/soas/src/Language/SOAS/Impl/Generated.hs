@@ -94,14 +94,7 @@ instance ZipMatchK a => ZipMatchK (Term'Sig a)
 instance ZipMatchK a => ZipMatchK (OpArg'Sig a)
 instance ZipMatchK a => ZipMatchK (Type'Sig a)
 
--- TODO: infer via GenericK
-instance Foil.UnifiablePattern (Binders' a) where
-  unifyPatterns (NoBinders _loc) (NoBinders _loc') = Foil.SameNameBinders Foil.emptyNameBinders
-  unifyPatterns (SomeBinders _loc x xs) (SomeBinders _loc' y ys) =
-    case (Foil.assertDistinct x, Foil.assertDistinct y) of
-      (Foil.Distinct, Foil.Distinct) ->
-        Foil.unifyNameBinders x y `Foil.andThenUnifyPatterns` (xs, ys)
-  unifyPatterns _ _ = Foil.NotUnifiable
+instance Foil.UnifiablePattern (Binders' a)
 
 -- |
 -- >>> "?m[App(Lam(x.x), Lam(y.y))]" :: Term' Raw.BNFC'Position Foil.VoidS

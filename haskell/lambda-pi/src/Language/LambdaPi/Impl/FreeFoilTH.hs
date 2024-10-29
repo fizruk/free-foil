@@ -92,10 +92,10 @@ instance Foil.CoSinkable (FoilPattern' a)
 mkToFoilPattern ''Raw.VarIdent ''Raw.Pattern'
 mkFromFoilPattern ''Raw.VarIdent ''Raw.Pattern'
 
+instance Foil.UnifiablePattern (FoilPattern' a)
 -- | Ignoring location information when unifying patterns.
 instance Foil.UnifiableInPattern Raw.BNFC'Position where
   unifyInPattern _ _  = True
-deriveUnifiablePattern ''Raw.VarIdent ''Raw.Pattern'
 
 -- | Deriving 'GHC.Generic' and 'GenericK' instances.
 deriving instance GHC.Generic (Term'Sig a scope term)

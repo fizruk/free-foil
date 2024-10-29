@@ -576,6 +576,16 @@ instance UnifiablePattern U2 where
 class CoSinkable pattern => UnifiablePattern pattern where
   -- | Unify two patterns and decide which binders need to be renamed.
   unifyPatterns :: Distinct n => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
+  default unifyPatterns
+    :: (CoSinkable pattern, Distinct n)
+    => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
+  unifyPatterns l r = coerce (unifyPatterns (nameBinderListOf l) (nameBinderListOf r))
+
+instance UnifiablePattern NameBinderList where
+  unifyPatterns NameBinderListEmpty NameBinderListEmpty = SameNameBinders emptyNameBinders
+  unifyPatterns (NameBinderListCons x xs) (NameBinderListCons y ys) =
+    case (assertDistinct x, assertDistinct y) of
+      (Distinct, Distinct) -> unifyNameBinders x y `andThenUnifyPatterns` (xs, ys)
 
 -- | Unification of values in patterns.
 -- By default, 'Eq' instance is used, but it may be useful to ignore
