@@ -56,6 +56,18 @@ deriveBifunctor ''OpArgTyping'Sig
 deriveBifunctor ''ScopedOpArgTyping'Sig
 deriveBifunctor ''Type'Sig
 
+deriveBifoldable ''OpArg'Sig
+deriveBifoldable ''Term'Sig
+deriveBifoldable ''OpArgTyping'Sig
+deriveBifoldable ''ScopedOpArgTyping'Sig
+deriveBifoldable ''Type'Sig
+
+deriveBitraversable ''OpArg'Sig
+deriveBitraversable ''Term'Sig
+deriveBitraversable ''OpArgTyping'Sig
+deriveBitraversable ''ScopedOpArgTyping'Sig
+deriveBitraversable ''Type'Sig
+
 instance Foil.Sinkable (Subst' a)
 instance Foil.Sinkable (Constraint' a)
 instance Foil.Sinkable (OpTyping' a)
@@ -81,6 +93,15 @@ instance ZipMatchK Raw.MetaVarIdent where zipMatchWithK = zipMatchViaEq
 instance ZipMatchK a => ZipMatchK (Term'Sig a)
 instance ZipMatchK a => ZipMatchK (OpArg'Sig a)
 instance ZipMatchK a => ZipMatchK (Type'Sig a)
+
+-- TODO: infer via GenericK
+instance Foil.UnifiablePattern (Binders' a) where
+  unifyPatterns (NoBinders _loc) (NoBinders _loc') = Foil.SameNameBinders Foil.emptyNameBinders
+  unifyPatterns (SomeBinders _loc x xs) (SomeBinders _loc' y ys) =
+    case (Foil.assertDistinct x, Foil.assertDistinct y) of
+      (Foil.Distinct, Foil.Distinct) ->
+        Foil.unifyNameBinders x y `Foil.andThenUnifyPatterns` (xs, ys)
+  unifyPatterns _ _ = Foil.NotUnifiable
 
 -- |
 -- >>> "?m[App(Lam(x.x), Lam(y.y))]" :: Term' Raw.BNFC'Position Foil.VoidS
