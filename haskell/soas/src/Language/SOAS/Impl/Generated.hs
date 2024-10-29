@@ -44,6 +44,11 @@ deriveGenericK ''OpArg'Sig
 deriveGenericK ''Term'Sig
 deriveGenericK ''OpArgTyping'Sig
 deriveGenericK ''Type'Sig
+deriveGenericK ''Subst'
+deriveGenericK ''Constraint'
+deriveGenericK ''OpTyping'
+deriveGenericK ''Binders'
+deriveGenericK ''TypeBinders'
 
 deriveBifunctor ''OpArg'Sig
 deriveBifunctor ''Term'Sig
@@ -51,45 +56,30 @@ deriveBifunctor ''OpArgTyping'Sig
 deriveBifunctor ''ScopedOpArgTyping'Sig
 deriveBifunctor ''Type'Sig
 
--- FIXME: derive via GenericK
-instance Foil.CoSinkable (Binders' a) where
-  coSinkabilityProof rename (NoBinders loc) cont = cont rename (NoBinders loc)
-  -- coSinkabilityProof rename (OneBinder loc binder) cont =
-  --   Foil.coSinkabilityProof rename binder $ \rename' binder' ->
-  --     cont rename' (OneBinder loc binder')
-  coSinkabilityProof rename (SomeBinders loc binder binders) cont =
-    Foil.coSinkabilityProof rename binder $ \rename' binder' ->
-      Foil.coSinkabilityProof rename' binders $ \rename'' binders' ->
-        cont rename'' (SomeBinders loc binder' binders')
+deriveBifoldable ''OpArg'Sig
+deriveBifoldable ''Term'Sig
+deriveBifoldable ''OpArgTyping'Sig
+deriveBifoldable ''ScopedOpArgTyping'Sig
+deriveBifoldable ''Type'Sig
 
-  withPattern withBinder unit comp scope binders cont =
-    case binders of
-      NoBinders loc -> cont unit (NoBinders loc)
-      -- OneBinder loc binder ->
-      --   Foil.withPattern withBinder unit comp scope binder $ \f binder' ->
-      --     cont f (OneBinder loc binder')
-      SomeBinders loc binder moreBinders ->
-        Foil.withPattern withBinder unit comp scope binder $ \f binder' ->
-          let scope' = Foil.extendScopePattern binder' scope
-           in Foil.withPattern withBinder unit comp scope' moreBinders $ \g moreBinders' ->
-                cont (comp f g) (SomeBinders loc binder' moreBinders')
+deriveBitraversable ''OpArg'Sig
+deriveBitraversable ''Term'Sig
+deriveBitraversable ''OpArgTyping'Sig
+deriveBitraversable ''ScopedOpArgTyping'Sig
+deriveBitraversable ''Type'Sig
 
--- FIXME: derive via GenericK
-instance Foil.CoSinkable (TypeBinders' a) where
-  coSinkabilityProof rename (NoTypeBinders loc) cont = cont rename (NoTypeBinders loc)
-  coSinkabilityProof rename (SomeTypeBinders loc binder binders) cont =
-    Foil.coSinkabilityProof rename binder $ \rename' binder' ->
-      Foil.coSinkabilityProof rename' binders $ \rename'' binders' ->
-        cont rename'' (SomeTypeBinders loc binder' binders')
+instance Foil.Sinkable (Subst' a)
+instance Foil.Sinkable (Constraint' a)
+instance Foil.Sinkable (OpTyping' a)
 
-  withPattern withBinder unit comp scope binders cont =
-    case binders of
-      NoTypeBinders loc -> cont unit (NoTypeBinders loc)
-      SomeTypeBinders loc binder moreTypeBinders ->
-        Foil.withPattern withBinder unit comp scope binder $ \f binder' ->
-          let scope' = Foil.extendScopePattern binder' scope
-           in Foil.withPattern withBinder unit comp scope' moreTypeBinders $ \g moreTypeBinders' ->
-                cont (comp f g) (SomeTypeBinders loc binder' moreTypeBinders')
+instance Foil.SinkableK (Binders' a)
+instance Foil.SinkableK (TypeBinders' a)
+
+instance Foil.HasNameBinders (Binders' a)
+instance Foil.CoSinkable (Binders' a)
+
+instance Foil.HasNameBinders (TypeBinders' a)
+instance Foil.CoSinkable (TypeBinders' a)
 
 mkFreeFoilConversions soasConfig
 
@@ -103,6 +93,8 @@ instance ZipMatchK Raw.MetaVarIdent where zipMatchWithK = zipMatchViaEq
 instance ZipMatchK a => ZipMatchK (Term'Sig a)
 instance ZipMatchK a => ZipMatchK (OpArg'Sig a)
 instance ZipMatchK a => ZipMatchK (Type'Sig a)
+
+instance Foil.UnifiablePattern (Binders' a)
 
 -- |
 -- >>> "?m[App(Lam(x.x), Lam(y.y))]" :: Term' Raw.BNFC'Position Foil.VoidS

@@ -35,8 +35,10 @@ module Control.Monad.Foil (
   unsinkName,
   unsinkNamePattern,
   -- * Safe (co)sinking and renaming
+  SinkableK(..),
   Sinkable(..),
   CoSinkable(..),
+  HasNameBinders(getNameBinders),
   sink,
   extendRenaming,
   extendNameBinderRenaming,
