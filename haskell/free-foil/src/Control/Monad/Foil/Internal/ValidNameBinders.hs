@@ -62,6 +62,7 @@ type ShowSaturatedPatternType pattern oo n l ll =
 
 type GInnerScopeOfAtom :: ErrorMessage -> Nat -> Nat -> (s -> s -> Type) -> Atom d Type -> Atom d s -> Atom d s -> Atom d s -> Atom d s
 type family GInnerScopeOfAtom msg icon ifield pattern atom oo n ll where
+  GInnerScopeOfAtom msg icon ifield pattern (Var x) oo n ll = n
   GInnerScopeOfAtom msg icon ifield pattern (Kon a) oo n ll = n
   GInnerScopeOfAtom msg icon ifield pattern (Kon f :@: n :@: l) oo n ll = l
   GInnerScopeOfAtom msg icon ifield pattern (Kon f :@: o :@: i) oo n ll =
@@ -78,7 +79,7 @@ type family GInnerScopeOfAtom msg icon ifield pattern atom oo n ll where
       )
   GInnerScopeOfAtom msg icon ifield pattern atom oo n ll =
     TypeError
-      ('Text "the following atom does not seem to be a valid part of a pattern/binder"
+      ('Text "Unexpected atom in a Foil binder/pattern"
       :$$: 'Text "  " :<>: 'ShowType atom
       :$$: ShowLocalizeError msg icon ifield pattern oo ll)
 

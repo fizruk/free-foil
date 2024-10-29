@@ -948,6 +948,7 @@ class InjectName (e :: S -> Type) where
 data RenamingsK (as :: LoT k) (bs :: LoT k) where
   RNil :: RenamingsK LoT0 LoT0
   RCons :: (Name a -> Name b) -> RenamingsK as bs -> RenamingsK (a :&&: as) (b :&&: bs)
+  RSkip :: RenamingsK as bs -> RenamingsK (k :&&: as) (k :&&: bs)
 
 class SinkableK (f :: S -> k) where
   sinkabilityProofK
@@ -1012,9 +1013,10 @@ gsinkabilityProof2
   -> (forall l'. (Name l -> Name l') -> f (n' :&&: l' :&&: LoT0) -> r)
   -> r
 gsinkabilityProof2 rename e cont =
-  gsinkabilityProofK (RCons rename (RCons id RNil)) e $ \(RCons (_ :: Name n -> Name n'') (RCons rename' RNil)) e' ->
-    case unsafeCoerce (Type.Refl :: n' Type.:~: n') :: n' Type.:~: n'' of
-      Type.Refl -> cont rename' e'
+  gsinkabilityProofK (RCons rename (RCons id RNil)) e $ \case
+    RCons (_ :: Name n -> Name n'') (RCons rename' RNil) -> \e' ->
+      case unsafeCoerce (Type.Refl :: n' Type.:~: n') :: n' Type.:~: n'' of
+        Type.Refl -> cont rename' e'
 
 gsinkabilityProofK' :: GSinkableK f => RenamingsK as bs -> f as -> f bs
 gsinkabilityProofK' renameK e = gsinkabilityProofK renameK e $ \_ e' -> unsafeCoerce e'
@@ -1059,8 +1061,15 @@ instance (GSinkableK f, GSinkableK g) => GSinkableK (f :*: g) where
 
 instance GSinkableK f => GSinkableK (Exists S f) where
   gsinkabilityProofK irename (Exists x) cont =
-    gsinkabilityProofK (RCons id irename) x $ \(RCons _ irename') x' ->
-      cont irename' (Exists x')
+    gsinkabilityProofK (RCons id irename) x $ \case
+      RCons _ irename' -> \x' ->
+        cont irename' (Exists x')
+
+instance {-# OVERLAPPABLE #-} GSinkableK f => GSinkableK (Exists k f) where
+  gsinkabilityProofK irename (Exists x) cont =
+    gsinkabilityProofK (RSkip irename) x $ \case
+      RSkip irename' -> \x' ->
+        cont irename' (Exists x')
 
 instance GSinkableK f => GSinkableK ((a :~~: b) :=>: f) where
   gsinkabilityProofK irename (SuchThat x) cont =
@@ -1072,6 +1081,10 @@ instance GSinkableK f => GSinkableK ((a :~~: b) :=>: f) where
 instance GSinkableK (Field (Kon a)) where
   gsinkabilityProofK irename (Field x) cont =
     cont irename (Field x)
+
+instance GSinkableK (Field (Var a)) where
+  gsinkabilityProofK irename (Field x) cont =
+    cont irename (Field (unsafeCoerce x)) -- FIXME: unsafeCoerce?
 
 instance SinkableK f => GSinkableK (Field (Kon f :@: Var0)) where
   gsinkabilityProofK irename@(RCons _ RNil) (Field x) cont =
@@ -1125,9 +1138,11 @@ putBackTwoRenamingsK (RCons f1 (RCons f2 RNil)) rename
 
 instance (SinkableK f, ExtractRenamingK i, ExtractRenamingK j) => GSinkableK (Field (Kon f :@: Var (i :: TyVar k S) :@: Var (j :: TyVar k S))) where
   gsinkabilityProofK irename (Field x) cont =
-    sinkabilityProofK (extractTwoRenamingsK @_ @i @j irename) x $ \rename'@(RCons _ (RCons _ RNil)) x' ->
-      cont (putBackTwoRenamingsK @_ @i @j rename' irename)
-           (Field (unsafeCoerce x'))  -- FIXME: can we do better than unsafeCoerce?
+    sinkabilityProofK (extractTwoRenamingsK @_ @i @j irename) x $ \rename' x' ->
+      case rename' of
+        RCons _ (RCons _ RNil) ->
+          cont (putBackTwoRenamingsK @_ @i @j rename' irename)
+              (Field (unsafeCoerce x'))  -- FIXME: can we do better than unsafeCoerce?
 
 instance (Functor f, GSinkableK (Field x)) => GSinkableK (Field (Kon f :@: x)) where
   gsinkabilityProofK irename (Field x) cont =
@@ -1287,6 +1302,10 @@ instance GHasNameBinders f => GHasNameBinders (Exists k f) where
 instance GHasNameBinders (Field (Kon a)) where
   ggetNameBindersRaw (Field _x) = []
   greallyUnsafeSetNameBindersRaw (Field x) names = (Field x, names)
+
+instance GHasNameBinders (Field (Var x)) where
+  ggetNameBindersRaw (Field _x) = []
+  greallyUnsafeSetNameBindersRaw (Field x) names = (Field (unsafeCoerce x), names)  -- FIXME: unsafeCoerce?
 
 instance HasNameBinders f => GHasNameBinders (Field (Kon f :@: Var i :@: Var j)) where
   ggetNameBindersRaw (Field x) = getNameBindersRaw x
