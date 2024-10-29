@@ -20,11 +20,16 @@
 -- 3. Correct \(\alpha\)-equivalence checks (see 'alphaEquiv' and 'alphaEquivRefreshed') as well as \(\alpha\)-normalization (see 'refreshAST').
 -- 4. Conversion helpers (see 'convertToAST' and 'convertFromAST').
 --
+-- The following is provided via __generic__ representation via [kind-generics](https://hackage.haskell.org/package/kind-generics) (see "Generics.Kind"):
+-- 1. 'ZipMatch' instances for signatures (enabling general \(\alpha\)-equivalence).
+-- 2. 'Sinkable' instances for terms.
+-- 3. 'CoSinkable' instances for patterns.
+--
 -- The following is __generated__ using Template Haskell:
 --
--- 1. Convenient pattern synonyms.
--- 2. 'ZipMatch' instances (enabling general \(\alpha\)-equivalence).
--- 3. Conversion between scope-safe and raw term representation.
+-- 1. Signature bifunctor for terms.
+-- 2. Convenient pattern synonyms.
+-- 4. Conversion between scope-safe and raw term representation.
 --
 -- The following is implemented __manually__ in this module:
 --
@@ -80,12 +85,12 @@ mkConvertFromFreeFoil ''Raw.Term' ''Raw.VarIdent ''Raw.ScopedTerm' ''Raw.Pattern
 -- ** Scope-safe patterns
 
 mkFoilPattern ''Raw.VarIdent ''Raw.Pattern'
-deriveCoSinkable ''Raw.VarIdent ''Raw.Pattern'
-mkToFoilPattern ''Raw.VarIdent ''Raw.Pattern'
-mkFromFoilPattern ''Raw.VarIdent ''Raw.Pattern'
-
 deriveGenericK ''FoilPattern'
 instance Foil.SinkableK (FoilPattern' a)
+instance Foil.HasNameBinders (FoilPattern' a)
+instance Foil.CoSinkable (FoilPattern' a)
+mkToFoilPattern ''Raw.VarIdent ''Raw.Pattern'
+mkFromFoilPattern ''Raw.VarIdent ''Raw.Pattern'
 
 -- | Ignoring location information when unifying patterns.
 instance Foil.UnifiableInPattern Raw.BNFC'Position where
