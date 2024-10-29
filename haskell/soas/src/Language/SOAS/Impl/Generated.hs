@@ -64,11 +64,11 @@ instance Foil.SinkableK (Binders' a)
 instance Foil.SinkableK (TypeBinders' a)
 
 -- FIXME: derive via GenericK
-instance Foil.UnsafeHasNameBinders (Binders' a)
+instance Foil.HasNameBinders (Binders' a)
 instance Foil.CoSinkable (Binders' a)
 
 -- FIXME: derive via GenericK
-instance Foil.UnsafeHasNameBinders (TypeBinders' a)
+instance Foil.HasNameBinders (TypeBinders' a)
 instance Foil.CoSinkable (TypeBinders' a)
 
 mkFreeFoilConversions soasConfig
