@@ -176,3 +176,8 @@ type family GInnerScopeOfRepK msg icon ifield pattern f o n l where
       ('Text "Unsupported structure in a binder/pattern"
       :$$: 'Text "  " :<>: 'ShowType f
       :$$: ShowLocalizeError msg icon 0 pattern n l)
+
+type PutBackLoT :: TyVar d s -> s -> LoT k -> LoT k
+type family PutBackLoT i c bs where
+  PutBackLoT VZ c (b :&&: bs) = c :&&: bs
+  PutBackLoT (VS x) c (b :&&: bs) = b :&&: PutBackLoT x c bs

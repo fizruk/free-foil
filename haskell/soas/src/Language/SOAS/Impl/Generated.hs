@@ -63,13 +63,30 @@ instance Foil.Sinkable (OpTyping' a)
 instance Foil.SinkableK (Binders' a)
 instance Foil.SinkableK (TypeBinders' a)
 
--- FIXME: derive via GenericK
 instance Foil.HasNameBinders (Binders' a)
 instance Foil.CoSinkable (Binders' a)
 
--- FIXME: derive via GenericK
 instance Foil.HasNameBinders (TypeBinders' a)
 instance Foil.CoSinkable (TypeBinders' a)
+
+data Test a (n :: Foil.S) (l :: Foil.S) where
+  Good1 :: Foil.NameBinder n l -> Test a n l
+  Good2 :: Foil.NameBinder n n -> Test a n n
+  Good3 :: Test a n n
+  Good4 :: Foil.NameBinder n i -> Test a i l -> Test a n l
+  Good5 :: Foil.NameBinder n i' -> Test a i' i -> Test a i l -> Test a n l
+  -- Bad1 :: Test a n l                           -- not enough binders
+  -- Bad2 :: Foil.NameBinder n i -> Test a n l    -- intermediate scope escapes (not enough binders?)
+  -- Bad3 :: Int -> Int -> Int -> Foil.NameBinder i n -> Int -> Test a n l    -- unexpected scope extension
+  -- Bad4 :: Foil.NameBinder l n -> Test a n l    -- unexpected scope extension
+  -- Bad5 :: Foil.NameBinder n i -> Foil.NameBinder i l -> Foil.NameBinder l i -> Test a n l -- intermediate scope escapes (not enough binders?)
+  -- Bad6 :: Foil.NameBinder n l -> Foil.NameBinder n l -> Test a n l -- unexpected scope extension
+  -- Bad7 :: [Foil.NameBinder n l] -> Test a n l -- no GHasNameBinders (unreadable error message)
+deriveGenericK ''Test
+instance Foil.HasNameBinders (Test a)
+instance Foil.SinkableK (Test a)
+instance Foil.CoSinkable (Test a)
+
 
 mkFreeFoilConversions soasConfig
 

@@ -1088,19 +1088,46 @@ instance SinkableK (f a b) => GSinkableK (Field (Kon f :@: Kon a :@: Kon b :@: V
     sinkabilityProofK irename x $ \rename' x' ->
       cont rename' (Field x')
 
--- FIXME: generalize to arbitary variables
-instance SinkableK f => GSinkableK (Field (Kon f :@: Var0 :@: Var1)) where
-  gsinkabilityProofK irename@(RCons _ (RCons _ RNil)) (Field x) cont =
-    sinkabilityProofK irename x $ \irename' x' ->
-      cont irename' (Field x')
-instance SinkableK f => GSinkableK (Field (Kon f :@: Var1 :@: Var0)) where
-  gsinkabilityProofK (RCons f (RCons g RNil)) (Field x) cont =
-    sinkabilityProofK (RCons g (RCons f RNil)) x $ \(RCons g' (RCons f' RNil)) x' ->
-      cont ((RCons f' (RCons g' RNil))) (Field x')
-instance SinkableK f => GSinkableK (Field (Kon f :@: Var0 :@: Var2)) where
-  gsinkabilityProofK (RCons f (RCons g (RCons h RNil))) (Field x) cont =
-    sinkabilityProofK (RCons f (RCons h RNil)) x $ \(RCons f' (RCons h' RNil)) x' ->
-      cont (RCons f' (RCons g (RCons h' RNil))) (Field x')
+class ExtractRenamingK (i :: TyVar k S) where
+  extractRenamingK :: forall (as :: LoT k) (bs :: LoT k).
+    RenamingsK as bs -> Name (Interpret (Var i) as) -> Name (Interpret (Var i) bs)
+  putBackRenamingK :: forall c (as :: LoT k) (bs :: LoT k).
+       (Name (Interpret (Var i) as) -> Name c)
+    -> RenamingsK as bs
+    -> RenamingsK as (PutBackLoT i c bs)
+
+instance ExtractRenamingK VZ where
+  extractRenamingK (RCons f _fs) = f
+  putBackRenamingK f (RCons _ gs) = RCons f gs
+
+instance ExtractRenamingK x => ExtractRenamingK (VS x) where
+  extractRenamingK (RCons _f fs) = extractRenamingK @_ @x fs
+  putBackRenamingK f (RCons g gs) = RCons g (putBackRenamingK @_ @x f gs)
+
+extractTwoRenamingsK :: forall k (i :: TyVar k S) (j :: TyVar k S) (as :: LoT k) (bs :: LoT k).
+    (ExtractRenamingK i, ExtractRenamingK j)
+  => RenamingsK as bs
+  -> RenamingsK
+      (Interpret (Var i) as :&&: Interpret (Var j) as :&&: LoT0)
+      (Interpret (Var i) bs :&&: Interpret (Var j) bs :&&: LoT0)
+extractTwoRenamingsK irename =
+  (RCons (extractRenamingK @_ @i irename) (RCons (extractRenamingK @_ @j irename) RNil))
+
+putBackTwoRenamingsK :: forall k (i :: TyVar k S) (j :: TyVar k S) c1 c2 (as :: LoT k) (bs :: LoT k).
+    (ExtractRenamingK i, ExtractRenamingK j)
+  => RenamingsK
+      (Interpret (Var i) as :&&: Interpret (Var j) as :&&: LoT0)
+      (c1 :&&: c2 :&&: LoT0)
+  -> RenamingsK as bs
+  -> RenamingsK as (PutBackLoT j c2 (PutBackLoT i c1 bs))
+putBackTwoRenamingsK (RCons f1 (RCons f2 RNil)) rename
+  = putBackRenamingK @_ @j f2 (putBackRenamingK @_ @i f1 rename)
+
+instance (SinkableK f, ExtractRenamingK i, ExtractRenamingK j) => GSinkableK (Field (Kon f :@: Var (i :: TyVar k S) :@: Var (j :: TyVar k S))) where
+  gsinkabilityProofK irename (Field x) cont =
+    sinkabilityProofK (extractTwoRenamingsK @_ @i @j irename) x $ \rename'@(RCons _ (RCons _ RNil)) x' ->
+      cont (putBackTwoRenamingsK @_ @i @j rename' irename)
+           (Field (unsafeCoerce x'))  -- FIXME: can we do better than unsafeCoerce?
 
 instance (Functor f, GSinkableK (Field x)) => GSinkableK (Field (Kon f :@: x)) where
   gsinkabilityProofK irename (Field x) cont =
