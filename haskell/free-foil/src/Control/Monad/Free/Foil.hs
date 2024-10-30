@@ -29,8 +29,10 @@ import Data.ZipMatchK
 import           Data.Coerce                 (coerce)
 import           Data.Map                    (Map)
 import qualified Data.Map                    as Map
+import           Data.Maybe                  (mapMaybe)
 import           Data.Monoid                 (All (..))
 import           GHC.Generics                (Generic)
+import           Unsafe.Coerce               (unsafeCoerce)
 
 -- | Scoped term under a (single) name binder.
 data ScopedAST binder sig n where
@@ -376,3 +378,23 @@ convertFromScopedAST fromSig fromVar makePattern makeScoped f = \case
   ScopedAST binder body ->
     ( makePattern binder
     , makeScoped (convertFromAST fromSig fromVar makePattern makeScoped f body))
+
+-- ** Unsinking AST
+
+-- | Unsink an AST from a larger scope to a smaller scope.
+unsinkAST :: (Foil.Distinct l, Foil.CoSinkable binder, Bifoldable sig) => Foil.Scope n -> AST binder sig l -> Maybe (AST binder sig n)
+unsinkAST scope term
+  | all (`Foil.member` scope) (freeVarsOf term) = Just (unsafeCoerce term)
+  | otherwise = Nothing
+
+-- | Get the free variables of an AST.
+freeVarsOf :: (Foil.Distinct n, Foil.CoSinkable binder, Bifoldable sig) => AST binder sig n -> [Foil.Name n]
+freeVarsOf = \case
+  Var name -> [name]
+  Node node -> bifoldMap freeVarsOfScopedAST freeVarsOf node
+
+-- | Get the free variables of a scoped AST.
+freeVarsOfScopedAST :: (Foil.Distinct n, Foil.CoSinkable binder, Bifoldable sig) => ScopedAST binder sig n -> [Foil.Name n]
+freeVarsOfScopedAST (ScopedAST binder body) =
+  case Foil.assertDistinct binder of
+    Foil.Distinct -> mapMaybe (Foil.unsinkNamePattern binder) (freeVarsOf body)
