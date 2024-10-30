@@ -1,6 +1,7 @@
 {-# LANGUAGE BlockArguments             #-}
 {-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE EmptyCase                  #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
@@ -808,7 +809,7 @@ instance (Sinkable e) => Sinkable (Substitution e i) where
 -- * 'Name' maps
 
 -- | A /total/ map from names in scope @n@ to elements of type @a@.
-newtype NameMap (n :: S) a = NameMap { getNameMap :: IntMap a }
+newtype NameMap (n :: S) a = NameMap { getNameMap :: IntMap a } deriving (Functor, Foldable, Traversable)
 
 -- | An empty map belongs in the empty scope.
 emptyNameMap :: NameMap VoidS a
@@ -817,6 +818,10 @@ emptyNameMap = NameMap IntMap.empty
 -- | Convert a 'NameMap' of expressions into a 'Substitution'.
 nameMapToSubstitution :: NameMap i (e o) -> Substitution e i o
 nameMapToSubstitution (NameMap m) = (UnsafeSubstitution m)
+
+-- | Convert a 'NameMap' of expressions into a 'Scope'.
+nameMapToScope :: NameMap n a -> Scope n
+nameMapToScope (NameMap m) = UnsafeScope (IntMap.keysSet m)
 
 -- | Extend a map with multiple mappings (by repeatedly applying 'addNameBinder').
 --
