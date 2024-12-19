@@ -1,0 +1,160 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-pragma">{-# LANGUAGE TemplateHaskell #-}</span><span>
+</span><span id="line-2"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Language.SOAS.FreeFoilConfig</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-3"></span><span>
+</span><span id="line-4"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><a href="Language.SOAS.Syntax.Abs.html"><span class="hs-identifier">Language.SOAS.Syntax.Abs</span></a></span><span>    </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Raw</span></span><span>
+</span><span id="line-5"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Monad.Free.Foil.TH.MkFreeFoil</span></span><span>
+</span><span id="line-6"></span><span>
+</span><span id="line-7"></span><span class="annot"><a href="Language.SOAS.FreeFoilConfig.html#intToVarIdent"><span class="hs-identifier hs-type">intToVarIdent</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.SOAS.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span>
+</span><span id="line-8"></span><span id="intToVarIdent"><span class="annot"><span class="annottext">intToVarIdent :: Int -&gt; VarIdent
+</span><a href="Language.SOAS.FreeFoilConfig.html#intToVarIdent"><span class="hs-identifier hs-var hs-var">intToVarIdent</span></a></span></span><span> </span><span id="local-6989586621679441889"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679441889"><span class="hs-identifier hs-var">i</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">String -&gt; VarIdent
+</span><a href="Language.SOAS.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-var">Raw.VarIdent</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;x&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">Int -&gt; String
+forall a. Show a =&gt; a -&gt; String
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679441889"><span class="hs-identifier hs-var">i</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-9"></span><span>
+</span><span id="line-10"></span><span id="local-6989586621679441856"><span class="annot"><a href="Language.SOAS.FreeFoilConfig.html#rawVar"><span class="hs-identifier hs-type">rawVar</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.SOAS.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.SOAS.Syntax.Abs.html#Term%27"><span class="hs-identifier hs-type">Raw.Term'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679441856"><span class="hs-identifier hs-type">a</span></a></span></span><span>
+</span><span id="line-11"></span><span id="rawVar"><span class="annot"><span class="annottext">rawVar :: forall a. VarIdent -&gt; Term' a
+</span><a href="Language.SOAS.FreeFoilConfig.html#rawVar"><span class="hs-identifier hs-var hs-var">rawVar</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">a -&gt; VarIdent -&gt; Term' a
+forall a. a -&gt; VarIdent -&gt; Term' a
+</span><a href="Language.SOAS.Syntax.Abs.html#Var"><span class="hs-identifier hs-var">Raw.Var</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String -&gt; a
+forall a. HasCallStack =&gt; String -&gt; a
+</span><span class="hs-identifier hs-var">error</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;trying to access an erased annotation&quot;</span></span><span class="hs-special">)</span><span>
+</span><span id="line-12"></span><span>
+</span><span id="line-13"></span><span id="local-6989586621679441863"><span class="annot"><a href="Language.SOAS.FreeFoilConfig.html#rawTypeVar"><span class="hs-identifier hs-type">rawTypeVar</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.SOAS.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.SOAS.Syntax.Abs.html#Type%27"><span class="hs-identifier hs-type">Raw.Type'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679441863"><span class="hs-identifier hs-type">a</span></a></span></span><span>
+</span><span id="line-14"></span><span id="rawTypeVar"><span class="annot"><span class="annottext">rawTypeVar :: forall a. VarIdent -&gt; Type' a
+</span><a href="Language.SOAS.FreeFoilConfig.html#rawTypeVar"><span class="hs-identifier hs-var hs-var">rawTypeVar</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">a -&gt; VarIdent -&gt; Type' a
+forall a. a -&gt; VarIdent -&gt; Type' a
+</span><a href="Language.SOAS.Syntax.Abs.html#TypeVar"><span class="hs-identifier hs-var">Raw.TypeVar</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String -&gt; a
+forall a. HasCallStack =&gt; String -&gt; a
+</span><span class="hs-identifier hs-var">error</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;trying to access an erased annotation&quot;</span></span><span class="hs-special">)</span><span>
+</span><span id="line-15"></span><span>
+</span><span id="line-16"></span><span id="local-6989586621679441867"><span class="annot"><a href="Language.SOAS.FreeFoilConfig.html#rawScopedTerm"><span class="hs-identifier hs-type">rawScopedTerm</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.SOAS.Syntax.Abs.html#Term%27"><span class="hs-identifier hs-type">Raw.Term'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679441867"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.SOAS.Syntax.Abs.html#ScopedTerm%27"><span class="hs-identifier hs-type">Raw.ScopedTerm'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679441867"><span class="hs-identifier hs-type">a</span></a></span></span><span>
+</span><span id="line-17"></span><span id="rawScopedTerm"><span class="annot"><span class="annottext">rawScopedTerm :: forall a. Term' a -&gt; ScopedTerm' a
+</span><a href="Language.SOAS.FreeFoilConfig.html#rawScopedTerm"><span class="hs-identifier hs-var hs-var">rawScopedTerm</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">a -&gt; Term' a -&gt; ScopedTerm' a
+forall a. a -&gt; Term' a -&gt; ScopedTerm' a
+</span><a href="Language.SOAS.Syntax.Abs.html#ScopedTerm"><span class="hs-identifier hs-var">Raw.ScopedTerm</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String -&gt; a
+forall a. HasCallStack =&gt; String -&gt; a
+</span><span class="hs-identifier hs-var">error</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;trying to access an erased annotation&quot;</span></span><span class="hs-special">)</span><span>
+</span><span id="line-18"></span><span>
+</span><span id="line-19"></span><span id="local-6989586621679441871"><span class="annot"><a href="Language.SOAS.FreeFoilConfig.html#rawScopedType"><span class="hs-identifier hs-type">rawScopedType</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.SOAS.Syntax.Abs.html#Type%27"><span class="hs-identifier hs-type">Raw.Type'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679441871"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.SOAS.Syntax.Abs.html#ScopedType%27"><span class="hs-identifier hs-type">Raw.ScopedType'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679441871"><span class="hs-identifier hs-type">a</span></a></span></span><span>
+</span><span id="line-20"></span><span id="rawScopedType"><span class="annot"><span class="annottext">rawScopedType :: forall a. Type' a -&gt; ScopedType' a
+</span><a href="Language.SOAS.FreeFoilConfig.html#rawScopedType"><span class="hs-identifier hs-var hs-var">rawScopedType</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">a -&gt; Type' a -&gt; ScopedType' a
+forall a. a -&gt; Type' a -&gt; ScopedType' a
+</span><a href="Language.SOAS.Syntax.Abs.html#ScopedType"><span class="hs-identifier hs-var">Raw.ScopedType</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String -&gt; a
+forall a. HasCallStack =&gt; String -&gt; a
+</span><span class="hs-identifier hs-var">error</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;trying to access an erased annotation&quot;</span></span><span class="hs-special">)</span><span>
+</span><span id="line-21"></span><span>
+</span><span id="line-22"></span><span id="local-6989586621679441875"><span class="annot"><a href="Language.SOAS.FreeFoilConfig.html#rawScopeToTerm"><span class="hs-identifier hs-type">rawScopeToTerm</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.SOAS.Syntax.Abs.html#ScopedTerm%27"><span class="hs-identifier hs-type">Raw.ScopedTerm'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679441875"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.SOAS.Syntax.Abs.html#Term%27"><span class="hs-identifier hs-type">Raw.Term'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679441875"><span class="hs-identifier hs-type">a</span></a></span></span><span>
+</span><span id="line-23"></span><span id="rawScopeToTerm"><span class="annot"><span class="annottext">rawScopeToTerm :: forall a. ScopedTerm' a -&gt; Term' a
+</span><a href="Language.SOAS.FreeFoilConfig.html#rawScopeToTerm"><span class="hs-identifier hs-var hs-var">rawScopeToTerm</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.SOAS.Syntax.Abs.html#ScopedTerm"><span class="hs-identifier hs-type">Raw.ScopedTerm</span></a></span><span> </span><span id="local-6989586621679441910"><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679441910"><span class="hs-identifier hs-var">_loc</span></a></span></span><span> </span><span id="local-6989586621679441911"><span class="annot"><span class="annottext">Term' a
+</span><a href="#local-6989586621679441911"><span class="hs-identifier hs-var">term</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Term' a
+</span><a href="#local-6989586621679441911"><span class="hs-identifier hs-var">term</span></a></span><span>
+</span><span id="line-24"></span><span>
+</span><span id="line-25"></span><span id="local-6989586621679441877"><span class="annot"><a href="Language.SOAS.FreeFoilConfig.html#rawScopeToType"><span class="hs-identifier hs-type">rawScopeToType</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.SOAS.Syntax.Abs.html#ScopedType%27"><span class="hs-identifier hs-type">Raw.ScopedType'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679441877"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.SOAS.Syntax.Abs.html#Type%27"><span class="hs-identifier hs-type">Raw.Type'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679441877"><span class="hs-identifier hs-type">a</span></a></span></span><span>
+</span><span id="line-26"></span><span id="rawScopeToType"><span class="annot"><span class="annottext">rawScopeToType :: forall a. ScopedType' a -&gt; Type' a
+</span><a href="Language.SOAS.FreeFoilConfig.html#rawScopeToType"><span class="hs-identifier hs-var hs-var">rawScopeToType</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.SOAS.Syntax.Abs.html#ScopedType"><span class="hs-identifier hs-type">Raw.ScopedType</span></a></span><span> </span><span id="local-6989586621679441913"><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679441913"><span class="hs-identifier hs-var">_loc</span></a></span></span><span> </span><span id="local-6989586621679441914"><span class="annot"><span class="annottext">Type' a
+</span><a href="#local-6989586621679441914"><span class="hs-identifier hs-var">type_</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Type' a
+</span><a href="#local-6989586621679441914"><span class="hs-identifier hs-var">type_</span></a></span><span>
+</span><span id="line-27"></span><span>
+</span><span id="line-28"></span><span class="annot"><a href="Language.SOAS.FreeFoilConfig.html#soasConfig"><span class="hs-identifier hs-type">soasConfig</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FreeFoilConfig</span></span><span>
+</span><span id="line-29"></span><span id="soasConfig"><span class="annot"><span class="annottext">soasConfig :: FreeFoilConfig
+</span><a href="Language.SOAS.FreeFoilConfig.html#soasConfig"><span class="hs-identifier hs-var hs-var">soasConfig</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FreeFoilConfig</span></span><span>
+</span><span id="line-30"></span><span>  </span><span class="hs-special">{</span><span> </span><span class="annot"><span class="annottext">rawQuantifiedNames :: [Name]
+</span><span class="hs-identifier hs-var">rawQuantifiedNames</span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-31"></span><span>      </span><span class="hs-special">[</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.Subst'</span><span>
+</span><span id="line-32"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.MetaVarTyping'</span><span>
+</span><span id="line-33"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.OpTyping'</span><span>
+</span><span id="line-34"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.Constraint'</span><span>
+</span><span id="line-35"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.VarTyping'</span><span>
+</span><span id="line-36"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.TermTyping'</span><span>
+</span><span id="line-37"></span><span>      </span><span class="hs-special">]</span><span>
+</span><span id="line-38"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">freeFoilTermConfigs :: [FreeFoilTermConfig]
+</span><span class="hs-identifier hs-var">freeFoilTermConfigs</span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-39"></span><span>      </span><span class="hs-special">[</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FreeFoilTermConfig</span></span><span>
+</span><span id="line-40"></span><span>          </span><span class="hs-special">{</span><span> </span><span class="annot"><span class="annottext">rawIdentName :: Name
+</span><span class="hs-identifier hs-var">rawIdentName</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.VarIdent</span><span>
+</span><span id="line-41"></span><span>          </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">rawTermName :: Name
+</span><span class="hs-identifier hs-var">rawTermName</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.Term'</span><span>
+</span><span id="line-42"></span><span>          </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">rawBindingName :: Name
+</span><span class="hs-identifier hs-var">rawBindingName</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.Binders'</span><span>
+</span><span id="line-43"></span><span>          </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">rawScopeName :: Name
+</span><span class="hs-identifier hs-var">rawScopeName</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.ScopedTerm'</span><span>
+</span><span id="line-44"></span><span>          </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">rawVarConName :: Name
+</span><span class="hs-identifier hs-var">rawVarConName</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">'</span><span class="hs-identifier">Raw.Var</span><span>
+</span><span id="line-45"></span><span>          </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">rawSubTermNames :: [Name]
+</span><span class="hs-identifier hs-var">rawSubTermNames</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">[</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.OpArg'</span><span> </span><span class="hs-special">]</span><span>
+</span><span id="line-46"></span><span>          </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">rawSubScopeNames :: [Name]
+</span><span class="hs-identifier hs-var">rawSubScopeNames</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span>
+</span><span id="line-47"></span><span>          </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">intToRawIdentName :: Name
+</span><span class="hs-identifier hs-var">intToRawIdentName</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">'</span><span class="hs-identifier">intToVarIdent</span><span>
+</span><span id="line-48"></span><span>          </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">rawVarIdentToTermName :: Name
+</span><span class="hs-identifier hs-var">rawVarIdentToTermName</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">'</span><span class="hs-identifier">rawVar</span><span>
+</span><span id="line-49"></span><span>          </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">rawTermToScopeName :: Name
+</span><span class="hs-identifier hs-var">rawTermToScopeName</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">'</span><span class="hs-identifier">rawScopedTerm</span><span>
+</span><span id="line-50"></span><span>          </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">rawScopeToTermName :: Name
+</span><span class="hs-identifier hs-var">rawScopeToTermName</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">'</span><span class="hs-identifier">rawScopeToTerm</span><span>
+</span><span id="line-51"></span><span>          </span><span class="hs-special">}</span><span>
+</span><span id="line-52"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">FreeFoilTermConfig</span></span><span>
+</span><span id="line-53"></span><span>          </span><span class="hs-special">{</span><span> </span><span class="annot"><span class="annottext">rawIdentName :: Name
+</span><span class="hs-identifier hs-var">rawIdentName</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.VarIdent</span><span>
+</span><span id="line-54"></span><span>          </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">rawTermName :: Name
+</span><span class="hs-identifier hs-var">rawTermName</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.Type'</span><span>
+</span><span id="line-55"></span><span>          </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">rawBindingName :: Name
+</span><span class="hs-identifier hs-var">rawBindingName</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.TypeBinders'</span><span>
+</span><span id="line-56"></span><span>          </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">rawScopeName :: Name
+</span><span class="hs-identifier hs-var">rawScopeName</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.ScopedType'</span><span>
+</span><span id="line-57"></span><span>          </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">rawVarConName :: Name
+</span><span class="hs-identifier hs-var">rawVarConName</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">'</span><span class="hs-identifier">Raw.TypeVar</span><span>
+</span><span id="line-58"></span><span>          </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">rawSubTermNames :: [Name]
+</span><span class="hs-identifier hs-var">rawSubTermNames</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">[</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.OpArgTyping'</span><span> </span><span class="hs-special">]</span><span>
+</span><span id="line-59"></span><span>          </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">rawSubScopeNames :: [Name]
+</span><span class="hs-identifier hs-var">rawSubScopeNames</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">[</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.ScopedOpArgTyping'</span><span> </span><span class="hs-special">]</span><span>
+</span><span id="line-60"></span><span>          </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">intToRawIdentName :: Name
+</span><span class="hs-identifier hs-var">intToRawIdentName</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">'</span><span class="hs-identifier">intToVarIdent</span><span>
+</span><span id="line-61"></span><span>          </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">rawVarIdentToTermName :: Name
+</span><span class="hs-identifier hs-var">rawVarIdentToTermName</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">'</span><span class="hs-identifier">rawTypeVar</span><span>
+</span><span id="line-62"></span><span>          </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">rawTermToScopeName :: Name
+</span><span class="hs-identifier hs-var">rawTermToScopeName</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">'</span><span class="hs-identifier">rawScopedType</span><span>
+</span><span id="line-63"></span><span>          </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">rawScopeToTermName :: Name
+</span><span class="hs-identifier hs-var">rawScopeToTermName</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">'</span><span class="hs-identifier">rawScopeToType</span><span>
+</span><span id="line-64"></span><span>          </span><span class="hs-special">}</span><span> </span><span class="hs-special">]</span><span>
+</span><span id="line-65"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">freeFoilNameModifier :: String -&gt; String
+</span><span class="hs-identifier hs-var">freeFoilNameModifier</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">String -&gt; String
+forall a. a -&gt; a
+</span><span class="hs-identifier hs-var">id</span></span><span>
+</span><span id="line-66"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">freeFoilScopeNameModifier :: String -&gt; String
+</span><span class="hs-identifier hs-var">freeFoilScopeNameModifier</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Scoped&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="hs-special">)</span><span>
+</span><span id="line-67"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">freeFoilConNameModifier :: String -&gt; String
+</span><span class="hs-identifier hs-var">freeFoilConNameModifier</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">String -&gt; String
+forall a. a -&gt; a
+</span><span class="hs-identifier hs-var">id</span></span><span>
+</span><span id="line-68"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">freeFoilConvertFromName :: String -&gt; String
+</span><span class="hs-identifier hs-var">freeFoilConvertFromName</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;from&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="hs-special">)</span><span>
+</span><span id="line-69"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">freeFoilConvertToName :: String -&gt; String
+</span><span class="hs-identifier hs-var">freeFoilConvertToName</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;to&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="hs-special">)</span><span>
+</span><span id="line-70"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">signatureNameModifier :: String -&gt; String
+</span><span class="hs-identifier hs-var">signatureNameModifier</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Sig&quot;</span></span><span class="hs-special">)</span><span>
+</span><span id="line-71"></span><span>  </span><span class="hs-special">}</span><span>
+</span><span id="line-72"></span></pre></body></html>

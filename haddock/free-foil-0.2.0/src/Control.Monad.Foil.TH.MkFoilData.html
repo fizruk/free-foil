@@ -1,0 +1,674 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-pragma">{-# LANGUAGE GADTs                 #-}</span><span>
+</span><span id="line-2"></span><span class="hs-pragma">{-# LANGUAGE QuasiQuotes           #-}</span><span>
+</span><span id="line-3"></span><span class="hs-pragma">{-# LANGUAGE TemplateHaskellQuotes #-}</span><span>
+</span><span id="line-4"></span><span class="hs-pragma">{-# OPTIONS_GHC -Wno-incomplete-patterns #-}</span><span>
+</span><span id="line-5"></span><span class="hs-pragma">{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}</span><span>
+</span><span id="line-6"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Control.Monad.Foil.TH.MkFoilData</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-7"></span><span>
+</span><span id="line-8"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Language.Haskell.TH</span></span><span>
+</span><span id="line-9"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Language.Haskell.TH.Syntax</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">addModFinalizer</span></span><span class="hs-special">)</span><span>
+</span><span id="line-10"></span><span>
+</span><span id="line-11"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><a href="Control.Monad.Foil.Internal.html"><span class="hs-identifier">Control.Monad.Foil.Internal</span></a></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Foil</span></span><span>
+</span><span id="line-12"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Control.Monad.Foil.TH.Util.html"><span class="hs-identifier">Control.Monad.Foil.TH.Util</span></a></span><span>
+</span><span id="line-13"></span><span>
+</span><span id="line-14"></span><span class="annot"><span class="hs-comment">-- | Generate scope-safe variants given names of types for the raw representation.</span></span><span>
+</span><span id="line-15"></span><span class="annot"><a href="Control.Monad.Foil.TH.MkFoilData.html#mkFoilData"><span class="hs-identifier hs-type">mkFoilData</span></a></span><span>
+</span><span id="line-16"></span><span>  </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Name</span></span><span> </span><span class="annot"><span class="hs-comment">-- ^ Type name for raw terms.</span></span><span>
+</span><span id="line-17"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Name</span></span><span> </span><span class="annot"><span class="hs-comment">-- ^ Type name for raw variable identifiers.</span></span><span>
+</span><span id="line-18"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Name</span></span><span> </span><span class="annot"><span class="hs-comment">-- ^ Type name for raw scoped terms.</span></span><span>
+</span><span id="line-19"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Name</span></span><span> </span><span class="annot"><span class="hs-comment">-- ^ Type name for raw patterns.</span></span><span>
+</span><span id="line-20"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Q</span></span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">Dec</span></span><span class="hs-special">]</span><span>
+</span><span id="line-21"></span><span id="mkFoilData"><span class="annot"><span class="annottext">mkFoilData :: Name -&gt; Name -&gt; Name -&gt; Name -&gt; Q [Dec]
+</span><a href="Control.Monad.Foil.TH.MkFoilData.html#mkFoilData"><span class="hs-identifier hs-var hs-var">mkFoilData</span></a></span></span><span> </span><span id="local-6989586621679180176"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180176"><span class="hs-identifier hs-var">termT</span></a></span></span><span> </span><span id="local-6989586621679180177"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180177"><span class="hs-identifier hs-var">nameT</span></a></span></span><span> </span><span id="local-6989586621679180178"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180178"><span class="hs-identifier hs-var">scopeT</span></a></span></span><span> </span><span id="local-6989586621679180179"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180179"><span class="hs-identifier hs-var">patternT</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-22"></span><span>  </span><span id="local-6989586621679180180"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180180"><span class="hs-identifier hs-var">n</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">String -&gt; Q Name
+forall (m :: * -&gt; *). Quote m =&gt; String -&gt; m Name
+</span><span class="hs-identifier hs-var">newName</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;n&quot;</span></span><span>
+</span><span id="line-23"></span><span>  </span><span id="local-6989586621679180181"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180181"><span class="hs-identifier hs-var">l</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">String -&gt; Q Name
+forall (m :: * -&gt; *). Quote m =&gt; String -&gt; m Name
+</span><span class="hs-identifier hs-var">newName</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;l&quot;</span></span><span>
+</span><span id="line-24"></span><span>  </span><span class="annot"><span class="hs-identifier hs-type">TyConI</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">DataD</span></span><span> </span><span id="local-6989586621679180184"><span class="annot"><span class="annottext">Cxt
+</span><a href="#local-6989586621679180184"><span class="hs-identifier hs-var">_ctx</span></a></span></span><span> </span><span id="local-6989586621679180185"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180185"><span class="hs-identifier hs-var">_name</span></a></span></span><span> </span><span id="local-6989586621679180186"><span class="annot"><span class="annottext">[TyVarBndr BndrVis]
+</span><a href="#local-6989586621679180186"><span class="hs-identifier hs-var">scopeTVars</span></a></span></span><span> </span><span id="local-6989586621679180187"><span class="annot"><span class="annottext">Maybe Kind
+</span><a href="#local-6989586621679180187"><span class="hs-identifier hs-var">_kind</span></a></span></span><span> </span><span id="local-6989586621679180188"><span class="annot"><span class="annottext">[Con]
+</span><a href="#local-6989586621679180188"><span class="hs-identifier hs-var">scopeCons</span></a></span></span><span> </span><span id="local-6989586621679180189"><span class="annot"><span class="annottext">[DerivClause]
+</span><a href="#local-6989586621679180189"><span class="hs-identifier hs-var">_deriv</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Name -&gt; Q Info
+</span><span class="hs-identifier hs-var">reify</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180178"><span class="hs-identifier hs-var">scopeT</span></a></span><span>
+</span><span id="line-25"></span><span>  </span><span class="annot"><span class="hs-identifier hs-type">TyConI</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">DataD</span></span><span> </span><span id="local-6989586621679180191"><span class="annot"><span class="annottext">Cxt
+</span><a href="#local-6989586621679180191"><span class="hs-identifier hs-var">_ctx</span></a></span></span><span> </span><span id="local-6989586621679180192"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180192"><span class="hs-identifier hs-var">_name</span></a></span></span><span> </span><span id="local-6989586621679180193"><span class="annot"><span class="annottext">[TyVarBndr BndrVis]
+</span><a href="#local-6989586621679180193"><span class="hs-identifier hs-var">termTVars</span></a></span></span><span> </span><span id="local-6989586621679180194"><span class="annot"><span class="annottext">Maybe Kind
+</span><a href="#local-6989586621679180194"><span class="hs-identifier hs-var">_kind</span></a></span></span><span> </span><span id="local-6989586621679180195"><span class="annot"><span class="annottext">[Con]
+</span><a href="#local-6989586621679180195"><span class="hs-identifier hs-var">termCons</span></a></span></span><span> </span><span id="local-6989586621679180196"><span class="annot"><span class="annottext">[DerivClause]
+</span><a href="#local-6989586621679180196"><span class="hs-identifier hs-var">_deriv</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Name -&gt; Q Info
+</span><span class="hs-identifier hs-var">reify</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180176"><span class="hs-identifier hs-var">termT</span></a></span><span>
+</span><span id="line-26"></span><span>
+</span><span id="line-27"></span><span>  </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679180197"><span class="annot"><span class="annottext">foilScopeCons :: [Con]
+</span><a href="#local-6989586621679180197"><span class="hs-identifier hs-var hs-var">foilScopeCons</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Con -&gt; Con) -&gt; [Con] -&gt; [Con]
+forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
+</span><span class="hs-identifier hs-var">map</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[TyVarBndr BndrVis] -&gt; Name -&gt; Con -&gt; Con
+</span><a href="#local-6989586621679180198"><span class="hs-identifier hs-var">toScopeCon</span></a></span><span> </span><span class="annot"><span class="annottext">[TyVarBndr BndrVis]
+</span><a href="#local-6989586621679180186"><span class="hs-identifier hs-var">scopeTVars</span></a></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180180"><span class="hs-identifier hs-var">n</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">[Con]
+</span><a href="#local-6989586621679180188"><span class="hs-identifier hs-var">scopeCons</span></a></span><span>
+</span><span id="line-28"></span><span>  </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679180199"><span class="annot"><span class="annottext">foilTermCons :: [Con]
+</span><a href="#local-6989586621679180199"><span class="hs-identifier hs-var hs-var">foilTermCons</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Con -&gt; Con) -&gt; [Con] -&gt; [Con]
+forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
+</span><span class="hs-identifier hs-var">map</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[TyVarBndr BndrVis] -&gt; Name -&gt; Name -&gt; Con -&gt; Con
+</span><a href="#local-6989586621679180200"><span class="hs-identifier hs-var">toTermCon</span></a></span><span> </span><span class="annot"><span class="annottext">[TyVarBndr BndrVis]
+</span><a href="#local-6989586621679180193"><span class="hs-identifier hs-var">termTVars</span></a></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180180"><span class="hs-identifier hs-var">n</span></a></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180181"><span class="hs-identifier hs-var">l</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">[Con]
+</span><a href="#local-6989586621679180195"><span class="hs-identifier hs-var">termCons</span></a></span><span>
+</span><span id="line-29"></span><span>
+</span><span id="line-30"></span><span>  </span><span id="local-6989586621679180201"><span class="annot"><span class="annottext">[Dec]
+</span><a href="#local-6989586621679180201"><span class="hs-identifier hs-var">patternD</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Name -&gt; Name -&gt; Q [Dec]
+</span><a href="Control.Monad.Foil.TH.MkFoilData.html#mkFoilPattern"><span class="hs-identifier hs-var">mkFoilPattern</span></a></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180177"><span class="hs-identifier hs-var">nameT</span></a></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180179"><span class="hs-identifier hs-var">patternT</span></a></span><span>
+</span><span id="line-31"></span><span>  </span><span class="annot"><span class="annottext">Q () -&gt; Q ()
+</span><span class="hs-identifier hs-var">addModFinalizer</span></span><span> </span><span class="annot"><span class="annottext">(Q () -&gt; Q ()) -&gt; Q () -&gt; Q ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">DocLoc -&gt; String -&gt; Q ()
+</span><span class="hs-identifier hs-var">putDoc</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Name -&gt; DocLoc
+</span><span class="hs-identifier hs-var">DeclDoc</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180205"><span class="hs-identifier hs-var">foilTermT</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-32"></span><span>    </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;/Generated/ with '&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Name -&gt; String
+forall a. Show a =&gt; a -&gt; String
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="hs-special">'</span><span class="hs-identifier">mkFoilData</span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;'. A scope-safe version of '&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Name -&gt; String
+forall a. Show a =&gt; a -&gt; String
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180176"><span class="hs-identifier hs-var">termT</span></a></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;'.&quot;</span></span><span class="hs-special">)</span><span>
+</span><span id="line-33"></span><span>  </span><span class="annot"><span class="annottext">Q () -&gt; Q ()
+</span><span class="hs-identifier hs-var">addModFinalizer</span></span><span> </span><span class="annot"><span class="annottext">(Q () -&gt; Q ()) -&gt; Q () -&gt; Q ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">DocLoc -&gt; String -&gt; Q ()
+</span><span class="hs-identifier hs-var">putDoc</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Name -&gt; DocLoc
+</span><span class="hs-identifier hs-var">DeclDoc</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180207"><span class="hs-identifier hs-var">foilScopeT</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-34"></span><span>    </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;/Generated/ with '&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Name -&gt; String
+forall a. Show a =&gt; a -&gt; String
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="hs-special">'</span><span class="hs-identifier">mkFoilData</span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;'. A scope-safe version of '&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Name -&gt; String
+forall a. Show a =&gt; a -&gt; String
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180178"><span class="hs-identifier hs-var">scopeT</span></a></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;'.&quot;</span></span><span class="hs-special">)</span><span>
+</span><span id="line-35"></span><span>  </span><span class="annot"><span class="annottext">[Dec] -&gt; Q [Dec]
+forall a. a -&gt; Q a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="annot"><span class="annottext">([Dec] -&gt; Q [Dec]) -&gt; [Dec] -&gt; Q [Dec]
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span>
+</span><span id="line-36"></span><span>    </span><span class="hs-special">[</span><span> </span><span class="annot"><span class="annottext">Cxt
+-&gt; Name
+-&gt; [TyVarBndr BndrVis]
+-&gt; Maybe Kind
+-&gt; [Con]
+-&gt; [DerivClause]
+-&gt; Dec
+</span><span class="hs-identifier hs-var">DataD</span></span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180205"><span class="hs-identifier hs-var">foilTermT</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[TyVarBndr BndrVis]
+</span><a href="#local-6989586621679180193"><span class="hs-identifier hs-var">termTVars</span></a></span><span> </span><span class="annot"><span class="annottext">[TyVarBndr BndrVis] -&gt; [TyVarBndr BndrVis] -&gt; [TyVarBndr BndrVis]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="hs-special">[</span><span class="annot"><span class="annottext">Name -&gt; BndrVis -&gt; Kind -&gt; TyVarBndr BndrVis
+forall flag. Name -&gt; flag -&gt; Kind -&gt; TyVarBndr flag
+</span><span class="hs-identifier hs-var">KindedTV</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180180"><span class="hs-identifier hs-var">n</span></a></span><span> </span><span class="annot"><span class="annottext">BndrVis
+</span><span class="hs-identifier hs-var">BndrReq</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Name -&gt; Kind
+</span><span class="hs-identifier hs-var">PromotedT</span></span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Foil.S</span><span class="hs-special">)</span><span class="hs-special">]</span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">Maybe Kind
+forall a. Maybe a
+</span><span class="hs-identifier hs-var">Nothing</span></span><span> </span><span class="annot"><span class="annottext">[Con]
+</span><a href="#local-6989586621679180199"><span class="hs-identifier hs-var">foilTermCons</span></a></span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span>
+</span><span id="line-37"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Cxt
+-&gt; Name
+-&gt; [TyVarBndr BndrVis]
+-&gt; Maybe Kind
+-&gt; [Con]
+-&gt; [DerivClause]
+-&gt; Dec
+</span><span class="hs-identifier hs-var">DataD</span></span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180207"><span class="hs-identifier hs-var">foilScopeT</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[TyVarBndr BndrVis]
+</span><a href="#local-6989586621679180186"><span class="hs-identifier hs-var">scopeTVars</span></a></span><span> </span><span class="annot"><span class="annottext">[TyVarBndr BndrVis] -&gt; [TyVarBndr BndrVis] -&gt; [TyVarBndr BndrVis]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="hs-special">[</span><span class="annot"><span class="annottext">Name -&gt; BndrVis -&gt; Kind -&gt; TyVarBndr BndrVis
+forall flag. Name -&gt; flag -&gt; Kind -&gt; TyVarBndr flag
+</span><span class="hs-identifier hs-var">KindedTV</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180180"><span class="hs-identifier hs-var">n</span></a></span><span> </span><span class="annot"><span class="annottext">BndrVis
+</span><span class="hs-identifier hs-var">BndrReq</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Name -&gt; Kind
+</span><span class="hs-identifier hs-var">PromotedT</span></span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Foil.S</span><span class="hs-special">)</span><span class="hs-special">]</span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">Maybe Kind
+forall a. Maybe a
+</span><span class="hs-identifier hs-var">Nothing</span></span><span> </span><span class="annot"><span class="annottext">[Con]
+</span><a href="#local-6989586621679180197"><span class="hs-identifier hs-var">foilScopeCons</span></a></span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span>
+</span><span id="line-38"></span><span>    </span><span class="hs-special">]</span><span> </span><span class="annot"><span class="annottext">[Dec] -&gt; [Dec] -&gt; [Dec]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">[Dec]
+</span><a href="#local-6989586621679180201"><span class="hs-identifier hs-var">patternD</span></a></span><span>
+</span><span id="line-39"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-40"></span><span>    </span><span id="local-6989586621679180205"><span class="annot"><span class="annottext">foilTermT :: Name
+</span><a href="#local-6989586621679180205"><span class="hs-identifier hs-var hs-var">foilTermT</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">String -&gt; Name
+</span><span class="hs-identifier hs-var">mkName</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Foil&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Name -&gt; String
+</span><span class="hs-identifier hs-var">nameBase</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180176"><span class="hs-identifier hs-var">termT</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-41"></span><span>    </span><span id="local-6989586621679180207"><span class="annot"><span class="annottext">foilScopeT :: Name
+</span><a href="#local-6989586621679180207"><span class="hs-identifier hs-var hs-var">foilScopeT</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">String -&gt; Name
+</span><span class="hs-identifier hs-var">mkName</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Foil&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Name -&gt; String
+</span><span class="hs-identifier hs-var">nameBase</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180178"><span class="hs-identifier hs-var">scopeT</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-42"></span><span>    </span><span id="local-6989586621679180212"><span class="annot"><span class="annottext">foilPatternT :: Name
+</span><a href="#local-6989586621679180212"><span class="hs-identifier hs-var hs-var">foilPatternT</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">String -&gt; Name
+</span><span class="hs-identifier hs-var">mkName</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Foil&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Name -&gt; String
+</span><span class="hs-identifier hs-var">nameBase</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180179"><span class="hs-identifier hs-var">patternT</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-43"></span><span>
+</span><span id="line-44"></span><span>    </span><span class="hs-comment">-- | Convert a constructor declaration for a raw scoped term</span><span>
+</span><span id="line-45"></span><span>    </span><span class="hs-comment">-- into a constructor for the scope-safe scoped term.</span><span>
+</span><span id="line-46"></span><span>    </span><span class="annot"><a href="#local-6989586621679180198"><span class="hs-identifier hs-type">toScopeCon</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">TyVarBndr</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">BndrVis</span></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Name</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Con</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Con</span></span><span>
+</span><span id="line-47"></span><span>    </span><span id="local-6989586621679180198"><span class="annot"><span class="annottext">toScopeCon :: [TyVarBndr BndrVis] -&gt; Name -&gt; Con -&gt; Con
+</span><a href="#local-6989586621679180198"><span class="hs-identifier hs-var hs-var">toScopeCon</span></a></span></span><span> </span><span id="local-6989586621679180213"><span class="annot"><span class="annottext">[TyVarBndr BndrVis]
+</span><a href="#local-6989586621679180213"><span class="hs-identifier hs-var">_tvars</span></a></span></span><span> </span><span id="local-6989586621679180214"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180214"><span class="hs-identifier hs-var">n</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">NormalC</span></span><span> </span><span id="local-6989586621679180216"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180216"><span class="hs-identifier hs-var">conName</span></a></span></span><span> </span><span id="local-6989586621679180217"><span class="annot"><span class="annottext">[BangType]
+</span><a href="#local-6989586621679180217"><span class="hs-identifier hs-var">params</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-48"></span><span>      </span><span class="annot"><span class="annottext">Name -&gt; [BangType] -&gt; Con
+</span><span class="hs-identifier hs-var">NormalC</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180218"><span class="hs-identifier hs-var">foilConName</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">(BangType -&gt; BangType) -&gt; [BangType] -&gt; [BangType]
+forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
+</span><span class="hs-identifier hs-var">map</span></span><span> </span><span class="annot"><span class="annottext">BangType -&gt; BangType
+</span><a href="#local-6989586621679180219"><span class="hs-identifier hs-var">toScopeParam</span></a></span><span> </span><span class="annot"><span class="annottext">[BangType]
+</span><a href="#local-6989586621679180217"><span class="hs-identifier hs-var">params</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-49"></span><span>      </span><span class="hs-keyword">where</span><span>
+</span><span id="line-50"></span><span>        </span><span id="local-6989586621679180218"><span class="annot"><span class="annottext">foilConName :: Name
+</span><a href="#local-6989586621679180218"><span class="hs-identifier hs-var hs-var">foilConName</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">String -&gt; Name
+</span><span class="hs-identifier hs-var">mkName</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Foil&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Name -&gt; String
+</span><span class="hs-identifier hs-var">nameBase</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180216"><span class="hs-identifier hs-var">conName</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-51"></span><span>        </span><span id="local-6989586621679180219"><span class="annot"><span class="annottext">toScopeParam :: BangType -&gt; BangType
+</span><a href="#local-6989586621679180219"><span class="hs-identifier hs-var hs-var">toScopeParam</span></a></span></span><span> </span><span class="hs-special">(</span><span id="local-6989586621679180220"><span class="annot"><span class="annottext">Bang
+</span><a href="#local-6989586621679180220"><span class="hs-identifier hs-var">_bang</span></a></span></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Control.Monad.Foil.TH.Util.html#PeelConT"><span class="hs-identifier hs-type">PeelConT</span></a></span><span> </span><span id="local-6989586621679180222"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180222"><span class="hs-identifier hs-var">tyName</span></a></span></span><span> </span><span id="local-6989586621679180223"><span class="annot"><span class="annottext">Cxt
+</span><a href="#local-6989586621679180223"><span class="hs-identifier hs-var">tyParams</span></a></span></span><span class="hs-special">)</span><span>
+</span><span id="line-52"></span><span>          </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180222"><span class="hs-identifier hs-var">tyName</span></a></span><span> </span><span class="annot"><span class="annottext">Name -&gt; Name -&gt; Bool
+forall a. Eq a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">==</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180176"><span class="hs-identifier hs-var">termT</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Bang
+</span><a href="#local-6989586621679180220"><span class="hs-identifier hs-var">_bang</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Name -&gt; Cxt -&gt; Kind
+</span><a href="Control.Monad.Foil.TH.Util.html#PeelConT"><span class="hs-identifier hs-var">PeelConT</span></a></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180205"><span class="hs-identifier hs-var">foilTermT</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Cxt
+</span><a href="#local-6989586621679180223"><span class="hs-identifier hs-var">tyParams</span></a></span><span> </span><span class="annot"><span class="annottext">Cxt -&gt; Cxt -&gt; Cxt
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="hs-special">[</span><span class="annot"><span class="annottext">Name -&gt; Kind
+</span><span class="hs-identifier hs-var">VarT</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180214"><span class="hs-identifier hs-var">n</span></a></span><span class="hs-special">]</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-53"></span><span>        </span><span class="annot"><a href="#local-6989586621679180219"><span class="hs-identifier hs-var">toScopeParam</span></a></span><span> </span><span id="local-6989586621679180225"><span class="annot"><span class="annottext">BangType
+</span><a href="#local-6989586621679180225"><span class="hs-identifier hs-var">_bangType</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">BangType
+</span><a href="#local-6989586621679180225"><span class="hs-identifier hs-var">_bangType</span></a></span><span>
+</span><span id="line-54"></span><span>
+</span><span id="line-55"></span><span>    </span><span class="hs-comment">-- | Convert a constructor declaration for a raw term</span><span>
+</span><span id="line-56"></span><span>    </span><span class="hs-comment">-- into a constructor for the scope-safe term.</span><span>
+</span><span id="line-57"></span><span>    </span><span class="annot"><a href="#local-6989586621679180200"><span class="hs-identifier hs-type">toTermCon</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">TyVarBndr</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">BndrVis</span></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Name</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Name</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Con</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Con</span></span><span>
+</span><span id="line-58"></span><span>    </span><span id="local-6989586621679180200"><span class="annot"><span class="annottext">toTermCon :: [TyVarBndr BndrVis] -&gt; Name -&gt; Name -&gt; Con -&gt; Con
+</span><a href="#local-6989586621679180200"><span class="hs-identifier hs-var hs-var">toTermCon</span></a></span></span><span> </span><span id="local-6989586621679180226"><span class="annot"><span class="annottext">[TyVarBndr BndrVis]
+</span><a href="#local-6989586621679180226"><span class="hs-identifier hs-var">tvars</span></a></span></span><span> </span><span id="local-6989586621679180227"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180227"><span class="hs-identifier hs-var">n</span></a></span></span><span> </span><span id="local-6989586621679180228"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180228"><span class="hs-identifier hs-var">l</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">NormalC</span></span><span> </span><span id="local-6989586621679180229"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180229"><span class="hs-identifier hs-var">conName</span></a></span></span><span> </span><span id="local-6989586621679180230"><span class="annot"><span class="annottext">[BangType]
+</span><a href="#local-6989586621679180230"><span class="hs-identifier hs-var">params</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-59"></span><span>      </span><span class="annot"><span class="annottext">[Name] -&gt; [BangType] -&gt; Kind -&gt; Con
+</span><span class="hs-identifier hs-var">GadtC</span></span><span> </span><span class="hs-special">[</span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180232"><span class="hs-identifier hs-var">foilConName</span></a></span><span class="hs-special">]</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">(BangType -&gt; BangType) -&gt; [BangType] -&gt; [BangType]
+forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
+</span><span class="hs-identifier hs-var">map</span></span><span> </span><span class="annot"><span class="annottext">BangType -&gt; BangType
+</span><a href="#local-6989586621679180233"><span class="hs-identifier hs-var">toTermParam</span></a></span><span> </span><span class="annot"><span class="annottext">[BangType]
+</span><a href="#local-6989586621679180230"><span class="hs-identifier hs-var">params</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Name -&gt; Cxt -&gt; Kind
+</span><a href="Control.Monad.Foil.TH.Util.html#PeelConT"><span class="hs-identifier hs-var">PeelConT</span></a></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180205"><span class="hs-identifier hs-var">foilTermT</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">(TyVarBndr BndrVis -&gt; Kind) -&gt; [TyVarBndr BndrVis] -&gt; Cxt
+forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
+</span><span class="hs-identifier hs-var">map</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Name -&gt; Kind
+</span><span class="hs-identifier hs-var">VarT</span></span><span> </span><span class="annot"><span class="annottext">(Name -&gt; Kind)
+-&gt; (TyVarBndr BndrVis -&gt; Name) -&gt; TyVarBndr BndrVis -&gt; Kind
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">TyVarBndr BndrVis -&gt; Name
+forall a. TyVarBndr a -&gt; Name
+</span><a href="Control.Monad.Foil.TH.Util.html#tvarName"><span class="hs-identifier hs-var">tvarName</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">[TyVarBndr BndrVis]
+</span><a href="#local-6989586621679180226"><span class="hs-identifier hs-var">tvars</span></a></span><span> </span><span class="annot"><span class="annottext">Cxt -&gt; Cxt -&gt; Cxt
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="hs-special">[</span><span class="annot"><span class="annottext">Name -&gt; Kind
+</span><span class="hs-identifier hs-var">VarT</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180227"><span class="hs-identifier hs-var">n</span></a></span><span class="hs-special">]</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-60"></span><span>      </span><span class="hs-keyword">where</span><span>
+</span><span id="line-61"></span><span>        </span><span id="local-6989586621679180236"><span class="annot"><span class="annottext">foilNames :: [Name]
+</span><a href="#local-6989586621679180236"><span class="hs-identifier hs-var hs-var">foilNames</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">[</span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180227"><span class="hs-identifier hs-var">n</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180228"><span class="hs-identifier hs-var">l</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-62"></span><span>        </span><span id="local-6989586621679180232"><span class="annot"><span class="annottext">foilConName :: Name
+</span><a href="#local-6989586621679180232"><span class="hs-identifier hs-var hs-var">foilConName</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">String -&gt; Name
+</span><span class="hs-identifier hs-var">mkName</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Foil&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Name -&gt; String
+</span><span class="hs-identifier hs-var">nameBase</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180229"><span class="hs-identifier hs-var">conName</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-63"></span><span>        </span><span id="local-6989586621679180233"><span class="annot"><span class="annottext">toTermParam :: BangType -&gt; BangType
+</span><a href="#local-6989586621679180233"><span class="hs-identifier hs-var hs-var">toTermParam</span></a></span></span><span> </span><span class="hs-special">(</span><span id="local-6989586621679180237"><span class="annot"><span class="annottext">Bang
+</span><a href="#local-6989586621679180237"><span class="hs-identifier hs-var">_bang</span></a></span></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Control.Monad.Foil.TH.Util.html#PeelConT"><span class="hs-identifier hs-type">PeelConT</span></a></span><span> </span><span id="local-6989586621679180238"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180238"><span class="hs-identifier hs-var">tyName</span></a></span></span><span> </span><span id="local-6989586621679180239"><span class="annot"><span class="annottext">Cxt
+</span><a href="#local-6989586621679180239"><span class="hs-identifier hs-var">tyParams</span></a></span></span><span class="hs-special">)</span><span>
+</span><span id="line-64"></span><span>          </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180238"><span class="hs-identifier hs-var">tyName</span></a></span><span> </span><span class="annot"><span class="annottext">Name -&gt; Name -&gt; Bool
+forall a. Eq a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">==</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180179"><span class="hs-identifier hs-var">patternT</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Bang
+</span><a href="#local-6989586621679180237"><span class="hs-identifier hs-var">_bang</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Name -&gt; Cxt -&gt; Kind
+</span><a href="Control.Monad.Foil.TH.Util.html#PeelConT"><span class="hs-identifier hs-var">PeelConT</span></a></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180212"><span class="hs-identifier hs-var">foilPatternT</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Cxt
+</span><a href="#local-6989586621679180239"><span class="hs-identifier hs-var">tyParams</span></a></span><span> </span><span class="annot"><span class="annottext">Cxt -&gt; Cxt -&gt; Cxt
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">(Name -&gt; Kind) -&gt; [Name] -&gt; Cxt
+forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
+</span><span class="hs-identifier hs-var">map</span></span><span> </span><span class="annot"><span class="annottext">Name -&gt; Kind
+</span><span class="hs-identifier hs-var">VarT</span></span><span> </span><span class="annot"><span class="annottext">[Name]
+</span><a href="#local-6989586621679180236"><span class="hs-identifier hs-var">foilNames</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-65"></span><span>          </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180238"><span class="hs-identifier hs-var">tyName</span></a></span><span> </span><span class="annot"><span class="annottext">Name -&gt; Name -&gt; Bool
+forall a. Eq a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">==</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180177"><span class="hs-identifier hs-var">nameT</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Bang
+</span><a href="#local-6989586621679180237"><span class="hs-identifier hs-var">_bang</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Kind -&gt; Kind -&gt; Kind
+</span><span class="hs-identifier hs-var">AppT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Name -&gt; Kind
+</span><span class="hs-identifier hs-var">ConT</span></span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Foil.Name</span><span class="hs-special">)</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Name -&gt; Kind
+</span><span class="hs-identifier hs-var">VarT</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180227"><span class="hs-identifier hs-var">n</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-66"></span><span>          </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180238"><span class="hs-identifier hs-var">tyName</span></a></span><span> </span><span class="annot"><span class="annottext">Name -&gt; Name -&gt; Bool
+forall a. Eq a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">==</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180178"><span class="hs-identifier hs-var">scopeT</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Bang
+</span><a href="#local-6989586621679180237"><span class="hs-identifier hs-var">_bang</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Name -&gt; Cxt -&gt; Kind
+</span><a href="Control.Monad.Foil.TH.Util.html#PeelConT"><span class="hs-identifier hs-var">PeelConT</span></a></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180207"><span class="hs-identifier hs-var">foilScopeT</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Cxt
+</span><a href="#local-6989586621679180239"><span class="hs-identifier hs-var">tyParams</span></a></span><span> </span><span class="annot"><span class="annottext">Cxt -&gt; Cxt -&gt; Cxt
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="hs-special">[</span><span class="annot"><span class="annottext">Name -&gt; Kind
+</span><span class="hs-identifier hs-var">VarT</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180228"><span class="hs-identifier hs-var">l</span></a></span><span class="hs-special">]</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-67"></span><span>          </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180238"><span class="hs-identifier hs-var">tyName</span></a></span><span> </span><span class="annot"><span class="annottext">Name -&gt; Name -&gt; Bool
+forall a. Eq a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">==</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180176"><span class="hs-identifier hs-var">termT</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Bang
+</span><a href="#local-6989586621679180237"><span class="hs-identifier hs-var">_bang</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Name -&gt; Cxt -&gt; Kind
+</span><a href="Control.Monad.Foil.TH.Util.html#PeelConT"><span class="hs-identifier hs-var">PeelConT</span></a></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180205"><span class="hs-identifier hs-var">foilTermT</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Cxt
+</span><a href="#local-6989586621679180239"><span class="hs-identifier hs-var">tyParams</span></a></span><span> </span><span class="annot"><span class="annottext">Cxt -&gt; Cxt -&gt; Cxt
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="hs-special">[</span><span class="annot"><span class="annottext">Name -&gt; Kind
+</span><span class="hs-identifier hs-var">VarT</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180227"><span class="hs-identifier hs-var">n</span></a></span><span class="hs-special">]</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-68"></span><span>        </span><span class="annot"><a href="#local-6989586621679180233"><span class="hs-identifier hs-var">toTermParam</span></a></span><span> </span><span id="local-6989586621679180242"><span class="annot"><span class="annottext">BangType
+</span><a href="#local-6989586621679180242"><span class="hs-identifier hs-var">_bangType</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">BangType
+</span><a href="#local-6989586621679180242"><span class="hs-identifier hs-var">_bangType</span></a></span><span>
+</span><span id="line-69"></span><span>
+</span><span id="line-70"></span><span class="annot"><span class="hs-comment">-- | Generate just the scope-safe patterns.</span></span><span>
+</span><span id="line-71"></span><span class="annot"><a href="Control.Monad.Foil.TH.MkFoilData.html#mkFoilPattern"><span class="hs-identifier hs-type">mkFoilPattern</span></a></span><span>
+</span><span id="line-72"></span><span>  </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Name</span></span><span> </span><span class="annot"><span class="hs-comment">-- ^ Type name for raw variable identifiers.</span></span><span>
+</span><span id="line-73"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Name</span></span><span> </span><span class="annot"><span class="hs-comment">-- ^ Type name for raw patterns.</span></span><span>
+</span><span id="line-74"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Q</span></span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">Dec</span></span><span class="hs-special">]</span><span>
+</span><span id="line-75"></span><span id="mkFoilPattern"><span class="annot"><span class="annottext">mkFoilPattern :: Name -&gt; Name -&gt; Q [Dec]
+</span><a href="Control.Monad.Foil.TH.MkFoilData.html#mkFoilPattern"><span class="hs-identifier hs-var hs-var">mkFoilPattern</span></a></span></span><span> </span><span id="local-6989586621679180243"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180243"><span class="hs-identifier hs-var">nameT</span></a></span></span><span> </span><span id="local-6989586621679180244"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180244"><span class="hs-identifier hs-var">patternT</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-76"></span><span>  </span><span id="local-6989586621679180245"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180245"><span class="hs-identifier hs-var">n</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">String -&gt; Q Name
+forall (m :: * -&gt; *). Quote m =&gt; String -&gt; m Name
+</span><span class="hs-identifier hs-var">newName</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;n&quot;</span></span><span>
+</span><span id="line-77"></span><span>  </span><span id="local-6989586621679180246"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180246"><span class="hs-identifier hs-var">l</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">String -&gt; Q Name
+forall (m :: * -&gt; *). Quote m =&gt; String -&gt; m Name
+</span><span class="hs-identifier hs-var">newName</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;l&quot;</span></span><span>
+</span><span id="line-78"></span><span>  </span><span class="annot"><span class="hs-identifier hs-type">TyConI</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">DataD</span></span><span> </span><span id="local-6989586621679180247"><span class="annot"><span class="annottext">Cxt
+</span><a href="#local-6989586621679180247"><span class="hs-identifier hs-var">_ctx</span></a></span></span><span> </span><span id="local-6989586621679180248"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180248"><span class="hs-identifier hs-var">_name</span></a></span></span><span> </span><span id="local-6989586621679180249"><span class="annot"><span class="annottext">[TyVarBndr BndrVis]
+</span><a href="#local-6989586621679180249"><span class="hs-identifier hs-var">patternTVars</span></a></span></span><span> </span><span id="local-6989586621679180250"><span class="annot"><span class="annottext">Maybe Kind
+</span><a href="#local-6989586621679180250"><span class="hs-identifier hs-var">_kind</span></a></span></span><span> </span><span id="local-6989586621679180251"><span class="annot"><span class="annottext">[Con]
+</span><a href="#local-6989586621679180251"><span class="hs-identifier hs-var">patternCons</span></a></span></span><span> </span><span id="local-6989586621679180252"><span class="annot"><span class="annottext">[DerivClause]
+</span><a href="#local-6989586621679180252"><span class="hs-identifier hs-var">_deriv</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Name -&gt; Q Info
+</span><span class="hs-identifier hs-var">reify</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180244"><span class="hs-identifier hs-var">patternT</span></a></span><span>
+</span><span id="line-79"></span><span>
+</span><span id="line-80"></span><span>  </span><span id="local-6989586621679180253"><span class="annot"><span class="annottext">[Con]
+</span><a href="#local-6989586621679180253"><span class="hs-identifier hs-var">foilPatternCons</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">(Con -&gt; Q Con) -&gt; [Con] -&gt; Q [Con]
+forall (t :: * -&gt; *) (m :: * -&gt; *) a b.
+(Traversable t, Monad m) =&gt;
+(a -&gt; m b) -&gt; t a -&gt; m (t b)
+forall (m :: * -&gt; *) a b. Monad m =&gt; (a -&gt; m b) -&gt; [a] -&gt; m [b]
+</span><span class="hs-identifier hs-var">mapM</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[TyVarBndr BndrVis] -&gt; Name -&gt; Con -&gt; Q Con
+</span><a href="#local-6989586621679180255"><span class="hs-identifier hs-var">toPatternCon</span></a></span><span> </span><span class="annot"><span class="annottext">[TyVarBndr BndrVis]
+</span><a href="#local-6989586621679180249"><span class="hs-identifier hs-var">patternTVars</span></a></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180245"><span class="hs-identifier hs-var">n</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">[Con]
+</span><a href="#local-6989586621679180251"><span class="hs-identifier hs-var">patternCons</span></a></span><span>
+</span><span id="line-81"></span><span>
+</span><span id="line-82"></span><span>  </span><span class="annot"><span class="annottext">Q () -&gt; Q ()
+</span><span class="hs-identifier hs-var">addModFinalizer</span></span><span> </span><span class="annot"><span class="annottext">(Q () -&gt; Q ()) -&gt; Q () -&gt; Q ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">DocLoc -&gt; String -&gt; Q ()
+</span><span class="hs-identifier hs-var">putDoc</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Name -&gt; DocLoc
+</span><span class="hs-identifier hs-var">DeclDoc</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180256"><span class="hs-identifier hs-var">foilPatternT</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-83"></span><span>    </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;/Generated/ with '&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Name -&gt; String
+forall a. Show a =&gt; a -&gt; String
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="hs-special">'</span><span class="hs-identifier">mkFoilPattern</span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;'. A scope-safe version of '&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Name -&gt; String
+forall a. Show a =&gt; a -&gt; String
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180244"><span class="hs-identifier hs-var">patternT</span></a></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;'.&quot;</span></span><span class="hs-special">)</span><span>
+</span><span id="line-84"></span><span>  </span><span class="annot"><span class="annottext">[Dec] -&gt; Q [Dec]
+forall a. a -&gt; Q a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span>
+</span><span id="line-85"></span><span>    </span><span class="hs-special">[</span><span> </span><span class="annot"><span class="annottext">Cxt
+-&gt; Name
+-&gt; [TyVarBndr BndrVis]
+-&gt; Maybe Kind
+-&gt; [Con]
+-&gt; [DerivClause]
+-&gt; Dec
+</span><span class="hs-identifier hs-var">DataD</span></span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180256"><span class="hs-identifier hs-var">foilPatternT</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[TyVarBndr BndrVis]
+</span><a href="#local-6989586621679180249"><span class="hs-identifier hs-var">patternTVars</span></a></span><span> </span><span class="annot"><span class="annottext">[TyVarBndr BndrVis] -&gt; [TyVarBndr BndrVis] -&gt; [TyVarBndr BndrVis]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="hs-special">[</span><span class="annot"><span class="annottext">Name -&gt; BndrVis -&gt; Kind -&gt; TyVarBndr BndrVis
+forall flag. Name -&gt; flag -&gt; Kind -&gt; TyVarBndr flag
+</span><span class="hs-identifier hs-var">KindedTV</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180245"><span class="hs-identifier hs-var">n</span></a></span><span> </span><span class="annot"><span class="annottext">BndrVis
+</span><span class="hs-identifier hs-var">BndrReq</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Name -&gt; Kind
+</span><span class="hs-identifier hs-var">PromotedT</span></span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Foil.S</span><span class="hs-special">)</span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Name -&gt; BndrVis -&gt; Kind -&gt; TyVarBndr BndrVis
+forall flag. Name -&gt; flag -&gt; Kind -&gt; TyVarBndr flag
+</span><span class="hs-identifier hs-var">KindedTV</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180246"><span class="hs-identifier hs-var">l</span></a></span><span> </span><span class="annot"><span class="annottext">BndrVis
+</span><span class="hs-identifier hs-var">BndrReq</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Name -&gt; Kind
+</span><span class="hs-identifier hs-var">PromotedT</span></span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Foil.S</span><span class="hs-special">)</span><span class="hs-special">]</span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">Maybe Kind
+forall a. Maybe a
+</span><span class="hs-identifier hs-var">Nothing</span></span><span> </span><span class="annot"><span class="annottext">[Con]
+</span><a href="#local-6989586621679180253"><span class="hs-identifier hs-var">foilPatternCons</span></a></span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span>
+</span><span id="line-86"></span><span>    </span><span class="hs-special">]</span><span>
+</span><span id="line-87"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-88"></span><span>    </span><span id="local-6989586621679180256"><span class="annot"><span class="annottext">foilPatternT :: Name
+</span><a href="#local-6989586621679180256"><span class="hs-identifier hs-var hs-var">foilPatternT</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">String -&gt; Name
+</span><span class="hs-identifier hs-var">mkName</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Foil&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Name -&gt; String
+</span><span class="hs-identifier hs-var">nameBase</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180244"><span class="hs-identifier hs-var">patternT</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-89"></span><span>
+</span><span id="line-90"></span><span>    </span><span class="hs-comment">-- | Convert a constructor declaration for a raw pattern type</span><span>
+</span><span id="line-91"></span><span>    </span><span class="hs-comment">-- into a constructor for the scope-safe pattern type.</span><span>
+</span><span id="line-92"></span><span>    </span><span class="annot"><a href="#local-6989586621679180255"><span class="hs-identifier hs-type">toPatternCon</span></a></span><span>
+</span><span id="line-93"></span><span>      </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">TyVarBndr</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">BndrVis</span></span><span class="hs-special">]</span><span>
+</span><span id="line-94"></span><span>      </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Name</span></span><span>   </span><span class="hs-comment">-- ^ Name for the starting scope type variable.</span><span>
+</span><span id="line-95"></span><span>      </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Con</span></span><span>    </span><span class="hs-comment">-- ^ Raw pattern constructor.</span><span>
+</span><span id="line-96"></span><span>      </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Q</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Con</span></span><span>
+</span><span id="line-97"></span><span>    </span><span id="local-6989586621679180255"><span class="annot"><span class="annottext">toPatternCon :: [TyVarBndr BndrVis] -&gt; Name -&gt; Con -&gt; Q Con
+</span><a href="#local-6989586621679180255"><span class="hs-identifier hs-var hs-var">toPatternCon</span></a></span></span><span> </span><span id="local-6989586621679180257"><span class="annot"><span class="annottext">[TyVarBndr BndrVis]
+</span><a href="#local-6989586621679180257"><span class="hs-identifier hs-var">tvars</span></a></span></span><span> </span><span id="local-6989586621679180258"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180258"><span class="hs-identifier hs-var">n</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">NormalC</span></span><span> </span><span id="local-6989586621679180259"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180259"><span class="hs-identifier hs-var">conName</span></a></span></span><span> </span><span id="local-6989586621679180260"><span class="annot"><span class="annottext">[BangType]
+</span><a href="#local-6989586621679180260"><span class="hs-identifier hs-var">params</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-98"></span><span>      </span><span class="hs-special">(</span><span id="local-6989586621679180261"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180261"><span class="hs-identifier hs-var">lastScopeName</span></a></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679180262"><span class="annot"><span class="annottext">[BangType]
+</span><a href="#local-6989586621679180262"><span class="hs-identifier hs-var">foilParams</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Int -&gt; Name -&gt; [BangType] -&gt; Q (Name, [BangType])
+</span><a href="#local-6989586621679180263"><span class="hs-identifier hs-var">toPatternConParams</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">1</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180258"><span class="hs-identifier hs-var">n</span></a></span><span> </span><span class="annot"><span class="annottext">[BangType]
+</span><a href="#local-6989586621679180260"><span class="hs-identifier hs-var">params</span></a></span><span>
+</span><span id="line-99"></span><span>      </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679180264"><span class="annot"><span class="annottext">foilConName :: Name
+</span><a href="#local-6989586621679180264"><span class="hs-identifier hs-var hs-var">foilConName</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">String -&gt; Name
+</span><span class="hs-identifier hs-var">mkName</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Foil&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Name -&gt; String
+</span><span class="hs-identifier hs-var">nameBase</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180259"><span class="hs-identifier hs-var">conName</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-100"></span><span>      </span><span class="annot"><span class="annottext">Q () -&gt; Q ()
+</span><span class="hs-identifier hs-var">addModFinalizer</span></span><span> </span><span class="annot"><span class="annottext">(Q () -&gt; Q ()) -&gt; Q () -&gt; Q ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">DocLoc -&gt; String -&gt; Q ()
+</span><span class="hs-identifier hs-var">putDoc</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Name -&gt; DocLoc
+</span><span class="hs-identifier hs-var">DeclDoc</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180264"><span class="hs-identifier hs-var">foilConName</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Corresponds to '&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Name -&gt; String
+forall a. Show a =&gt; a -&gt; String
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180259"><span class="hs-identifier hs-var">conName</span></a></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;'.&quot;</span></span><span class="hs-special">)</span><span>
+</span><span id="line-101"></span><span>      </span><span class="annot"><span class="annottext">Con -&gt; Q Con
+forall a. a -&gt; Q a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[Name] -&gt; [BangType] -&gt; Kind -&gt; Con
+</span><span class="hs-identifier hs-var">GadtC</span></span><span> </span><span class="hs-special">[</span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180264"><span class="hs-identifier hs-var">foilConName</span></a></span><span class="hs-special">]</span><span> </span><span class="annot"><span class="annottext">[BangType]
+</span><a href="#local-6989586621679180262"><span class="hs-identifier hs-var">foilParams</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Name -&gt; Cxt -&gt; Kind
+</span><a href="Control.Monad.Foil.TH.Util.html#PeelConT"><span class="hs-identifier hs-var">PeelConT</span></a></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180256"><span class="hs-identifier hs-var">foilPatternT</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">(TyVarBndr BndrVis -&gt; Kind) -&gt; [TyVarBndr BndrVis] -&gt; Cxt
+forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
+</span><span class="hs-identifier hs-var">map</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Name -&gt; Kind
+</span><span class="hs-identifier hs-var">VarT</span></span><span> </span><span class="annot"><span class="annottext">(Name -&gt; Kind)
+-&gt; (TyVarBndr BndrVis -&gt; Name) -&gt; TyVarBndr BndrVis -&gt; Kind
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">TyVarBndr BndrVis -&gt; Name
+forall a. TyVarBndr a -&gt; Name
+</span><a href="Control.Monad.Foil.TH.Util.html#tvarName"><span class="hs-identifier hs-var">tvarName</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">[TyVarBndr BndrVis]
+</span><a href="#local-6989586621679180257"><span class="hs-identifier hs-var">tvars</span></a></span><span> </span><span class="annot"><span class="annottext">Cxt -&gt; Cxt -&gt; Cxt
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="hs-special">[</span><span class="annot"><span class="annottext">Name -&gt; Kind
+</span><span class="hs-identifier hs-var">VarT</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180258"><span class="hs-identifier hs-var">n</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Name -&gt; Kind
+</span><span class="hs-identifier hs-var">VarT</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180261"><span class="hs-identifier hs-var">lastScopeName</span></a></span><span class="hs-special">]</span><span class="hs-special">)</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-102"></span><span>      </span><span class="hs-keyword">where</span><span>
+</span><span id="line-103"></span><span>        </span><span class="hs-comment">-- | Process type parameters of a pattern,</span><span>
+</span><span id="line-104"></span><span>        </span><span class="hs-comment">-- introducing (existential) type variables for the intermediate scopes,</span><span>
+</span><span id="line-105"></span><span>        </span><span class="hs-comment">-- if necessary.</span><span>
+</span><span id="line-106"></span><span>        </span><span class="annot"><a href="#local-6989586621679180263"><span class="hs-identifier hs-type">toPatternConParams</span></a></span><span>
+</span><span id="line-107"></span><span>          </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span>                  </span><span class="hs-comment">-- ^ Index of the component in the constructor.</span><span>
+</span><span id="line-108"></span><span>          </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Name</span></span><span>                 </span><span class="hs-comment">-- ^ Current scope (after processing any previous bindings).</span><span>
+</span><span id="line-109"></span><span>          </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">BangType</span></span><span class="hs-special">]</span><span>           </span><span class="hs-comment">-- ^ Leftover pattern components.</span><span>
+</span><span id="line-110"></span><span>          </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Q</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Name</span></span><span class="hs-special">,</span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">BangType</span></span><span class="hs-special">]</span><span class="hs-special">)</span><span> </span><span class="hs-comment">-- ^ Resulting extended scope and a list of corresponding scope-safe components.</span><span>
+</span><span id="line-111"></span><span>        </span><span id="local-6989586621679180263"><span class="annot"><span class="annottext">toPatternConParams :: Int -&gt; Name -&gt; [BangType] -&gt; Q (Name, [BangType])
+</span><a href="#local-6989586621679180263"><span class="hs-identifier hs-var hs-var">toPatternConParams</span></a></span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-identifier">_</span></span><span> </span><span id="local-6989586621679180265"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180265"><span class="hs-identifier hs-var">p</span></a></span></span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Name, [BangType]) -&gt; Q (Name, [BangType])
+forall a. a -&gt; Q a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180265"><span class="hs-identifier hs-var">p</span></a></span><span class="hs-special">,</span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span class="hs-special">)</span><span>
+</span><span id="line-112"></span><span>        </span><span class="annot"><a href="#local-6989586621679180263"><span class="hs-identifier hs-var">toPatternConParams</span></a></span><span> </span><span id="local-6989586621679180266"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679180266"><span class="hs-identifier hs-var">i</span></a></span></span><span> </span><span id="local-6989586621679180267"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180267"><span class="hs-identifier hs-var">p</span></a></span></span><span> </span><span class="hs-special">(</span><span id="local-6989586621679180268"><span class="annot"><span class="annottext">param :: BangType
+</span><a href="#local-6989586621679180268"><span class="hs-identifier hs-var">param</span></a></span></span><span class="hs-glyph">@</span><span class="hs-special">(</span><span id="local-6989586621679180269"><span class="annot"><span class="annottext">Bang
+</span><a href="#local-6989586621679180269"><span class="hs-identifier hs-var">bang_</span></a></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679180270"><span class="annot"><span class="annottext">Kind
+</span><a href="#local-6989586621679180270"><span class="hs-identifier hs-var">type_</span></a></span></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="hs-glyph hs-type">:</span></span><span> </span><span id="local-6989586621679180271"><span class="annot"><span class="annottext">[BangType]
+</span><a href="#local-6989586621679180271"><span class="hs-identifier hs-var">conParams</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-113"></span><span>          </span><span class="hs-keyword">case</span><span> </span><span class="annot"><span class="annottext">Kind
+</span><a href="#local-6989586621679180270"><span class="hs-identifier hs-var">type_</span></a></span><span> </span><span class="hs-keyword">of</span><span>
+</span><span id="line-114"></span><span>            </span><span class="hs-comment">-- if the current component is a variable identifier</span><span>
+</span><span id="line-115"></span><span>            </span><span class="hs-comment">-- then treat it as a single name binder (see 'Foil.NameBinder')</span><span>
+</span><span id="line-116"></span><span>            </span><span class="annot"><a href="Control.Monad.Foil.TH.Util.html#PeelConT"><span class="hs-identifier hs-type">PeelConT</span></a></span><span> </span><span id="local-6989586621679180272"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180272"><span class="hs-identifier hs-var">tyName</span></a></span></span><span> </span><span id="local-6989586621679180273"><span class="annot"><span class="annottext">Cxt
+</span><a href="#local-6989586621679180273"><span class="hs-identifier hs-var">_tyParams</span></a></span></span><span> </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180272"><span class="hs-identifier hs-var">tyName</span></a></span><span> </span><span class="annot"><span class="annottext">Name -&gt; Name -&gt; Bool
+forall a. Eq a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">==</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180243"><span class="hs-identifier hs-var">nameT</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-117"></span><span>              </span><span id="local-6989586621679180274"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180274"><span class="hs-identifier hs-var">l</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">String -&gt; Q Name
+forall (m :: * -&gt; *). Quote m =&gt; String -&gt; m Name
+</span><span class="hs-identifier hs-var">newName</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;n&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">Int -&gt; String
+forall a. Show a =&gt; a -&gt; String
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679180266"><span class="hs-identifier hs-var">i</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-118"></span><span>              </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679180275"><span class="annot"><span class="annottext">type' :: Kind
+</span><a href="#local-6989586621679180275"><span class="hs-identifier hs-var hs-var">type'</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Kind -&gt; Kind -&gt; Kind
+</span><span class="hs-identifier hs-var">AppT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Kind -&gt; Kind -&gt; Kind
+</span><span class="hs-identifier hs-var">AppT</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Name -&gt; Kind
+</span><span class="hs-identifier hs-var">ConT</span></span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Foil.NameBinder</span><span class="hs-special">)</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Name -&gt; Kind
+</span><span class="hs-identifier hs-var">VarT</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180267"><span class="hs-identifier hs-var">p</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Name -&gt; Kind
+</span><span class="hs-identifier hs-var">VarT</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180274"><span class="hs-identifier hs-var">l</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-119"></span><span>              </span><span class="hs-special">(</span><span id="local-6989586621679180276"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180276"><span class="hs-identifier hs-var">l'</span></a></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679180277"><span class="annot"><span class="annottext">[BangType]
+</span><a href="#local-6989586621679180277"><span class="hs-identifier hs-var">conParams'</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Int -&gt; Name -&gt; [BangType] -&gt; Q (Name, [BangType])
+</span><a href="#local-6989586621679180263"><span class="hs-identifier hs-var">toPatternConParams</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679180266"><span class="hs-identifier hs-var">i</span></a></span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Int
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">+</span></span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">1</span></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180274"><span class="hs-identifier hs-var">l</span></a></span><span> </span><span class="annot"><span class="annottext">[BangType]
+</span><a href="#local-6989586621679180271"><span class="hs-identifier hs-var">conParams</span></a></span><span>
+</span><span id="line-120"></span><span>              </span><span class="annot"><span class="annottext">(Name, [BangType]) -&gt; Q (Name, [BangType])
+forall a. a -&gt; Q a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180276"><span class="hs-identifier hs-var">l'</span></a></span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Bang
+</span><a href="#local-6989586621679180269"><span class="hs-identifier hs-var">bang_</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Kind
+</span><a href="#local-6989586621679180275"><span class="hs-identifier hs-var">type'</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">BangType -&gt; [BangType] -&gt; [BangType]
+forall a. a -&gt; [a] -&gt; [a]
+</span><span class="hs-glyph hs-var">:</span></span><span> </span><span class="annot"><span class="annottext">[BangType]
+</span><a href="#local-6989586621679180277"><span class="hs-identifier hs-var">conParams'</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-121"></span><span>            </span><span class="hs-comment">-- if the current component is a raw pattern</span><span>
+</span><span id="line-122"></span><span>            </span><span class="hs-comment">-- then convert it into a scope-safe pattern</span><span>
+</span><span id="line-123"></span><span>            </span><span class="annot"><a href="Control.Monad.Foil.TH.Util.html#PeelConT"><span class="hs-identifier hs-type">PeelConT</span></a></span><span> </span><span id="local-6989586621679180279"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180279"><span class="hs-identifier hs-var">tyName</span></a></span></span><span> </span><span id="local-6989586621679180280"><span class="annot"><span class="annottext">Cxt
+</span><a href="#local-6989586621679180280"><span class="hs-identifier hs-var">tyParams</span></a></span></span><span> </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180279"><span class="hs-identifier hs-var">tyName</span></a></span><span> </span><span class="annot"><span class="annottext">Name -&gt; Name -&gt; Bool
+forall a. Eq a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">==</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180244"><span class="hs-identifier hs-var">patternT</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-124"></span><span>              </span><span id="local-6989586621679180281"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180281"><span class="hs-identifier hs-var">l</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">String -&gt; Q Name
+forall (m :: * -&gt; *). Quote m =&gt; String -&gt; m Name
+</span><span class="hs-identifier hs-var">newName</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;n&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">Int -&gt; String
+forall a. Show a =&gt; a -&gt; String
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679180266"><span class="hs-identifier hs-var">i</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-125"></span><span>              </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679180282"><span class="annot"><span class="annottext">type' :: Kind
+</span><a href="#local-6989586621679180282"><span class="hs-identifier hs-var hs-var">type'</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Name -&gt; Cxt -&gt; Kind
+</span><a href="Control.Monad.Foil.TH.Util.html#PeelConT"><span class="hs-identifier hs-var">PeelConT</span></a></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180256"><span class="hs-identifier hs-var">foilPatternT</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Cxt
+</span><a href="#local-6989586621679180280"><span class="hs-identifier hs-var">tyParams</span></a></span><span> </span><span class="annot"><span class="annottext">Cxt -&gt; Cxt -&gt; Cxt
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="hs-special">[</span><span class="annot"><span class="annottext">Name -&gt; Kind
+</span><span class="hs-identifier hs-var">VarT</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180267"><span class="hs-identifier hs-var">p</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Name -&gt; Kind
+</span><span class="hs-identifier hs-var">VarT</span></span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180281"><span class="hs-identifier hs-var">l</span></a></span><span class="hs-special">]</span><span class="hs-special">)</span><span>
+</span><span id="line-126"></span><span>              </span><span class="hs-special">(</span><span id="local-6989586621679180283"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180283"><span class="hs-identifier hs-var">l'</span></a></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679180284"><span class="annot"><span class="annottext">[BangType]
+</span><a href="#local-6989586621679180284"><span class="hs-identifier hs-var">conParams'</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Int -&gt; Name -&gt; [BangType] -&gt; Q (Name, [BangType])
+</span><a href="#local-6989586621679180263"><span class="hs-identifier hs-var">toPatternConParams</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679180266"><span class="hs-identifier hs-var">i</span></a></span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Int
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">+</span></span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">1</span></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180281"><span class="hs-identifier hs-var">l</span></a></span><span> </span><span class="annot"><span class="annottext">[BangType]
+</span><a href="#local-6989586621679180271"><span class="hs-identifier hs-var">conParams</span></a></span><span>
+</span><span id="line-127"></span><span>              </span><span class="annot"><span class="annottext">(Name, [BangType]) -&gt; Q (Name, [BangType])
+forall a. a -&gt; Q a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180283"><span class="hs-identifier hs-var">l'</span></a></span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Bang
+</span><a href="#local-6989586621679180269"><span class="hs-identifier hs-var">bang_</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Kind
+</span><a href="#local-6989586621679180282"><span class="hs-identifier hs-var">type'</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">BangType -&gt; [BangType] -&gt; [BangType]
+forall a. a -&gt; [a] -&gt; [a]
+</span><span class="hs-glyph hs-var">:</span></span><span> </span><span class="annot"><span class="annottext">[BangType]
+</span><a href="#local-6989586621679180284"><span class="hs-identifier hs-var">conParams'</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-128"></span><span>            </span><span class="hs-comment">-- otherwise, ignore the component as non-binding</span><span>
+</span><span id="line-129"></span><span>            </span><span class="annot"><span class="annottext">Kind
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-130"></span><span>              </span><span class="hs-special">(</span><span id="local-6989586621679180285"><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180285"><span class="hs-identifier hs-var">l</span></a></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679180286"><span class="annot"><span class="annottext">[BangType]
+</span><a href="#local-6989586621679180286"><span class="hs-identifier hs-var">conParams'</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Int -&gt; Name -&gt; [BangType] -&gt; Q (Name, [BangType])
+</span><a href="#local-6989586621679180263"><span class="hs-identifier hs-var">toPatternConParams</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679180266"><span class="hs-identifier hs-var">i</span></a></span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Int
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">+</span></span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">1</span></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180267"><span class="hs-identifier hs-var">p</span></a></span><span> </span><span class="annot"><span class="annottext">[BangType]
+</span><a href="#local-6989586621679180271"><span class="hs-identifier hs-var">conParams</span></a></span><span>
+</span><span id="line-131"></span><span>              </span><span class="annot"><span class="annottext">(Name, [BangType]) -&gt; Q (Name, [BangType])
+forall a. a -&gt; Q a
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; m a
+</span><span class="hs-identifier hs-var">return</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Name
+</span><a href="#local-6989586621679180285"><span class="hs-identifier hs-var">l</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">BangType
+</span><a href="#local-6989586621679180268"><span class="hs-identifier hs-var">param</span></a></span><span> </span><span class="annot"><span class="annottext">BangType -&gt; [BangType] -&gt; [BangType]
+forall a. a -&gt; [a] -&gt; [a]
+</span><span class="hs-glyph hs-var">:</span></span><span> </span><span class="annot"><span class="annottext">[BangType]
+</span><a href="#local-6989586621679180286"><span class="hs-identifier hs-var">conParams'</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-132"></span></pre></body></html>

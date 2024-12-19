@@ -1,0 +1,617 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-pragma">{-# OPTIONS_GHC -fno-warn-orphans #-}</span><span>
+</span><span id="line-2"></span><span class="hs-pragma">{-# LANGUAGE DataKinds          #-}</span><span>
+</span><span id="line-3"></span><span class="hs-pragma">{-# LANGUAGE DeriveGeneric      #-}</span><span>
+</span><span id="line-4"></span><span class="hs-pragma">{-# LANGUAGE DeriveTraversable  #-}</span><span>
+</span><span id="line-5"></span><span class="hs-pragma">{-# LANGUAGE FlexibleInstances  #-}</span><span>
+</span><span id="line-6"></span><span class="hs-pragma">{-# LANGUAGE GADTs              #-}</span><span>
+</span><span id="line-7"></span><span class="hs-pragma">{-# LANGUAGE KindSignatures     #-}</span><span>
+</span><span id="line-8"></span><span class="hs-pragma">{-# LANGUAGE LambdaCase         #-}</span><span>
+</span><span id="line-9"></span><span class="hs-pragma">{-# LANGUAGE PatternSynonyms    #-}</span><span>
+</span><span id="line-10"></span><span class="hs-pragma">{-# LANGUAGE RankNTypes         #-}</span><span>
+</span><span id="line-11"></span><span class="hs-pragma">{-# LANGUAGE StandaloneDeriving #-}</span><span>
+</span><span id="line-12"></span><span class="hs-pragma">{-# LANGUAGE TemplateHaskell    #-}</span><span>
+</span><span id="line-13"></span><span class="hs-pragma">{-# LANGUAGE TypeFamilies       #-}</span><span>
+</span><span id="line-14"></span><span class="hs-comment">-- | Free foil implementation of the \(\lambda\Pi\)-calculus (with pairs).</span><span>
+</span><span id="line-15"></span><span class="hs-comment">--</span><span>
+</span><span id="line-16"></span><span class="hs-comment">-- Free foil provides __general__ definitions or implementations for the following:</span><span>
+</span><span id="line-17"></span><span class="hs-comment">--</span><span>
+</span><span id="line-18"></span><span class="hs-comment">-- 1. Freely generated (from a simple signature) scope-safe AST.</span><span>
+</span><span id="line-19"></span><span class="hs-comment">-- 2. Correct capture-avoiding substitution (see 'substitute').</span><span>
+</span><span id="line-20"></span><span class="hs-comment">-- 3. Correct \(\alpha\)-equivalence checks (see 'alphaEquiv' and 'alphaEquivRefreshed') as well as \(\alpha\)-normalization (see 'refreshAST').</span><span>
+</span><span id="line-21"></span><span class="hs-comment">-- 4. Conversion helpers (see 'convertToAST' and 'convertFromAST').</span><span>
+</span><span id="line-22"></span><span class="hs-comment">--</span><span>
+</span><span id="line-23"></span><span class="hs-comment">-- The following is provided via __generic__ representation via [kind-generics](https://hackage.haskell.org/package/kind-generics) (see &quot;Generics.Kind&quot;):</span><span>
+</span><span id="line-24"></span><span class="hs-comment">-- 1. 'ZipMatch' instances for signatures (enabling general \(\alpha\)-equivalence).</span><span>
+</span><span id="line-25"></span><span class="hs-comment">-- 2. 'Sinkable' instances for terms.</span><span>
+</span><span id="line-26"></span><span class="hs-comment">-- 3. 'CoSinkable' instances for patterns.</span><span>
+</span><span id="line-27"></span><span class="hs-comment">--</span><span>
+</span><span id="line-28"></span><span class="hs-comment">-- The following is __generated__ using Template Haskell:</span><span>
+</span><span id="line-29"></span><span class="hs-comment">--</span><span>
+</span><span id="line-30"></span><span class="hs-comment">-- 1. Signature bifunctor for terms.</span><span>
+</span><span id="line-31"></span><span class="hs-comment">-- 2. Convenient pattern synonyms.</span><span>
+</span><span id="line-32"></span><span class="hs-comment">-- 4. Conversion between scope-safe and raw term representation.</span><span>
+</span><span id="line-33"></span><span class="hs-comment">--</span><span>
+</span><span id="line-34"></span><span class="hs-comment">-- The following is implemented __manually__ in this module:</span><span>
+</span><span id="line-35"></span><span class="hs-comment">--</span><span>
+</span><span id="line-36"></span><span class="hs-comment">-- 1. Computation of weak head normal form (WHNF), see 'whnf'.</span><span>
+</span><span id="line-37"></span><span class="hs-comment">-- 2. Entry point, gluing everything together. See 'defaultMain'.</span><span>
+</span><span id="line-38"></span><span class="hs-comment">--</span><span>
+</span><span id="line-39"></span><span class="hs-comment">-- __Note:__ free foil does not (easily) support patterns at the moment,</span><span>
+</span><span id="line-40"></span><span class="hs-comment">-- so only wildcard patterns and variable patterns are handled in this implementation.</span><span>
+</span><span id="line-41"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Language.LambdaPi.Impl.FreeFoilTH</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-42"></span><span>
+</span><span id="line-43"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad.Foil</span></span><span>              </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Foil</span></span><span>
+</span><span id="line-44"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Monad.Foil.TH</span></span><span>
+</span><span id="line-45"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Monad.Free.Foil</span></span><span>
+</span><span id="line-46"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Monad.Free.Foil.TH</span></span><span>
+</span><span id="line-47"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.Bifunctor.TH</span></span><span>
+</span><span id="line-48"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.Map</span></span><span>                        </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Map</span></span><span class="hs-special">)</span><span>
+</span><span id="line-49"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.Map</span></span><span>                        </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Map</span></span><span>
+</span><span id="line-50"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.String</span></span><span>                     </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">IsString</span></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-51"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.ZipMatchK</span></span><span>
+</span><span id="line-52"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Generics.Kind.TH</span></span><span>                </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">deriveGenericK</span></span><span class="hs-special">)</span><span>
+</span><span id="line-53"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">GHC.Generics</span></span><span>                    </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">GHC</span></span><span>
+</span><span id="line-54"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><a href="Language.LambdaPi.Syntax.Abs.html"><span class="hs-identifier">Language.LambdaPi.Syntax.Abs</span></a></span><span>    </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Raw</span></span><span>
+</span><span id="line-55"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><a href="Language.LambdaPi.Syntax.Layout.html"><span class="hs-identifier">Language.LambdaPi.Syntax.Layout</span></a></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Raw</span></span><span>
+</span><span id="line-56"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><a href="Language.LambdaPi.Syntax.Lex.html"><span class="hs-identifier">Language.LambdaPi.Syntax.Lex</span></a></span><span>    </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Raw</span></span><span>
+</span><span id="line-57"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><a href="Language.LambdaPi.Syntax.Par.html"><span class="hs-identifier">Language.LambdaPi.Syntax.Par</span></a></span><span>    </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Raw</span></span><span>
+</span><span id="line-58"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><a href="Language.LambdaPi.Syntax.Print.html"><span class="hs-identifier">Language.LambdaPi.Syntax.Print</span></a></span><span>  </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Raw</span></span><span>
+</span><span id="line-59"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">System.Exit</span></span><span>                     </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">exitFailure</span></span><span class="hs-special">)</span><span>
+</span><span id="line-60"></span><span>
+</span><span id="line-61"></span><span>
+</span><span id="line-62"></span><span class="hs-comment">-- $setup</span><span>
+</span><span id="line-63"></span><span class="hs-comment">-- &gt;&gt;&gt; :set -XOverloadedStrings</span><span>
+</span><span id="line-64"></span><span class="hs-comment">-- &gt;&gt;&gt; :set -XDataKinds</span><span>
+</span><span id="line-65"></span><span class="hs-comment">-- &gt;&gt;&gt; import qualified Control.Monad.Foil as Foil</span><span>
+</span><span id="line-66"></span><span class="hs-comment">-- &gt;&gt;&gt; import Control.Monad.Free.Foil</span><span>
+</span><span id="line-67"></span><span class="hs-comment">-- &gt;&gt;&gt; import Data.String (fromString)</span><span>
+</span><span id="line-68"></span><span>
+</span><span id="line-69"></span><span class="annot"><span class="hs-comment">-- * Generated code</span></span><span>
+</span><span id="line-70"></span><span>
+</span><span id="line-71"></span><span class="annot"><span class="hs-comment">-- ** Signature</span></span><span>
+</span><span id="line-72"></span><span id="Term%27Sig"><span id="local-6989586621679260697"><span id="local-6989586621679260702"><span id="local-6989586621679260703"><span id="local-6989586621679261287"><span id="local-6989586621679261289"><span id="local-6989586621679261291"><span id="local-6989586621679261297"><span id="local-6989586621679261305"><span id="local-6989586621679261310"><span id="local-6989586621679261312"><span id="local-6989586621679261315"><span id="local-6989586621679261318"><span id="local-6989586621679261321"><span id="local-6989586621679261324"><span id="local-6989586621679261327"><span id="local-6989586621679261330"><span id="local-6989586621679261332"><span id="local-6989586621679261335"><span id="local-6989586621679261340"><span id="local-6989586621679261345"><span id="local-6989586621679261350"><span id="local-6989586621679261355"><span id="local-6989586621679261365"><span id="local-6989586621679261377"><span id="local-6989586621679261383"><span id="local-6989586621679261388"><span id="PiSig"><span id="LamSig"><span id="AppSig"><span id="ProductSig"><span id="PairSig"><span id="FirstSig"><span id="SecondSig"><span id="UniverseSig"><span class="hs-identifier">mkSignature</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.Term'</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.VarIdent</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.ScopedTerm'</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.Pattern'</span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span><span>
+</span><span id="line-73"></span><span id="local-6989586621679260697"><span id="local-6989586621679261407"><span id="local-6989586621679261409"><span id="local-6989586621679261413"><span class="hs-identifier">deriveBifunctor</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Term'Sig</span></span></span></span></span><span>
+</span><span id="line-74"></span><span id="local-6989586621679260697"><span id="local-6989586621679261441"><span id="local-6989586621679261447"><span id="local-6989586621679261455"><span id="local-6989586621679261457"><span class="hs-identifier">deriveBifoldable</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Term'Sig</span></span></span></span></span></span><span>
+</span><span id="line-75"></span><span id="local-6989586621679260697"><span id="local-6989586621679261514"><span class="hs-identifier">deriveBitraversable</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Term'Sig</span></span></span><span>
+</span><span id="line-76"></span><span>
+</span><span id="line-77"></span><span class="annot"><span class="hs-comment">-- ** Pattern synonyms</span></span><span>
+</span><span id="line-78"></span><span id="local-6989586621679260697"><span id="local-6989586621679260763"><span id="local-6989586621679260764"><span id="local-6989586621679260767"><span id="local-6989586621679260768"><span id="local-6989586621679260771"><span id="local-6989586621679260772"><span id="local-6989586621679260775"><span id="local-6989586621679260776"><span id="local-6989586621679260777"><span id="local-6989586621679260780"><span id="local-6989586621679260781"><span id="local-6989586621679260782"><span id="local-6989586621679260803"><span id="local-6989586621679260804"><span id="local-6989586621679260805"><span id="local-6989586621679260806"><span id="local-6989586621679260807"><span id="local-6989586621679260808"><span id="local-6989586621679261563"><span id="local-6989586621679261564"><span id="local-6989586621679261565"><span id="local-6989586621679261566"><span id="local-6989586621679261567"><span id="local-6989586621679261568"><span id="local-6989586621679261569"><span id="local-6989586621679261570"><span id="local-6989586621679261571"><span id="local-6989586621679261572"><span id="local-6989586621679261573"><span id="local-6989586621679261574"><span id="local-6989586621679261575"><span id="local-6989586621679261576"><span id="local-6989586621679261577"><span id="local-6989586621679261578"><span id="local-6989586621679261579"><span id="local-6989586621679261580"><span id="local-6989586621679261581"><span id="local-6989586621679261582"><span id="local-6989586621679261583"><span id="Universe"><span id="Second"><span id="First"><span id="Pair"><span id="Product"><span id="App"><span id="Lam"><span id="Pi"><span id="%24mUniverse"><span id="%24bUniverse"><span id="%24mSecond"><span id="%24bSecond"><span id="%24mFirst"><span id="%24bFirst"><span id="%24mPair"><span id="%24bPair"><span id="%24mProduct"><span id="%24bProduct"><span id="%24mApp"><span id="%24bApp"><span id="%24mLam"><span id="%24bLam"><span id="%24mPi"><span id="%24bPi"><span class="hs-identifier">mkPatternSynonyms</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Term'Sig</span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span><span>
+</span><span id="line-79"></span><span>
+</span><span id="line-80"></span><span class="annot"><span class="hs-comment">-- ** Conversion helpers</span></span><span>
+</span><span id="line-81"></span><span>
+</span><span id="line-82"></span><span id="local-6989586621679260697"><span id="local-6989586621679260829"><span id="convertToTerm%27Sig"><span id="getPattern%27Binder"><span id="getTerm%27FromScopedTerm%27"><span class="hs-identifier">mkConvertToFreeFoil</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.Term'</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.VarIdent</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.ScopedTerm'</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.Pattern'</span></span></span></span></span></span><span>
+</span><span id="line-83"></span><span id="local-6989586621679260697"><span id="convertFromTerm%27Sig"><span class="hs-identifier">mkConvertFromFreeFoil</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.Term'</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.VarIdent</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.ScopedTerm'</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.Pattern'</span></span></span><span>
+</span><span id="line-84"></span><span>
+</span><span id="line-85"></span><span class="annot"><span class="hs-comment">-- ** Scope-safe patterns</span></span><span>
+</span><span id="line-86"></span><span>
+</span><span id="line-87"></span><span id="FoilPattern%27"><span id="local-6989586621679260829"><span id="local-6989586621679260858"><span id="local-6989586621679260859"><span id="local-6989586621679260901"><span id="local-6989586621679260903"><span id="local-6989586621679261676"><span id="FoilPatternWildcard"><span id="FoilPatternVar"><span id="FoilPatternPair"><span class="hs-identifier">mkFoilPattern</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.VarIdent</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.Pattern'</span></span></span></span></span></span></span></span></span></span></span><span>
+</span><span id="line-88"></span><span id="local-6989586621679260829"><span id="RepK"><span id="local-6989586621679260858"><span id="local-6989586621679260859"><span id="local-6989586621679261681"><span id="local-6989586621679261683"><span id="local-6989586621679261685"><span id="local-6989586621679261687"><span id="local-6989586621679261689"><span id="local-6989586621679261691"><span id="local-6989586621679261693"><span id="local-6989586621679261695"><span class="hs-identifier">deriveGenericK</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">FoilPattern'</span></span></span></span></span></span></span></span></span></span></span></span></span><span>
+</span><span id="line-89"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679260967"><span id="local-6989586621679261794"><span class="annot"><span class="hs-identifier hs-type">Foil.SinkableK</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#FoilPattern%27"><span class="hs-identifier hs-type">FoilPattern'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679260967"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span></span><span>
+</span><span id="line-90"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679261009"><span id="local-6989586621679261839"><span id="local-6989586621679261843"><span id="local-6989586621679261846"><span id="local-6989586621679261852"><span class="annot"><span class="hs-identifier hs-type">Foil.HasNameBinders</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#FoilPattern%27"><span class="hs-identifier hs-type">FoilPattern'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261009"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span></span></span></span></span><span>
+</span><span id="line-91"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679261040"><span id="local-6989586621679261911"><span id="local-6989586621679261918"><span class="annot"><span class="hs-identifier hs-type">Foil.CoSinkable</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#FoilPattern%27"><span class="hs-identifier hs-type">FoilPattern'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261040"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span></span></span><span>
+</span><span id="line-92"></span><span id="local-6989586621679260829"><span id="local-6989586621679261041"><span id="local-6989586621679261043"><span id="local-6989586621679261044"><span id="toFoilPattern%27"><span class="hs-identifier">mkToFoilPattern</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.VarIdent</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.Pattern'</span></span></span></span></span></span><span>
+</span><span id="line-93"></span><span id="local-6989586621679260829"><span id="local-6989586621679261077"><span id="local-6989586621679261078"><span id="fromFoilPattern%27"><span class="hs-identifier">mkFromFoilPattern</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.VarIdent</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Raw.Pattern'</span></span></span></span></span><span>
+</span><span id="line-94"></span><span>
+</span><span id="line-95"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679261092"><span id="local-6989586621679262052"><span class="annot"><span class="hs-identifier hs-type">Foil.UnifiablePattern</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#FoilPattern%27"><span class="hs-identifier hs-type">FoilPattern'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261092"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span></span><span>
+</span><span id="line-96"></span><span class="annot"><span class="hs-comment">-- | Ignoring location information when unifying patterns.</span></span><span>
+</span><span id="line-97"></span><span class="hs-keyword">instance</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.UnifiableInPattern</span></span><span> </span><span class="annot"><a href="Language.LambdaPi.Syntax.Abs.html#BNFC%27Position"><span class="hs-identifier hs-type">Raw.BNFC'Position</span></a></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-98"></span><span>  </span><span id="local-6989586621679262062"><span class="annot"><span class="annottext">unifyInPattern :: BNFC'Position -&gt; BNFC'Position -&gt; Bool
+</span><a href="#local-6989586621679262062"><span class="hs-identifier hs-var hs-var hs-var hs-var">unifyInPattern</span></a></span></span><span> </span><span class="annot"><span class="annottext">BNFC'Position
+</span><span class="hs-identifier">_</span></span><span> </span><span class="annot"><span class="annottext">BNFC'Position
+</span><span class="hs-identifier">_</span></span><span>  </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">True</span></span><span>
+</span><span id="line-99"></span><span>
+</span><span id="line-100"></span><span class="annot"><span class="hs-comment">-- | Deriving 'GHC.Generic' and 'GenericK' instances.</span></span><span>
+</span><span id="line-101"></span><span id="local-6989586621679261102"><span id="local-6989586621679261103"><span id="local-6989586621679261104"><span id="local-6989586621679262065"><span id="local-6989586621679262067"><span class="hs-keyword">deriving</span><span> </span><span class="hs-keyword">instance</span><span> </span><span class="annot"><span class="hs-identifier hs-type">GHC.Generic</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#Term%27Sig"><span class="hs-identifier hs-type">Term'Sig</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261102"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261103"><span class="hs-identifier hs-type">scope</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261104"><span class="hs-identifier hs-type">term</span></a></span><span class="hs-special">)</span></span></span></span></span></span><span>
+</span><span id="line-102"></span><span id="local-6989586621679260697"><span id="local-6989586621679260702"><span id="local-6989586621679260703"><span id="RepK"><span id="local-6989586621679262071"><span id="local-6989586621679262073"><span id="local-6989586621679262075"><span id="local-6989586621679262077"><span id="local-6989586621679262079"><span id="local-6989586621679262081"><span id="local-6989586621679262083"><span id="local-6989586621679262085"><span class="hs-identifier">deriveGenericK</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Term'Sig</span></span></span></span></span></span></span></span></span></span></span></span></span><span>
+</span><span id="line-103"></span><span>
+</span><span id="line-104"></span><span class="hs-comment">-- -- | Match 'Raw.Ident' via 'Eq'.</span><span>
+</span><span id="line-105"></span><span class="hs-comment">-- instance ZipMatchK Raw.Ident where zipMatchWithK = zipMatchViaEq</span><span>
+</span><span id="line-106"></span><span>
+</span><span id="line-107"></span><span class="annot"><span class="hs-comment">-- | Ignore 'Raw.BNFC'Position' when matching terms.</span></span><span>
+</span><span id="line-108"></span><span class="hs-keyword">instance</span><span> </span><span class="annot"><span class="hs-identifier hs-type">ZipMatchK</span></span><span> </span><span class="annot"><a href="Language.LambdaPi.Syntax.Abs.html#BNFC%27Position"><span class="hs-identifier hs-type">Raw.BNFC'Position</span></a></span><span> </span><span class="hs-keyword">where</span><span> </span><span id="local-6989586621679262254"><span class="annot"><span class="annottext">zipMatchWithK :: forall (as :: LoT (*)) (bs :: LoT (*)) (cs :: LoT (*)).
+Mappings as bs cs
+-&gt; (BNFC'Position :@@: as)
+-&gt; (BNFC'Position :@@: bs)
+-&gt; Maybe (BNFC'Position :@@: cs)
+</span><a href="#local-6989586621679262254"><span class="hs-identifier hs-var hs-var hs-var hs-var">zipMatchWithK</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Mappings as bs cs
+-&gt; BNFC'Position -&gt; BNFC'Position -&gt; Maybe BNFC'Position
+Mappings as bs cs
+-&gt; (BNFC'Position :@@: as)
+-&gt; (BNFC'Position :@@: bs)
+-&gt; Maybe (BNFC'Position :@@: cs)
+forall {k} (as :: LoT k) (bs :: LoT k) (cs :: LoT k) a.
+Mappings as bs cs -&gt; a -&gt; a -&gt; Maybe a
+</span><span class="hs-identifier hs-var">zipMatchViaChooseLeft</span></span><span>
+</span><span id="line-109"></span><span>
+</span><span id="line-110"></span><span class="annot"><span class="hs-comment">-- | Generic 'ZipMatchK' instance.</span></span><span>
+</span><span id="line-111"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679261162"><span id="local-6989586621679262259"><span class="annot"><span class="hs-identifier hs-type">ZipMatchK</span></span><span> </span><span class="annot"><a href="#local-6989586621679261162"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">ZipMatchK</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#Term%27Sig"><span class="hs-identifier hs-type">Term'Sig</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261162"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span></span><span>
+</span><span id="line-112"></span><span>
+</span><span id="line-113"></span><span class="annot"><span class="hs-comment">-- * User-defined code</span></span><span>
+</span><span id="line-114"></span><span>
+</span><span id="line-115"></span><span class="annot"><span class="hs-comment">-- | Generic annotated scope-safe \(\lambda\Pi\)-terms with patterns.</span></span><span>
+</span><span id="line-116"></span><span class="hs-keyword">type</span><span> </span><span id="Term%27"><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#Term%27"><span class="hs-identifier hs-var">Term'</span></a></span></span><span> </span><span id="local-6989586621679262317"><span class="annot"><a href="#local-6989586621679262317"><span class="hs-identifier hs-type">a</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-identifier hs-type">AST</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#FoilPattern%27"><span class="hs-identifier hs-type">FoilPattern'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679262317"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#Term%27Sig"><span class="hs-identifier hs-type">Term'Sig</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679262317"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-117"></span><span>
+</span><span id="line-118"></span><span class="annot"><span class="hs-comment">-- | Scode-safe \(\lambda\Pi\)-terms annotated with source code position.</span></span><span>
+</span><span id="line-119"></span><span class="hs-keyword">type</span><span> </span><span id="Term"><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#Term"><span class="hs-identifier hs-var">Term</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#Term%27"><span class="hs-identifier hs-type">Term'</span></a></span><span> </span><span class="annot"><a href="Language.LambdaPi.Syntax.Abs.html#BNFC%27Position"><span class="hs-identifier hs-type">Raw.BNFC'Position</span></a></span><span>
+</span><span id="line-120"></span><span>
+</span><span id="line-121"></span><span class="annot"><span class="hs-comment">-- | Scope-safe patterns annotated with source code position.</span></span><span>
+</span><span id="line-122"></span><span class="hs-keyword">type</span><span> </span><span id="FoilPattern"><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#FoilPattern"><span class="hs-identifier hs-var">FoilPattern</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#FoilPattern%27"><span class="hs-identifier hs-type">FoilPattern'</span></a></span><span> </span><span class="annot"><a href="Language.LambdaPi.Syntax.Abs.html#BNFC%27Position"><span class="hs-identifier hs-type">Raw.BNFC'Position</span></a></span><span>
+</span><span id="line-123"></span><span>
+</span><span id="line-124"></span><span class="annot"><span class="hs-comment">-- ** Conversion helpers</span></span><span>
+</span><span id="line-125"></span><span>
+</span><span id="line-126"></span><span class="hs-comment">-- | Convert 'Raw.Term'' into a scope-safe term.</span><span>
+</span><span id="line-127"></span><span class="hs-comment">-- This is a special case of 'convertToAST'.</span><span>
+</span><span id="line-128"></span><span id="local-6989586621679261163"><span id="local-6989586621679261164"><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#toTerm%27"><span class="hs-identifier hs-type">toTerm'</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.Distinct</span></span><span> </span><span class="annot"><a href="#local-6989586621679261163"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.Scope</span></span><span> </span><span class="annot"><a href="#local-6989586621679261163"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Map</span></span><span> </span><span class="annot"><a href="Language.LambdaPi.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Foil.Name</span></span><span> </span><span class="annot"><a href="#local-6989586621679261163"><span class="hs-identifier hs-type">n</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.LambdaPi.Syntax.Abs.html#Term%27"><span class="hs-identifier hs-type">Raw.Term'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261164"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#Term%27"><span class="hs-identifier hs-type">Term'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261164"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261163"><span class="hs-identifier hs-type">n</span></a></span></span></span><span>
+</span><span id="line-129"></span><span id="toTerm%27"><span class="annot"><span class="annottext">toTerm' :: forall (n :: S) a.
+Distinct n =&gt;
+Scope n -&gt; Map VarIdent (Name n) -&gt; Term' a -&gt; Term' a n
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#toTerm%27"><span class="hs-identifier hs-var hs-var">toTerm'</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Term' a
+ -&gt; Either
+      VarIdent (Term'Sig a (Pattern' a, ScopedTerm' a) (Term' a)))
+-&gt; (forall (x :: S) z.
+    Distinct x =&gt;
+    Scope x
+    -&gt; Map VarIdent (Name x)
+    -&gt; Pattern' a
+    -&gt; (forall (y :: S).
+        DExt x y =&gt;
+        FoilPattern' a x y -&gt; Map VarIdent (Name y) -&gt; z)
+    -&gt; z)
+-&gt; (ScopedTerm' a -&gt; Term' a)
+-&gt; Scope n
+-&gt; Map VarIdent (Name n)
+-&gt; Term' a
+-&gt; AST (FoilPattern' a) (Term'Sig a) n
+forall (n :: S) (sig :: * -&gt; * -&gt; *) rawIdent
+       (binder :: S -&gt; S -&gt; *) rawTerm rawPattern rawScopedTerm.
+(Distinct n, Bifunctor sig, Ord rawIdent, CoSinkable binder) =&gt;
+(rawTerm
+ -&gt; Either rawIdent (sig (rawPattern, rawScopedTerm) rawTerm))
+-&gt; (forall (x :: S) z.
+    Distinct x =&gt;
+    Scope x
+    -&gt; Map rawIdent (Name x)
+    -&gt; rawPattern
+    -&gt; (forall (y :: S).
+        DExt x y =&gt;
+        binder x y -&gt; Map rawIdent (Name y) -&gt; z)
+    -&gt; z)
+-&gt; (rawScopedTerm -&gt; rawTerm)
+-&gt; Scope n
+-&gt; Map rawIdent (Name n)
+-&gt; rawTerm
+-&gt; AST binder sig n
+</span><span class="hs-identifier hs-var">convertToAST</span></span><span> </span><span class="annot"><span class="annottext">Term' a
+-&gt; Either
+     VarIdent (Term'Sig a (Pattern' a, ScopedTerm' a) (Term' a))
+forall a.
+Term' a
+-&gt; Either
+     VarIdent (Term'Sig a (Pattern' a, ScopedTerm' a) (Term' a))
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#convertToTerm%27Sig"><span class="hs-identifier hs-var">convertToTerm'Sig</span></a></span><span> </span><span class="annot"><span class="annottext">Scope x
+-&gt; Map VarIdent (Name x)
+-&gt; Pattern' a
+-&gt; (forall (l :: S).
+    DExt x l =&gt;
+    FoilPattern' a x l -&gt; Map VarIdent (Name l) -&gt; z)
+-&gt; z
+forall (x :: S) z.
+Distinct x =&gt;
+Scope x
+-&gt; Map VarIdent (Name x)
+-&gt; Pattern' a
+-&gt; (forall (y :: S).
+    DExt x y =&gt;
+    FoilPattern' a x y -&gt; Map VarIdent (Name y) -&gt; z)
+-&gt; z
+forall (n :: S) a r.
+Distinct n =&gt;
+Scope n
+-&gt; Map VarIdent (Name n)
+-&gt; Pattern' a
+-&gt; (forall (l :: S).
+    DExt n l =&gt;
+    FoilPattern' a n l -&gt; Map VarIdent (Name l) -&gt; r)
+-&gt; r
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#toFoilPattern%27"><span class="hs-identifier hs-var">toFoilPattern'</span></a></span><span> </span><span class="annot"><span class="annottext">ScopedTerm' a -&gt; Term' a
+forall a. ScopedTerm' a -&gt; Term' a
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#getTerm%27FromScopedTerm%27"><span class="hs-identifier hs-var">getTerm'FromScopedTerm'</span></a></span><span>
+</span><span id="line-130"></span><span>
+</span><span id="line-131"></span><span class="hs-comment">-- | Convert 'Raw.Term'' into a closed scope-safe term.</span><span>
+</span><span id="line-132"></span><span class="hs-comment">-- This is a special case of 'toTerm''.</span><span>
+</span><span id="line-133"></span><span id="local-6989586621679261181"><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#toTerm%27Closed"><span class="hs-identifier hs-type">toTerm'Closed</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.LambdaPi.Syntax.Abs.html#Term%27"><span class="hs-identifier hs-type">Raw.Term'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261181"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#Term%27"><span class="hs-identifier hs-type">Term'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261181"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.VoidS</span></span></span><span>
+</span><span id="line-134"></span><span id="toTerm%27Closed"><span class="annot"><span class="annottext">toTerm'Closed :: forall a. Term' a -&gt; Term' a 'VoidS
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#toTerm%27Closed"><span class="hs-identifier hs-var hs-var">toTerm'Closed</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Scope 'VoidS
+-&gt; Map VarIdent (Name 'VoidS) -&gt; Term' a -&gt; Term' a 'VoidS
+forall (n :: S) a.
+Distinct n =&gt;
+Scope n -&gt; Map VarIdent (Name n) -&gt; Term' a -&gt; Term' a n
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#toTerm%27"><span class="hs-identifier hs-var">toTerm'</span></a></span><span> </span><span class="annot"><span class="annottext">Scope 'VoidS
+</span><span class="hs-identifier hs-var">Foil.emptyScope</span></span><span> </span><span class="annot"><span class="annottext">Map VarIdent (Name 'VoidS)
+forall k a. Map k a
+</span><span class="hs-identifier hs-var">Map.empty</span></span><span>
+</span><span id="line-135"></span><span>
+</span><span id="line-136"></span><span class="hs-comment">-- | Convert a scope-safe representation back into 'Raw.Term''.</span><span>
+</span><span id="line-137"></span><span class="hs-comment">-- This is a special case of 'convertFromAST'.</span><span>
+</span><span id="line-138"></span><span class="hs-comment">--</span><span>
+</span><span id="line-139"></span><span class="hs-comment">-- 'Raw.VarIdent' names are generated based on the raw identifiers in the underlying foil representation.</span><span>
+</span><span id="line-140"></span><span class="hs-comment">--</span><span>
+</span><span id="line-141"></span><span class="hs-comment">-- This function does not recover location information for variables, patterns, or scoped terms.</span><span>
+</span><span id="line-142"></span><span id="local-6989586621679261185"><span id="local-6989586621679261186"><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#fromTerm%27"><span class="hs-identifier hs-type">fromTerm'</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#Term%27"><span class="hs-identifier hs-type">Term'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261185"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261186"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.LambdaPi.Syntax.Abs.html#Term%27"><span class="hs-identifier hs-type">Raw.Term'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261185"><span class="hs-identifier hs-type">a</span></a></span></span></span><span>
+</span><span id="line-143"></span><span id="fromTerm%27"><span class="annot"><span class="annottext">fromTerm' :: forall a (n :: S). Term' a n -&gt; Term' a
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#fromTerm%27"><span class="hs-identifier hs-var hs-var">fromTerm'</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Term'Sig a (Pattern' a, ScopedTerm' a) (Term' a) -&gt; Term' a)
+-&gt; (VarIdent -&gt; Term' a)
+-&gt; (forall (x :: S) (y :: S). FoilPattern' a x y -&gt; Pattern' a)
+-&gt; (Term' a -&gt; ScopedTerm' a)
+-&gt; (Int -&gt; VarIdent)
+-&gt; AST (FoilPattern' a) (Term'Sig a) n
+-&gt; Term' a
+forall (sig :: * -&gt; * -&gt; *) rawPattern rawScopedTerm rawTerm
+       rawIdent (binder :: S -&gt; S -&gt; *) (n :: S).
+Bifunctor sig =&gt;
+(sig (rawPattern, rawScopedTerm) rawTerm -&gt; rawTerm)
+-&gt; (rawIdent -&gt; rawTerm)
+-&gt; (forall (x :: S) (y :: S). binder x y -&gt; rawPattern)
+-&gt; (rawTerm -&gt; rawScopedTerm)
+-&gt; (Int -&gt; rawIdent)
+-&gt; AST binder sig n
+-&gt; rawTerm
+</span><span class="hs-identifier hs-var">convertFromAST</span></span><span>
+</span><span id="line-144"></span><span>  </span><span class="annot"><span class="annottext">Term'Sig a (Pattern' a, ScopedTerm' a) (Term' a) -&gt; Term' a
+forall a.
+Term'Sig a (Pattern' a, ScopedTerm' a) (Term' a) -&gt; Term' a
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#convertFromTerm%27Sig"><span class="hs-identifier hs-var">convertFromTerm'Sig</span></a></span><span>
+</span><span id="line-145"></span><span>  </span><span class="hs-special">(</span><span class="annot"><span class="annottext">a -&gt; VarIdent -&gt; Term' a
+forall a. a -&gt; VarIdent -&gt; Term' a
+</span><a href="Language.LambdaPi.Syntax.Abs.html#Var"><span class="hs-identifier hs-var">Raw.Var</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String -&gt; a
+forall a. HasCallStack =&gt; String -&gt; a
+</span><span class="hs-identifier hs-var">error</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;location missing&quot;</span></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-146"></span><span>  </span><span class="hs-special">(</span><span class="annot"><span class="annottext">(Int -&gt; VarIdent) -&gt; FoilPattern' a x y -&gt; Pattern' a
+forall a (n :: S) (l :: S).
+(Int -&gt; VarIdent) -&gt; FoilPattern' a n l -&gt; Pattern' a
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#fromFoilPattern%27"><span class="hs-identifier hs-var">fromFoilPattern'</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; VarIdent
+forall {a}. Show a =&gt; a -&gt; VarIdent
+</span><a href="#local-6989586621679262342"><span class="hs-identifier hs-var">mkVarIdent</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-147"></span><span>  </span><span class="hs-special">(</span><span class="annot"><span class="annottext">a -&gt; Term' a -&gt; ScopedTerm' a
+forall a. a -&gt; Term' a -&gt; ScopedTerm' a
+</span><a href="Language.LambdaPi.Syntax.Abs.html#AScopedTerm"><span class="hs-identifier hs-var">Raw.AScopedTerm</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String -&gt; a
+forall a. HasCallStack =&gt; String -&gt; a
+</span><span class="hs-identifier hs-var">error</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;location missing&quot;</span></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-148"></span><span>  </span><span class="annot"><span class="annottext">Int -&gt; VarIdent
+forall {a}. Show a =&gt; a -&gt; VarIdent
+</span><a href="#local-6989586621679262342"><span class="hs-identifier hs-var">mkVarIdent</span></a></span><span>
+</span><span id="line-149"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-150"></span><span>    </span><span id="local-6989586621679262342"><span class="annot"><span class="annottext">mkVarIdent :: a -&gt; VarIdent
+</span><a href="#local-6989586621679262342"><span class="hs-identifier hs-var hs-var">mkVarIdent</span></a></span></span><span> </span><span id="local-6989586621679262345"><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679262345"><span class="hs-identifier hs-var">n</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">String -&gt; VarIdent
+</span><a href="Language.LambdaPi.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-var">Raw.VarIdent</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;x&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">a -&gt; String
+forall a. Show a =&gt; a -&gt; String
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679262345"><span class="hs-identifier hs-var">n</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-151"></span><span>
+</span><span id="line-152"></span><span class="hs-comment">-- | Parse scope-safe terms via raw representation.</span><span>
+</span><span id="line-153"></span><span class="hs-comment">--</span><span>
+</span><span id="line-154"></span><span class="hs-comment">-- &gt;&gt;&gt; fromString &quot;&#955;x.&#955;y.&#955;x.x&quot; :: Term Foil.VoidS</span><span>
+</span><span id="line-155"></span><span class="hs-comment">-- &#955; x0 . &#955; x1 . &#955; x2 . x2</span><span>
+</span><span id="line-156"></span><span class="hs-keyword">instance</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IsString</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">AST</span></span><span> </span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#FoilPattern"><span class="hs-identifier hs-type">FoilPattern</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#Term%27Sig"><span class="hs-identifier hs-type">Term'Sig</span></a></span><span> </span><span class="annot"><a href="Language.LambdaPi.Syntax.Abs.html#BNFC%27Position"><span class="hs-identifier hs-type">Raw.BNFC'Position</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.VoidS</span></span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-157"></span><span>  </span><span id="local-6989586621679262356"><span class="annot"><span class="annottext">fromString :: String -&gt; Term 'VoidS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var">fromString</span></span></span><span> </span><span id="local-6989586621679262357"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679262357"><span class="hs-identifier hs-var">input</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">case</span><span> </span><span class="annot"><span class="annottext">[Token] -&gt; Err Term
+</span><a href="Language.LambdaPi.Syntax.Par.html#pTerm"><span class="hs-identifier hs-var">Raw.pTerm</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String -&gt; [Token]
+</span><a href="Language.LambdaPi.Syntax.Lex.html#tokens"><span class="hs-identifier hs-var">Raw.tokens</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679262357"><span class="hs-identifier hs-var">input</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-keyword">of</span><span>
+</span><span id="line-158"></span><span>    </span><span class="annot"><span class="hs-identifier hs-type">Left</span></span><span> </span><span id="local-6989586621679262360"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679262360"><span class="hs-identifier hs-var">err</span></a></span></span><span>   </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">String -&gt; Term 'VoidS
+forall a. HasCallStack =&gt; String -&gt; a
+</span><span class="hs-identifier hs-var">error</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;could not parse &#955;&#928;-term: &quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679262357"><span class="hs-identifier hs-var">input</span></a></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;\n  &quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679262360"><span class="hs-identifier hs-var">err</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-159"></span><span>    </span><span class="annot"><span class="hs-identifier hs-type">Right</span></span><span> </span><span id="local-6989586621679262361"><span class="annot"><span class="annottext">Term
+</span><a href="#local-6989586621679262361"><span class="hs-identifier hs-var">term</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Term -&gt; Term 'VoidS
+forall a. Term' a -&gt; Term' a 'VoidS
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#toTerm%27Closed"><span class="hs-identifier hs-var">toTerm'Closed</span></a></span><span> </span><span class="annot"><span class="annottext">Term
+</span><a href="#local-6989586621679262361"><span class="hs-identifier hs-var">term</span></a></span><span>
+</span><span id="line-160"></span><span>
+</span><span id="line-161"></span><span class="annot"><span class="hs-comment">-- | Pretty-print scope-safe terms via raw representation.</span></span><span>
+</span><span id="line-162"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679260627"><span id="local-6989586621679262363"><span id="local-6989586621679262367"><span class="annot"><span class="hs-identifier hs-type">Show</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">AST</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#FoilPattern%27"><span class="hs-identifier hs-type">FoilPattern'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679260627"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#Term%27Sig"><span class="hs-identifier hs-type">Term'Sig</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679260627"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.VoidS</span></span><span class="hs-special">)</span></span></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-163"></span><span>  </span><span id="local-6989586621679262372"><span class="annot"><span class="annottext">show :: AST (FoilPattern' a) (Term'Sig a) 'VoidS -&gt; String
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var">show</span></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Term' a -&gt; String
+forall a. Print a =&gt; a -&gt; String
+</span><a href="Language.LambdaPi.Syntax.Print.html#printTree"><span class="hs-identifier hs-var">Raw.printTree</span></a></span><span> </span><span class="annot"><span class="annottext">(Term' a -&gt; String)
+-&gt; (AST (FoilPattern' a) (Term'Sig a) 'VoidS -&gt; Term' a)
+-&gt; AST (FoilPattern' a) (Term'Sig a) 'VoidS
+-&gt; String
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">AST (FoilPattern' a) (Term'Sig a) 'VoidS -&gt; Term' a
+forall a (n :: S). Term' a n -&gt; Term' a
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#fromTerm%27"><span class="hs-identifier hs-var">fromTerm'</span></a></span><span>
+</span><span id="line-164"></span><span>
+</span><span id="line-165"></span><span class="annot"><span class="hs-comment">-- ** Evaluation</span></span><span>
+</span><span id="line-166"></span><span>
+</span><span id="line-167"></span><span class="annot"><span class="hs-comment">-- | Match a pattern against an term.</span></span><span>
+</span><span id="line-168"></span><span id="local-6989586621679261217"><span id="local-6989586621679261218"><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#matchPattern"><span class="hs-identifier hs-type">matchPattern</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#FoilPattern"><span class="hs-identifier hs-type">FoilPattern</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261217"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261218"><span class="hs-identifier hs-type">l</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#Term"><span class="hs-identifier hs-type">Term</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261217"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.Substitution</span></span><span> </span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#Term"><span class="hs-identifier hs-type">Term</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261218"><span class="hs-identifier hs-type">l</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261217"><span class="hs-identifier hs-type">n</span></a></span></span></span><span>
+</span><span id="line-169"></span><span id="matchPattern"><span class="annot"><span class="annottext">matchPattern :: forall (n :: S) (l :: S).
+FoilPattern n l -&gt; Term n -&gt; Substitution Term l n
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#matchPattern"><span class="hs-identifier hs-var hs-var">matchPattern</span></a></span></span><span> </span><span id="local-6989586621679262378"><span class="annot"><span class="annottext">FoilPattern n l
+</span><a href="#local-6989586621679262378"><span class="hs-identifier hs-var">pat</span></a></span></span><span> </span><span id="local-6989586621679262379"><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262379"><span class="hs-identifier hs-var">term</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">FoilPattern n l
+-&gt; Term n -&gt; Substitution Term n n -&gt; Substitution Term l n
+forall (i :: S) (l :: S) (n :: S).
+FoilPattern i l
+-&gt; Term n -&gt; Substitution Term i n -&gt; Substitution Term l n
+</span><a href="#local-6989586621679262380"><span class="hs-identifier hs-var">go</span></a></span><span> </span><span class="annot"><span class="annottext">FoilPattern n l
+</span><a href="#local-6989586621679262378"><span class="hs-identifier hs-var">pat</span></a></span><span> </span><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262379"><span class="hs-identifier hs-var">term</span></a></span><span> </span><span class="annot"><span class="annottext">Substitution Term n n
+forall (e :: S -&gt; *) (i :: S). InjectName e =&gt; Substitution e i i
+</span><span class="hs-identifier hs-var">Foil.identitySubst</span></span><span>
+</span><span id="line-170"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-171"></span><span>    </span><span id="local-6989586621679261226"><span id="local-6989586621679261227"><span id="local-6989586621679261228"><span class="annot"><a href="#local-6989586621679262380"><span class="hs-identifier hs-type">go</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#FoilPattern"><span class="hs-identifier hs-type">FoilPattern</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261226"><span class="hs-identifier hs-type">i</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261227"><span class="hs-identifier hs-type">l</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#Term"><span class="hs-identifier hs-type">Term</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261228"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.Substitution</span></span><span> </span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#Term"><span class="hs-identifier hs-type">Term</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261226"><span class="hs-identifier hs-type">i</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261228"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.Substitution</span></span><span> </span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#Term"><span class="hs-identifier hs-type">Term</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261227"><span class="hs-identifier hs-type">l</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261228"><span class="hs-identifier hs-type">n</span></a></span></span></span></span><span>
+</span><span id="line-172"></span><span>    </span><span id="local-6989586621679262380"><span class="annot"><span class="annottext">go :: forall (i :: S) (l :: S) (n :: S).
+FoilPattern i l
+-&gt; Term n -&gt; Substitution Term i n -&gt; Substitution Term l n
+</span><a href="#local-6989586621679262380"><span class="hs-identifier hs-var hs-var">go</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#FoilPatternWildcard"><span class="hs-identifier hs-type">FoilPatternWildcard</span></a></span><span> </span><span id="local-6989586621679262383"><span class="annot"><span class="annottext">BNFC'Position
+</span><a href="#local-6989586621679262383"><span class="hs-identifier hs-var">_loc</span></a></span></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">Term n
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Substitution Term i n -&gt; Substitution Term i n
+Substitution Term i n -&gt; Substitution Term l n
+forall a. a -&gt; a
+</span><span class="hs-identifier hs-var">id</span></span><span>
+</span><span id="line-173"></span><span>    </span><span class="annot"><a href="#local-6989586621679262380"><span class="hs-identifier hs-var">go</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#FoilPatternVar"><span class="hs-identifier hs-type">FoilPatternVar</span></a></span><span> </span><span id="local-6989586621679262385"><span class="annot"><span class="annottext">BNFC'Position
+</span><a href="#local-6989586621679262385"><span class="hs-identifier hs-var">_loc</span></a></span></span><span> </span><span id="local-6989586621679262386"><span class="annot"><span class="annottext">NameBinder i l
+</span><a href="#local-6989586621679262386"><span class="hs-identifier hs-var">x</span></a></span></span><span class="hs-special">)</span><span> </span><span id="local-6989586621679262387"><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262387"><span class="hs-identifier hs-var">e</span></a></span></span><span>    </span><span class="hs-glyph">=</span><span> </span><span class="hs-glyph">\</span><span id="local-6989586621679262388"><span class="annot"><span class="annottext">Substitution Term i n
+</span><a href="#local-6989586621679262388"><span class="hs-identifier hs-var">subst</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Substitution Term i n
+-&gt; NameBinder i l -&gt; Term n -&gt; Substitution Term l n
+forall (e :: S -&gt; *) (i :: S) (o :: S) (i' :: S).
+Substitution e i o -&gt; NameBinder i i' -&gt; e o -&gt; Substitution e i' o
+</span><span class="hs-identifier hs-var">Foil.addSubst</span></span><span> </span><span class="annot"><span class="annottext">Substitution Term i n
+</span><a href="#local-6989586621679262388"><span class="hs-identifier hs-var">subst</span></a></span><span> </span><span class="annot"><span class="annottext">NameBinder i l
+</span><a href="#local-6989586621679262386"><span class="hs-identifier hs-var">x</span></a></span><span> </span><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262387"><span class="hs-identifier hs-var">e</span></a></span><span>
+</span><span id="line-174"></span><span>    </span><span class="annot"><a href="#local-6989586621679262380"><span class="hs-identifier hs-var">go</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#FoilPatternPair"><span class="hs-identifier hs-type">FoilPatternPair</span></a></span><span> </span><span id="local-6989586621679262390"><span class="annot"><span class="annottext">BNFC'Position
+</span><a href="#local-6989586621679262390"><span class="hs-identifier hs-var">loc</span></a></span></span><span> </span><span id="local-6989586621679262391"><span class="annot"><span class="annottext">FoilPattern' BNFC'Position i n2
+</span><a href="#local-6989586621679262391"><span class="hs-identifier hs-var">l</span></a></span></span><span> </span><span id="local-6989586621679262392"><span class="annot"><span class="annottext">FoilPattern' BNFC'Position n2 l
+</span><a href="#local-6989586621679262392"><span class="hs-identifier hs-var">r</span></a></span></span><span class="hs-special">)</span><span> </span><span id="local-6989586621679262393"><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262393"><span class="hs-identifier hs-var">e</span></a></span></span><span>  </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">FoilPattern' BNFC'Position n2 l
+-&gt; Term n -&gt; Substitution Term n2 n -&gt; Substitution Term l n
+forall (i :: S) (l :: S) (n :: S).
+FoilPattern i l
+-&gt; Term n -&gt; Substitution Term i n -&gt; Substitution Term l n
+</span><a href="#local-6989586621679262380"><span class="hs-identifier hs-var">go</span></a></span><span> </span><span class="annot"><span class="annottext">FoilPattern' BNFC'Position n2 l
+</span><a href="#local-6989586621679262392"><span class="hs-identifier hs-var">r</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">BNFC'Position -&gt; Term n -&gt; Term n
+forall a (binder :: S -&gt; S -&gt; *) (n :: S).
+a -&gt; AST binder (Term'Sig a) n -&gt; AST binder (Term'Sig a) n
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#Second"><span class="hs-identifier hs-var">Second</span></a></span><span> </span><span class="annot"><span class="annottext">BNFC'Position
+</span><a href="#local-6989586621679262390"><span class="hs-identifier hs-var">loc</span></a></span><span> </span><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262393"><span class="hs-identifier hs-var">e</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(Substitution Term n2 n -&gt; Substitution Term l n)
+-&gt; (Substitution Term i n -&gt; Substitution Term n2 n)
+-&gt; Substitution Term i n
+-&gt; Substitution Term l n
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">FoilPattern' BNFC'Position i n2
+-&gt; Term n -&gt; Substitution Term i n -&gt; Substitution Term n2 n
+forall (i :: S) (l :: S) (n :: S).
+FoilPattern i l
+-&gt; Term n -&gt; Substitution Term i n -&gt; Substitution Term l n
+</span><a href="#local-6989586621679262380"><span class="hs-identifier hs-var">go</span></a></span><span> </span><span class="annot"><span class="annottext">FoilPattern' BNFC'Position i n2
+</span><a href="#local-6989586621679262391"><span class="hs-identifier hs-var">l</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">BNFC'Position -&gt; Term n -&gt; Term n
+forall a (binder :: S -&gt; S -&gt; *) (n :: S).
+a -&gt; AST binder (Term'Sig a) n -&gt; AST binder (Term'Sig a) n
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#First"><span class="hs-identifier hs-var">First</span></a></span><span> </span><span class="annot"><span class="annottext">BNFC'Position
+</span><a href="#local-6989586621679262390"><span class="hs-identifier hs-var">loc</span></a></span><span> </span><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262393"><span class="hs-identifier hs-var">e</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-175"></span><span>
+</span><span id="line-176"></span><span class="hs-comment">-- | Compute weak head normal form (WHNF) of a \(\lambda\Pi\)-term.</span><span>
+</span><span id="line-177"></span><span class="hs-comment">--</span><span>
+</span><span id="line-178"></span><span class="hs-comment">-- &gt;&gt;&gt; whnf Foil.emptyScope &quot;(&#955;x.(&#955;_.x)(&#955;y.x))(&#955;(y,z).z)&quot;</span><span>
+</span><span id="line-179"></span><span class="hs-comment">-- &#955; (x0, x1) . x1</span><span>
+</span><span id="line-180"></span><span class="hs-comment">--</span><span>
+</span><span id="line-181"></span><span class="hs-comment">-- &gt;&gt;&gt; whnf Foil.emptyScope &quot;(&#955;s.&#955;z.s(s(z)))(&#955;s.&#955;z.s(s(z)))&quot;</span><span>
+</span><span id="line-182"></span><span class="hs-comment">-- &#955; x1 . (&#955; x0 . &#955; x1 . x0 (x0 x1)) ((&#955; x0 . &#955; x1 . x0 (x0 x1)) x1)</span><span>
+</span><span id="line-183"></span><span class="hs-comment">--</span><span>
+</span><span id="line-184"></span><span class="hs-comment">-- Note that during computation bound variables can become unordered</span><span>
+</span><span id="line-185"></span><span class="hs-comment">-- in the sense that binders may easily repeat or decrease. For example,</span><span>
+</span><span id="line-186"></span><span class="hs-comment">-- in the following expression, inner binder has lower index that the outer one:</span><span>
+</span><span id="line-187"></span><span class="hs-comment">--</span><span>
+</span><span id="line-188"></span><span class="hs-comment">-- &gt;&gt;&gt; whnf Foil.emptyScope &quot;(&#955;x.&#955;y.x)(&#955;x.x)&quot;</span><span>
+</span><span id="line-189"></span><span class="hs-comment">-- &#955; x1 . &#955; x0 . x0</span><span>
+</span><span id="line-190"></span><span class="hs-comment">--</span><span>
+</span><span id="line-191"></span><span class="hs-comment">-- At the same time, without substitution, we get regular, increasing binder indices:</span><span>
+</span><span id="line-192"></span><span class="hs-comment">--</span><span>
+</span><span id="line-193"></span><span class="hs-comment">-- &gt;&gt;&gt; &quot;&#955;x.&#955;y.y&quot; :: Term Foil.VoidS</span><span>
+</span><span id="line-194"></span><span class="hs-comment">-- &#955; x0 . &#955; x1 . x1</span><span>
+</span><span id="line-195"></span><span class="hs-comment">--</span><span>
+</span><span id="line-196"></span><span class="hs-comment">-- To compare terms for \(\alpha\)-equivalence, we may use 'alphaEquiv':</span><span>
+</span><span id="line-197"></span><span class="hs-comment">--</span><span>
+</span><span id="line-198"></span><span class="hs-comment">-- &gt;&gt;&gt; alphaEquiv Foil.emptyScope (whnf Foil.emptyScope &quot;(&#955;x.&#955;y.x)(&#955;x.x)&quot;) &quot;&#955;x.&#955;y.y&quot;</span><span>
+</span><span id="line-199"></span><span class="hs-comment">-- True</span><span>
+</span><span id="line-200"></span><span class="hs-comment">--</span><span>
+</span><span id="line-201"></span><span class="hs-comment">-- We may also normalize binders using 'refreshAST':</span><span>
+</span><span id="line-202"></span><span class="hs-comment">--</span><span>
+</span><span id="line-203"></span><span class="hs-comment">-- &gt;&gt;&gt; refreshAST Foil.emptyScope (whnf Foil.emptyScope &quot;(&#955;x.&#955;y.x)(&#955;x.x)&quot;)</span><span>
+</span><span id="line-204"></span><span class="hs-comment">-- &#955; x0 . &#955; x1 . x1</span><span>
+</span><span id="line-205"></span><span id="local-6989586621679261240"><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#whnf"><span class="hs-identifier hs-type">whnf</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.Distinct</span></span><span> </span><span class="annot"><a href="#local-6989586621679261240"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.Scope</span></span><span> </span><span class="annot"><a href="#local-6989586621679261240"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#Term"><span class="hs-identifier hs-type">Term</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261240"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#Term"><span class="hs-identifier hs-type">Term</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679261240"><span class="hs-identifier hs-type">n</span></a></span></span><span>
+</span><span id="line-206"></span><span id="whnf"><span class="annot"><span class="annottext">whnf :: forall (n :: S). Distinct n =&gt; Scope n -&gt; Term n -&gt; Term n
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#whnf"><span class="hs-identifier hs-var hs-var">whnf</span></a></span></span><span> </span><span id="local-6989586621679262400"><span class="annot"><span class="annottext">Scope n
+</span><a href="#local-6989586621679262400"><span class="hs-identifier hs-var">scope</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-glyph">\</span><span class="hs-glyph">case</span><span>
+</span><span id="line-207"></span><span>  </span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#App"><span class="hs-identifier hs-type">App</span></a></span><span> </span><span id="local-6989586621679262401"><span class="annot"><span class="annottext">BNFC'Position
+</span><a href="#local-6989586621679262401"><span class="hs-identifier hs-var">loc</span></a></span></span><span> </span><span id="local-6989586621679262402"><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262402"><span class="hs-identifier hs-var">f</span></a></span></span><span> </span><span id="local-6989586621679262403"><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262403"><span class="hs-identifier hs-var">x</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span>
+</span><span id="line-208"></span><span>    </span><span class="hs-keyword">case</span><span> </span><span class="annot"><span class="annottext">Scope n -&gt; Term n -&gt; Term n
+forall (n :: S). Distinct n =&gt; Scope n -&gt; Term n -&gt; Term n
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#whnf"><span class="hs-identifier hs-var">whnf</span></a></span><span> </span><span class="annot"><span class="annottext">Scope n
+</span><a href="#local-6989586621679262400"><span class="hs-identifier hs-var">scope</span></a></span><span> </span><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262402"><span class="hs-identifier hs-var">f</span></a></span><span> </span><span class="hs-keyword">of</span><span>
+</span><span id="line-209"></span><span>      </span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#Lam"><span class="hs-identifier hs-type">Lam</span></a></span><span> </span><span id="local-6989586621679262409"><span class="annot"><span class="annottext">BNFC'Position
+</span><a href="#local-6989586621679262409"><span class="hs-identifier hs-var">_loc</span></a></span></span><span> </span><span id="local-6989586621679262410"><span class="annot"><span class="annottext">FoilPattern' BNFC'Position n l1
+</span><a href="#local-6989586621679262410"><span class="hs-identifier hs-var">binder</span></a></span></span><span> </span><span id="local-6989586621679262411"><span class="annot"><span class="annottext">AST (FoilPattern' BNFC'Position) (Term'Sig BNFC'Position) l1
+</span><a href="#local-6989586621679262411"><span class="hs-identifier hs-var">body</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span>
+</span><span id="line-210"></span><span>        </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679262412"><span class="annot"><span class="annottext">subst :: Substitution Term l1 n
+</span><a href="#local-6989586621679262412"><span class="hs-identifier hs-var hs-var">subst</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">FoilPattern' BNFC'Position n l1 -&gt; Term n -&gt; Substitution Term l1 n
+forall (n :: S) (l :: S).
+FoilPattern n l -&gt; Term n -&gt; Substitution Term l n
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#matchPattern"><span class="hs-identifier hs-var">matchPattern</span></a></span><span> </span><span class="annot"><span class="annottext">FoilPattern' BNFC'Position n l1
+</span><a href="#local-6989586621679262410"><span class="hs-identifier hs-var">binder</span></a></span><span> </span><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262403"><span class="hs-identifier hs-var">x</span></a></span><span>
+</span><span id="line-211"></span><span>         </span><span class="hs-keyword">in</span><span> </span><span class="annot"><span class="annottext">Scope n -&gt; Term n -&gt; Term n
+forall (n :: S). Distinct n =&gt; Scope n -&gt; Term n -&gt; Term n
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#whnf"><span class="hs-identifier hs-var">whnf</span></a></span><span> </span><span class="annot"><span class="annottext">Scope n
+</span><a href="#local-6989586621679262400"><span class="hs-identifier hs-var">scope</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Scope n
+-&gt; Substitution Term l1 n
+-&gt; AST (FoilPattern' BNFC'Position) (Term'Sig BNFC'Position) l1
+-&gt; Term n
+forall (sig :: * -&gt; * -&gt; *) (o :: S) (binder :: S -&gt; S -&gt; *)
+       (i :: S).
+(Bifunctor sig, Distinct o, CoSinkable binder, SinkableK binder) =&gt;
+Scope o
+-&gt; Substitution (AST binder sig) i o
+-&gt; AST binder sig i
+-&gt; AST binder sig o
+</span><span class="hs-identifier hs-var">substitute</span></span><span> </span><span class="annot"><span class="annottext">Scope n
+</span><a href="#local-6989586621679262400"><span class="hs-identifier hs-var">scope</span></a></span><span> </span><span class="annot"><span class="annottext">Substitution Term l1 n
+</span><a href="#local-6989586621679262412"><span class="hs-identifier hs-var">subst</span></a></span><span> </span><span class="annot"><span class="annottext">AST (FoilPattern' BNFC'Position) (Term'Sig BNFC'Position) l1
+</span><a href="#local-6989586621679262411"><span class="hs-identifier hs-var">body</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-212"></span><span>      </span><span id="local-6989586621679262413"><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262413"><span class="hs-identifier hs-var">f'</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">BNFC'Position -&gt; Term n -&gt; Term n -&gt; Term n
+forall a (binder :: S -&gt; S -&gt; *) (n :: S).
+a
+-&gt; AST binder (Term'Sig a) n
+-&gt; AST binder (Term'Sig a) n
+-&gt; AST binder (Term'Sig a) n
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#App"><span class="hs-identifier hs-var">App</span></a></span><span> </span><span class="annot"><span class="annottext">BNFC'Position
+</span><a href="#local-6989586621679262401"><span class="hs-identifier hs-var">loc</span></a></span><span> </span><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262413"><span class="hs-identifier hs-var">f'</span></a></span><span> </span><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262403"><span class="hs-identifier hs-var">x</span></a></span><span>
+</span><span id="line-213"></span><span>  </span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#First"><span class="hs-identifier hs-type">First</span></a></span><span> </span><span id="local-6989586621679262414"><span class="annot"><span class="annottext">BNFC'Position
+</span><a href="#local-6989586621679262414"><span class="hs-identifier hs-var">loc</span></a></span></span><span> </span><span id="local-6989586621679262415"><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262415"><span class="hs-identifier hs-var">t</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span>
+</span><span id="line-214"></span><span>    </span><span class="hs-keyword">case</span><span> </span><span class="annot"><span class="annottext">Scope n -&gt; Term n -&gt; Term n
+forall (n :: S). Distinct n =&gt; Scope n -&gt; Term n -&gt; Term n
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#whnf"><span class="hs-identifier hs-var">whnf</span></a></span><span> </span><span class="annot"><span class="annottext">Scope n
+</span><a href="#local-6989586621679262400"><span class="hs-identifier hs-var">scope</span></a></span><span> </span><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262415"><span class="hs-identifier hs-var">t</span></a></span><span> </span><span class="hs-keyword">of</span><span>
+</span><span id="line-215"></span><span>      </span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#Pair"><span class="hs-identifier hs-type">Pair</span></a></span><span> </span><span id="local-6989586621679262416"><span class="annot"><span class="annottext">BNFC'Position
+</span><a href="#local-6989586621679262416"><span class="hs-identifier hs-var">_loc</span></a></span></span><span> </span><span id="local-6989586621679262417"><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262417"><span class="hs-identifier hs-var">l</span></a></span></span><span> </span><span id="local-6989586621679262418"><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262418"><span class="hs-identifier hs-var">_r</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Scope n -&gt; Term n -&gt; Term n
+forall (n :: S). Distinct n =&gt; Scope n -&gt; Term n -&gt; Term n
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#whnf"><span class="hs-identifier hs-var">whnf</span></a></span><span> </span><span class="annot"><span class="annottext">Scope n
+</span><a href="#local-6989586621679262400"><span class="hs-identifier hs-var">scope</span></a></span><span> </span><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262417"><span class="hs-identifier hs-var">l</span></a></span><span>
+</span><span id="line-216"></span><span>      </span><span id="local-6989586621679262419"><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262419"><span class="hs-identifier hs-var">t'</span></a></span></span><span>             </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">BNFC'Position -&gt; Term n -&gt; Term n
+forall a (binder :: S -&gt; S -&gt; *) (n :: S).
+a -&gt; AST binder (Term'Sig a) n -&gt; AST binder (Term'Sig a) n
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#First"><span class="hs-identifier hs-var">First</span></a></span><span> </span><span class="annot"><span class="annottext">BNFC'Position
+</span><a href="#local-6989586621679262414"><span class="hs-identifier hs-var">loc</span></a></span><span> </span><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262419"><span class="hs-identifier hs-var">t'</span></a></span><span>
+</span><span id="line-217"></span><span>  </span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#Second"><span class="hs-identifier hs-type">Second</span></a></span><span> </span><span id="local-6989586621679262420"><span class="annot"><span class="annottext">BNFC'Position
+</span><a href="#local-6989586621679262420"><span class="hs-identifier hs-var">loc</span></a></span></span><span> </span><span id="local-6989586621679262421"><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262421"><span class="hs-identifier hs-var">t</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span>
+</span><span id="line-218"></span><span>    </span><span class="hs-keyword">case</span><span> </span><span class="annot"><span class="annottext">Scope n -&gt; Term n -&gt; Term n
+forall (n :: S). Distinct n =&gt; Scope n -&gt; Term n -&gt; Term n
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#whnf"><span class="hs-identifier hs-var">whnf</span></a></span><span> </span><span class="annot"><span class="annottext">Scope n
+</span><a href="#local-6989586621679262400"><span class="hs-identifier hs-var">scope</span></a></span><span> </span><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262421"><span class="hs-identifier hs-var">t</span></a></span><span> </span><span class="hs-keyword">of</span><span>
+</span><span id="line-219"></span><span>      </span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#Pair"><span class="hs-identifier hs-type">Pair</span></a></span><span> </span><span id="local-6989586621679262422"><span class="annot"><span class="annottext">BNFC'Position
+</span><a href="#local-6989586621679262422"><span class="hs-identifier hs-var">_loc</span></a></span></span><span> </span><span id="local-6989586621679262423"><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262423"><span class="hs-identifier hs-var">_l</span></a></span></span><span> </span><span id="local-6989586621679262424"><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262424"><span class="hs-identifier hs-var">r</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Scope n -&gt; Term n -&gt; Term n
+forall (n :: S). Distinct n =&gt; Scope n -&gt; Term n -&gt; Term n
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#whnf"><span class="hs-identifier hs-var">whnf</span></a></span><span> </span><span class="annot"><span class="annottext">Scope n
+</span><a href="#local-6989586621679262400"><span class="hs-identifier hs-var">scope</span></a></span><span> </span><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262424"><span class="hs-identifier hs-var">r</span></a></span><span>
+</span><span id="line-220"></span><span>      </span><span id="local-6989586621679262425"><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262425"><span class="hs-identifier hs-var">t'</span></a></span></span><span>             </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">BNFC'Position -&gt; Term n -&gt; Term n
+forall a (binder :: S -&gt; S -&gt; *) (n :: S).
+a -&gt; AST binder (Term'Sig a) n -&gt; AST binder (Term'Sig a) n
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#Second"><span class="hs-identifier hs-var">Second</span></a></span><span> </span><span class="annot"><span class="annottext">BNFC'Position
+</span><a href="#local-6989586621679262420"><span class="hs-identifier hs-var">loc</span></a></span><span> </span><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262425"><span class="hs-identifier hs-var">t'</span></a></span><span>
+</span><span id="line-221"></span><span>  </span><span id="local-6989586621679262426"><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262426"><span class="hs-identifier hs-var">t</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679262426"><span class="hs-identifier hs-var">t</span></a></span><span>
+</span><span id="line-222"></span><span>
+</span><span id="line-223"></span><span class="annot"><span class="hs-comment">-- ** \(\lambda\Pi\)-interpreter</span></span><span>
+</span><span id="line-224"></span><span>
+</span><span id="line-225"></span><span class="annot"><span class="hs-comment">-- | Interpret a \(\lambda\Pi\) command.</span></span><span>
+</span><span id="line-226"></span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#interpretCommand"><span class="hs-identifier hs-type">interpretCommand</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.LambdaPi.Syntax.Abs.html#Command"><span class="hs-identifier hs-type">Raw.Command</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-227"></span><span id="interpretCommand"><span class="annot"><span class="annottext">interpretCommand :: Command -&gt; IO ()
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#interpretCommand"><span class="hs-identifier hs-var hs-var">interpretCommand</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.LambdaPi.Syntax.Abs.html#CommandCompute"><span class="hs-identifier hs-type">Raw.CommandCompute</span></a></span><span> </span><span id="local-6989586621679262429"><span class="annot"><span class="annottext">BNFC'Position
+</span><a href="#local-6989586621679262429"><span class="hs-identifier hs-var">_loc</span></a></span></span><span> </span><span id="local-6989586621679262430"><span class="annot"><span class="annottext">Term
+</span><a href="#local-6989586621679262430"><span class="hs-identifier hs-var">term</span></a></span></span><span> </span><span id="local-6989586621679262431"><span class="annot"><span class="annottext">Term
+</span><a href="#local-6989586621679262431"><span class="hs-identifier hs-var">_type</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-228"></span><span>      </span><span class="annot"><span class="annottext">String -&gt; IO ()
+</span><span class="hs-identifier hs-var">putStrLn</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;  &#8614; &quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Term 'VoidS -&gt; String
+forall a. Show a =&gt; a -&gt; String
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Scope 'VoidS -&gt; Term 'VoidS -&gt; Term 'VoidS
+forall (n :: S). Distinct n =&gt; Scope n -&gt; Term n -&gt; Term n
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#whnf"><span class="hs-identifier hs-var">whnf</span></a></span><span> </span><span class="annot"><span class="annottext">Scope 'VoidS
+</span><span class="hs-identifier hs-var">Foil.emptyScope</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Term -&gt; Term 'VoidS
+forall a. Term' a -&gt; Term' a 'VoidS
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#toTerm%27Closed"><span class="hs-identifier hs-var">toTerm'Closed</span></a></span><span> </span><span class="annot"><span class="annottext">Term
+</span><a href="#local-6989586621679262430"><span class="hs-identifier hs-var">term</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-229"></span><span class="hs-comment">-- #TODO: add typeCheck</span><span>
+</span><span id="line-230"></span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#interpretCommand"><span class="hs-identifier hs-var">interpretCommand</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.LambdaPi.Syntax.Abs.html#CommandCheck"><span class="hs-identifier hs-type">Raw.CommandCheck</span></a></span><span> </span><span id="local-6989586621679262434"><span class="annot"><span class="annottext">BNFC'Position
+</span><a href="#local-6989586621679262434"><span class="hs-identifier hs-var">_loc</span></a></span></span><span> </span><span id="local-6989586621679262435"><span class="annot"><span class="annottext">Term
+</span><a href="#local-6989586621679262435"><span class="hs-identifier hs-var">_term</span></a></span></span><span> </span><span id="local-6989586621679262436"><span class="annot"><span class="annottext">Term
+</span><a href="#local-6989586621679262436"><span class="hs-identifier hs-var">_type</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">String -&gt; IO ()
+</span><span class="hs-identifier hs-var">putStrLn</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;check is not yet implemented&quot;</span></span><span>
+</span><span id="line-231"></span><span>
+</span><span id="line-232"></span><span class="annot"><span class="hs-comment">-- | Interpret a \(\lambda\Pi\) program.</span></span><span>
+</span><span id="line-233"></span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#interpretProgram"><span class="hs-identifier hs-type">interpretProgram</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.LambdaPi.Syntax.Abs.html#Program"><span class="hs-identifier hs-type">Raw.Program</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-234"></span><span id="interpretProgram"><span class="annot"><span class="annottext">interpretProgram :: Program -&gt; IO ()
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#interpretProgram"><span class="hs-identifier hs-var hs-var">interpretProgram</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.LambdaPi.Syntax.Abs.html#AProgram"><span class="hs-identifier hs-type">Raw.AProgram</span></a></span><span> </span><span id="local-6989586621679262439"><span class="annot"><span class="annottext">BNFC'Position
+</span><a href="#local-6989586621679262439"><span class="hs-identifier hs-var">_loc</span></a></span></span><span> </span><span id="local-6989586621679262440"><span class="annot"><span class="annottext">[Command]
+</span><a href="#local-6989586621679262440"><span class="hs-identifier hs-var">typedTerms</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Command -&gt; IO ()) -&gt; [Command] -&gt; IO ()
+forall (t :: * -&gt; *) (m :: * -&gt; *) a b.
+(Foldable t, Monad m) =&gt;
+(a -&gt; m b) -&gt; t a -&gt; m ()
+</span><span class="hs-identifier hs-var">mapM_</span></span><span> </span><span class="annot"><span class="annottext">Command -&gt; IO ()
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#interpretCommand"><span class="hs-identifier hs-var">interpretCommand</span></a></span><span> </span><span class="annot"><span class="annottext">[Command]
+</span><a href="#local-6989586621679262440"><span class="hs-identifier hs-var">typedTerms</span></a></span><span>
+</span><span id="line-235"></span><span>
+</span><span id="line-236"></span><span class="annot"><span class="hs-comment">-- | A \(\lambda\Pi\) interpreter implemented via the free foil.</span></span><span>
+</span><span id="line-237"></span><span class="annot"><a href="Language.LambdaPi.Impl.FreeFoilTH.html#defaultMain"><span class="hs-identifier hs-type">defaultMain</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IO</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-238"></span><span id="defaultMain"><span class="annot"><span class="annottext">defaultMain :: IO ()
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#defaultMain"><span class="hs-identifier hs-var hs-var">defaultMain</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-239"></span><span>  </span><span id="local-6989586621679262442"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679262442"><span class="hs-identifier hs-var">input</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">IO String
+</span><span class="hs-identifier hs-var">getContents</span></span><span>
+</span><span id="line-240"></span><span>  </span><span class="hs-keyword">case</span><span> </span><span class="annot"><span class="annottext">[Token] -&gt; Err Program
+</span><a href="Language.LambdaPi.Syntax.Par.html#pProgram"><span class="hs-identifier hs-var">Raw.pProgram</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Bool -&gt; [Token] -&gt; [Token]
+</span><a href="Language.LambdaPi.Syntax.Layout.html#resolveLayout"><span class="hs-identifier hs-var">Raw.resolveLayout</span></a></span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">True</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String -&gt; [Token]
+</span><a href="Language.LambdaPi.Syntax.Lex.html#tokens"><span class="hs-identifier hs-var">Raw.tokens</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679262442"><span class="hs-identifier hs-var">input</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-keyword">of</span><span>
+</span><span id="line-241"></span><span>    </span><span class="annot"><span class="hs-identifier hs-type">Left</span></span><span> </span><span id="local-6989586621679262446"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679262446"><span class="hs-identifier hs-var">err</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-242"></span><span>      </span><span class="annot"><span class="annottext">String -&gt; IO ()
+</span><span class="hs-identifier hs-var">putStrLn</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679262446"><span class="hs-identifier hs-var">err</span></a></span><span>
+</span><span id="line-243"></span><span>      </span><span class="annot"><span class="annottext">IO ()
+forall a. IO a
+</span><span class="hs-identifier hs-var">exitFailure</span></span><span>
+</span><span id="line-244"></span><span>    </span><span class="annot"><span class="hs-identifier hs-type">Right</span></span><span> </span><span id="local-6989586621679262447"><span class="annot"><span class="annottext">Program
+</span><a href="#local-6989586621679262447"><span class="hs-identifier hs-var">program</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Program -&gt; IO ()
+</span><a href="Language.LambdaPi.Impl.FreeFoilTH.html#interpretProgram"><span class="hs-identifier hs-var">interpretProgram</span></a></span><span> </span><span class="annot"><span class="annottext">Program
+</span><a href="#local-6989586621679262447"><span class="hs-identifier hs-var">program</span></a></span><span>
+</span><span id="line-245"></span></pre></body></html>
