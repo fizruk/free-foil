@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -13,13 +14,18 @@
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeApplications           #-}
 -- | Foil implementation of the \(\lambda\Pi\)-calculus (with pairs)
--- using Template Haskell to reduce boilerplate.
+-- using Template Haskell and "Generics.Kind" to reduce boilerplate.
 --
 -- Template Haskell helpers __generate__ the following:
 --
 -- 1. Scope-safe AST, generated from a raw definition. See 'FoilTerm', 'FoilScopedTerm', and 'FoilPattern'.
--- 2. Conversion between scope-safe and raw term representation (the latter is generated via BNFC), see 'toFoilTerm' and 'fromFoilTerm'.
--- 3. Helper functions for patterns. See 'extendScopeFoilPattern' and 'withRefreshedFoilPattern'.
+-- 2. Conversion between scope-safe and raw term representation (the latter is generated via BNFC), see 'toFoilTerm'' and 'fromFoilTerm''.
+-- 3. Helper functions for patterns. See 'extendScopeFoilPattern'' and 'withRefreshedFoilPattern''.
+--
+-- The following is provided via kind-polymophic generics (see "Generics.Kind"):
+--
+-- 1. 'Sinkable' instance for 'FoilTerm''.
+-- 2. 'CoSinkable' instance for 'FoilPattern'', giving access to 'extendScopePattern' and 'withRefreshedPattern' (among other utilities).
 --
 -- The following is implemented __manually__ in this module:
 --
@@ -43,13 +49,25 @@ import qualified Language.LambdaPi.Syntax.Layout as Raw
 import qualified Language.LambdaPi.Syntax.Lex    as Raw
 import qualified Language.LambdaPi.Syntax.Par    as Raw
 import qualified Language.LambdaPi.Syntax.Print  as Raw
+import           Generics.Kind.TH
 import           System.Exit                     (exitFailure)
 
 -- * Generated code
 
 -- ** Scope-safe AST
 mkFoilData ''Raw.Term' ''Raw.VarIdent ''Raw.ScopedTerm' ''Raw.Pattern'
-mkInstancesFoil ''Raw.Term' ''Raw.VarIdent ''Raw.ScopedTerm' ''Raw.Pattern'
+-- mkInstancesFoil ''Raw.Term' ''Raw.VarIdent ''Raw.ScopedTerm' ''Raw.Pattern'
+
+deriveGenericK ''FoilTerm'
+deriveGenericK ''FoilScopedTerm'
+deriveGenericK ''FoilPattern'
+instance SinkableK (FoilTerm' a)
+instance SinkableK (FoilScopedTerm' a)
+instance SinkableK (FoilPattern' a)
+instance HasNameBinders (FoilPattern' a)
+
+instance Sinkable (FoilTerm' a)
+instance CoSinkable (FoilPattern' a)
 
 -- ** Conversion from raw to scope-safe AST
 mkToFoil ''Raw.Term' ''Raw.VarIdent ''Raw.ScopedTerm' ''Raw.Pattern'
@@ -79,14 +97,14 @@ substitute :: Distinct o => Scope o -> Substitution FoilTerm i o -> FoilTerm i -
 substitute scope subst = \case
     FoilVar _loc name -> lookupSubst subst name
     FoilApp loc f x -> FoilApp loc (substitute scope subst f) (substitute scope subst x)
-    FoilLam loc1 pattern (FoilAScopedTerm loc2 body) -> withRefreshedFoilPattern' scope pattern $ \extendSubst pattern' ->
+    FoilLam loc1 pattern (FoilAScopedTerm loc2 body) -> withRefreshedPattern scope pattern $ \extendSubst pattern' ->
       let subst' = extendSubst subst
-          scope' = extendScopeFoilPattern' pattern' scope
+          scope' = extendScopePattern pattern' scope
           body' = substitute scope' subst' body
        in FoilLam loc1 pattern' (FoilAScopedTerm loc2 body')
-    FoilPi loc1 pattern a (FoilAScopedTerm loc2 b) -> withRefreshedFoilPattern' scope pattern $ \extendSubst pattern' ->
+    FoilPi loc1 pattern a (FoilAScopedTerm loc2 b) -> withRefreshedPattern scope pattern $ \extendSubst pattern' ->
       let subst' = extendSubst subst
-          scope' = extendScopeFoilPattern' pattern' scope
+          scope' = extendScopePattern pattern' scope
           a' = substitute scope subst a
           b' = substitute scope' subst' b
        in FoilPi loc1 pattern' a' (FoilAScopedTerm loc2 b')

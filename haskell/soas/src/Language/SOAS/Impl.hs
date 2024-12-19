@@ -62,12 +62,16 @@ lookupSubst m = find $ \(Subst _loc m' _ _) -> m == m'
 -- | Apply meta variable substitutions to a term.
 --
 -- >>> applySubsts Foil.emptyScope ["?m[x y] ↦ Lam(z. App(z, App(x, y)))"] "Lam(x. ?m[App(x, ?m[x, x]), x])"
--- Lam (x0 . Lam (x2 . App (x2, App (App (x0, ?m [x0, x0]), x0))))
+-- Lam (x0 . Lam (x2 . App (x2, App (App (x0, Lam (x2 . App (x2, App (x0, x0)))), x0))))
+--
+-- >>> applySubsts Foil.emptyScope ["?m[x y] ↦ App(y, x)"] "Lam(f. Lam(x. ?m[?m[x, f], f]))"
+-- Lam (x0 . Lam (x1 . App (x0, App (x0, x1))))
 applySubsts :: Foil.Distinct n => Foil.Scope n -> [Subst] -> Term n -> Term n
 applySubsts scope substs term =
   case term of
     MetaVar _loc m args | Just (Subst _ _ binders body) <- lookupSubst m substs ->
-      substitutePattern scope Foil.voidSubst binders args body
+      let args' = map (applySubsts scope substs) args
+       in substitutePattern scope Foil.voidSubst binders args' body
     Var{} -> term
     -- NOTE: generic recursive processing!
     Node node -> Node (bimap goScoped (applySubsts scope substs) node)
@@ -77,6 +81,26 @@ applySubsts scope substs term =
         Foil.Distinct ->
           let scope' = Foil.extendScopePattern binders scope
            in ScopedAST binders (applySubsts scope' substs body)
+
+-- | Check if a (simultaneous) substitution is a solution to a set of constraints:
+--
+-- >>> isSolutionFor ["?m[x y] ↦ App(y, x)"] ["∀ f x. ?m[?m[x, f], f] = App(f, App(f, x))"]
+-- True
+-- >>> isSolutionFor ["?m[x y] ↦ App(y, x)"] ["∀ f x y. ?m[?m[x, f], f] = App(f, App(f, y))"]
+-- False
+--
+-- >>> isSolutionFor ["?m[x] ↦ Lam(f. App(f, x))"] ["∀ x. ?m[?m[x]] = Lam(f. App(f, Lam(f. App(f, x))))"]
+-- True
+-- >>> isSolutionFor ["?m[x] ↦ Lam(f. App(f, x))"] ["∀ y x. ?m[?m[x]] = Lam(f. App(f, Lam(f. App(f, y))))"]
+-- False
+isSolutionFor :: [Subst] -> [Constraint] -> Bool
+isSolutionFor substs = all isSatisfied
+  where
+    isSatisfied (ConstraintEq _loc binders l r) =
+      case Foil.assertDistinct binders of
+        Foil.Distinct ->
+          let scope = Foil.extendScopePattern binders Foil.emptyScope
+          in alphaEquiv scope (applySubsts scope substs l) (applySubsts scope substs r)
 
 -- * Entrypoint
 
