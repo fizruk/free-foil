@@ -1,0 +1,31 @@
+compute
+  (λ A . λ x . x)
+    (Π (y : B) → B)
+    (λ z . z)
+  : Π (w : B) → B
+
+check
+  λ A . λ x . x
+  : Π (A : Type) → Π (x : A) → A
+
+check
+  λ x. x
+  : Π (x : A) → A
+
+compute
+  (λ (x, ( y , z)). y) ( ( (λ a . a) , (λ b. λ a. b, λ b. λ a. a)) )
+  : λ x. x
+
+compute
+  (λ x. λ y. x) y
+  : Π (w : A) → B
+
+compute
+  (λ A . λ x . x)
+    (λ z . z)
+  : Π (w : B) → B
+
+compute
+  (λ y . λ x . y)
+    (λ z . z)
+  : Π (w : B) → B

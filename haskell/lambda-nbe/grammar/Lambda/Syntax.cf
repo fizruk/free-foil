@@ -1,0 +1,18 @@
+comment "--" ;
+comment "{-" "-}" ;
+
+layout toplevel ;
+
+token VarIdent letter (letter | digit | '_' | '\'')* ;
+
+AProgram. Program ::= [Term] ;
+
+Var.  Term2 ::= VarIdent ;
+Lam.  Term ::= "λ" Pattern "." ScopedTerm ;
+App.  Term1 ::= Term1 Term2 ;
+coercions Term 2 ;
+terminator Term ";";
+
+AScopedTerm. ScopedTerm ::= Term ;
+
+PatternVar.       Pattern ::= VarIdent ;
