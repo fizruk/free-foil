@@ -149,3 +149,54 @@ unsafeParseFoilTerm input =
 
 instance IsString (FoilTerm VoidS) where
   fromString = unsafeParseFoilTerm
+
+-- ** Closure-representation
+
+data Neutral n where
+  NVar :: Name n -> Neutral n
+  NApp :: Neutral n -> Value n -> Neutral n
+
+data Value n where
+  VClosure :: Substitution Value i o -> NameBinder i l -> FoilTerm l -> Value o
+  VNeutral :: Neutral n -> Value n
+
+instance InjectName Value where
+  injectName = VNeutral . NVar
+
+instance Sinkable Value where
+  sinkabilityProof = undefined
+
+quote :: Distinct n => Scope n -> Value n -> FoilTerm n
+quote scope = \case
+  VClosure env binder body ->
+    withRefreshed scope (nameOf binder) $ \binder' ->
+      let scope' = extendScope binder' scope
+          env' = addRename (sink env) binder (nameOf binder')
+      in FoilLam noLocation (FoilPatternVar noLocation binder') $
+            FoilAScopedTerm noLocation (quote scope' (eval scope' env' body))
+  VNeutral (NVar x) -> FoilVar noLocation x
+  VNeutral (NApp neu val) -> FoilApp noLocation (quote scope (VNeutral neu)) (quote scope val)
+
+eval :: Distinct o => Scope o -> Substitution Value i o -> FoilTerm i -> Value o
+eval scope env = \case
+  FoilVar _loc x -> lookupSubst env x
+  FoilApp _loc f x ->
+    case eval scope env f of
+      VClosure env' binder body ->
+        let arg = eval scope env x
+            env'' = addSubst env' binder arg
+         in eval scope env'' body
+      VNeutral neu ->
+        VNeutral (NApp neu (eval scope env x))
+  FoilLam _loc (FoilPatternVar _ binder) (FoilAScopedTerm _ body) ->
+    VClosure env binder body
+
+noLocation :: Raw.BNFC'Position
+noLocation = error "no location"
+
+-- | Normal form.
+-- 
+-- >>> nf Foil.emptyScope "(λs. λz. s (s (s z))) (λs. λz. s (s z)) (λx. x) (λy. λz. y)"
+-- λ x1 . λ x2 . x1
+nf :: Distinct n => Scope n -> FoilTerm n -> FoilTerm n
+nf scope term = quote scope (eval scope identitySubst term)
