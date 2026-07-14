@@ -1,5 +1,5 @@
 name: soas
-version: 0.3.0
+version: 0.3.1
 github: "fizruk/free-foil"
 license: BSD3
 author: "Nikolai Kudasov"
@@ -39,7 +39,7 @@ dependencies:
   bifunctors:
   template-haskell:
   deepseq:
-  free-foil: ">= 0.3.0"
+  free-foil: ">= 0.3.1"
   kind-generics-th:
 
 ghc-options:
