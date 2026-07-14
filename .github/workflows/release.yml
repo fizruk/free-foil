@@ -22,9 +22,28 @@ jobs:
       - name: 🔨 Generate package dist tarball (free-foil)
         run: stack sdist haskell/free-foil --tar-dir packages/
 
+      # Hackage does not build our documentation for us (it has produced no build
+      # report at all since 0.0.3), so we upload haddocks with the package.
+      # This needs cabal and a GHC new enough for our template-haskell bound;
+      # the resolver's GHC is the one we know the package builds with.
+      - name: 🧰 Setup GHC and cabal (for haddocks)
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: "9.8.2"
+          cabal-version: "latest"
+
+      - name: 📚 Generate documentation tarball (free-foil)
+        run: |
+          cabal update
+          cabal haddock --haddock-for-hackage --builddir=dist-docs
+          mkdir -p docs
+          mv dist-docs/*-docs.tar.gz docs/
+        working-directory: haskell/free-foil
+
       - name: 🚀 Upload on Hackage
         uses: haskell-actions/hackage-publish@v1
         with:
           hackageToken: ${{ secrets.HACKAGE_AUTH_TOKEN }}
           packagesPath: packages
+          docsPath: haskell/free-foil/docs
           publish: false
