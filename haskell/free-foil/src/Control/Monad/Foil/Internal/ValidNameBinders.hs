@@ -19,6 +19,8 @@ type family SubstInRepK i atom f where
   SubstInRepK i atom U1 = U1
   SubstInRepK i atom (M1 info c f) = M1 info c (SubstInRepK i atom f)
   SubstInRepK i atom (Field field) = Field (SubstInAtom i atom field)
+  SubstInRepK i atom (f :+: g) = SubstInRepK i atom f :+: SubstInRepK i atom g
+  SubstInRepK i atom (f :*: g) = SubstInRepK i atom f :*: SubstInRepK i atom g
   SubstInRepK i atom f =
     TypeError
       ('Text "cannot substitute variable"
