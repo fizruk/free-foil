@@ -67,3 +67,15 @@ tests:
     dependencies:
       - free-foil
       - doctest-parallel
+
+benchmarks:
+  zipmatchk:
+    main: Main.hs
+    source-dirs: bench
+    ghc-options:
+      - -O2
+      - -rtsopts
+    dependencies:
+      - free-foil
+      - kind-generics-th
+      - tasty-bench

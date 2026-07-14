@@ -45,7 +45,9 @@ jobs:
       - name: 🧰 Setup Stack
         uses: freckle/stack-action@v5
         with:
-          stack-build-arguments: --pedantic
+          # Benchmarks are built (so that they cannot rot), but not run: timings
+          # from a shared runner would mean nothing.
+          stack-build-arguments: --pedantic --bench --no-run-benchmarks
           stack-build-arguments-build: --dry-run
           stack-build-arguments-test: --ghc-options -O2 ${{ steps.restore-syntax-files.outputs.cache-hit == 'true' && ' ' || '--reconfigure --force-dirty --ghc-options -fforce-recomp' }}
 
