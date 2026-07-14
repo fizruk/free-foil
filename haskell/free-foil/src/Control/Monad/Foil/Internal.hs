@@ -526,6 +526,23 @@ nameBindersList (UnsafeNameBinders names) = go (IntSet.toList names)
     go []     = unsafeCoerce NameBinderListEmpty
     go (x:xs) = NameBinderListCons (UnsafeNameBinder (UnsafeName x)) (go xs)
 
+-- | Add a binder to the end of an (ordered) list of binders.
+--
+-- Note that 'NameBinderListCons' adds a binder to the /front/ of the list, which
+-- is the outermost position. This adds one to the innermost position instead.
+snocNameBinderList :: NameBinderList n i -> NameBinder i l -> NameBinderList n l
+snocNameBinderList NameBinderListEmpty binder =
+  NameBinderListCons binder NameBinderListEmpty
+snocNameBinderList (NameBinderListCons binder binders) binder' =
+  NameBinderListCons binder (snocNameBinderList binders binder')
+
+-- | Concatenate two (ordered) lists of binders, the second extending the scope
+-- that the first extends to.
+concatNameBinderLists :: NameBinderList n i -> NameBinderList i l -> NameBinderList n l
+concatNameBinderLists NameBinderListEmpty binders = binders
+concatNameBinderLists (NameBinderListCons binder binders) binders' =
+  NameBinderListCons binder (concatNameBinderLists binders binders')
+
 -- | Convert an ordered list of name binders into an unordered set.
 fromNameBindersList :: NameBinderList n l -> NameBinders n l
 fromNameBindersList = UnsafeNameBinders . IntSet.fromList . go
@@ -915,6 +932,45 @@ lookupName name (NameMap m) =
 -- Note that the scope parameter of the result differs from the initial map.
 addNameBinder :: NameBinder n l -> a -> NameMap n a -> NameMap l a
 addNameBinder name x (NameMap m) = NameMap (IntMap.insert (nameId (nameOf name)) x m)
+
+-- | Remove the mapping for a binder, shrinking the map back to the outer scope.
+--
+-- This is the inverse of 'addNameBinder', and is what a type checker wants when
+-- it leaves a binder it has entered.
+popNameBinder :: NameBinder n l -> NameMap l a -> NameMap n a
+popNameBinder binder (NameMap m) = NameMap (IntMap.delete (nameId (nameOf binder)) m)
+
+-- | Allocate a fresh binder for each element of a list, binding each element to
+-- its binder in the map.
+--
+-- The continuation receives the extended scope, the binders in the order of the
+-- input list, and the extended map. This is the list-shaped counterpart of
+-- 'withFresh', and saves a caller from threading the scope, the binders, and the
+-- map through a recursion by hand.
+withFreshNameBinderList
+  :: forall n a r. Distinct n
+  => [a]                  -- ^ A value to bind to each fresh binder.
+  -> Scope n              -- ^ The ambient scope.
+  -> NameMap n a          -- ^ The map to extend.
+  -> (forall l. DExt n l => Scope l -> NameBinderList n l -> NameMap l a -> r)
+  -> r
+withFreshNameBinderList xs0 scope0 nameMap0 cont =
+    go xs0 scope0 NameBinderListEmpty nameMap0 cont
+  where
+    go :: forall i r'. Distinct i
+       => [a] -> Scope i -> NameBinderList n i -> NameMap i a
+       -> (forall l. DExt n l => Scope l -> NameBinderList n l -> NameMap l a -> r')
+       -> r'
+    go [] scope binders nameMap cont' =
+      case (assertDistinct binders, assertExt binders) of
+        (Distinct, Ext) -> cont' scope binders nameMap
+    go (x:xs) scope binders nameMap cont' =
+      withFresh scope $ \binder ->
+        go xs
+           (extendScope binder scope)
+           (snocNameBinderList binders binder)
+           (addNameBinder binder x nameMap)
+           cont'
 
 -- * Raw types and operations
 
