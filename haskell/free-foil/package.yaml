@@ -54,6 +54,9 @@ tests:
       - -with-rtsopts=-N
     dependencies:
       - free-foil
+      - hspec
+      - hspec-discover
+      - kind-generics-th
 
   doctests:
     source-dirs:

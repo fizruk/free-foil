@@ -21,7 +21,8 @@ import           Control.Monad.Foil.TH.Util
 import qualified Control.Monad.Free.Foil    as Foil
 import           Data.Bifunctor
 import           Data.List                  (find, unzip4, (\\), nub)
-import           Data.Maybe                 (catMaybes, mapMaybe)
+import           Data.Maybe                 (catMaybes, listToMaybe, mapMaybe,
+                                             maybeToList)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified GHC.Generics               as GHC
@@ -333,6 +334,23 @@ toFreeFoilBindingCon config rawRetType theOuterScope = go
       ForallC params ctx con -> ForallC params ctx <$> go con
       RecGadtC conNames argTypes retType -> go (GadtC conNames (map removeName argTypes) retType)
 
+-- | Is this raw field a binding (pattern) field?
+--
+-- Such a field has no counterpart in the free foil node: the binder it stands for
+-- lives inside the 'Foil.ScopedAST' of each scoped child.
+isBindingField :: FreeFoilConfig -> Type -> Bool
+isBindingField FreeFoilConfig{..} = \case
+  PeelConT typeName _ | Just _ <- lookupBindingName typeName freeFoilTermConfigs -> True
+  _ -> False
+
+-- | Is this raw field a scoped-term field?
+--
+-- Such a field becomes a 'Foil.ScopedAST', which carries a binder of its own.
+isScopeField :: FreeFoilConfig -> Type -> Bool
+isScopeField FreeFoilConfig{..} = \case
+  PeelConT typeName _ | Just _ <- lookupScopeName typeName freeFoilTermConfigs -> True
+  _ -> False
+
 termConToPat :: Name -> FreeFoilConfig -> FreeFoilTermConfig -> Con -> Q [([Name], Pat, Pat, [Exp])]
 termConToPat rawTypeName config@FreeFoilConfig{..} FreeFoilTermConfig{..} = go
   where
@@ -384,8 +402,40 @@ termConToPat rawTypeName config@FreeFoilConfig{..} FreeFoilTermConfig{..} = go
       GadtC conNames rawArgTypes _rawRetType -> concat <$> do
         forM conNames $ \conName -> do
           let newConName = toSignatureName config conName
-          (concat -> vars, concat -> pats, concat -> pats', concat -> exps) <- unzip4 <$>
-            mapM (fromArgType . snd) rawArgTypes
+          perField <- mapM (fromArgType . snd) rawArgTypes
+          let (concat -> vars, concat -> pats, _, _) = unzip4 perField
+              -- These expressions rebuild the /raw/ constructor, whose fields are
+              -- shaped differently from the free foil node's: the raw constructor
+              -- has a single binding (pattern) field and its scoped fields carry
+              -- no binder of their own, whereas in the free foil every scoped
+              -- child carries its own binder. So a scoped child contributes only
+              -- its body here, and the binding field is filled from the first
+              -- scoped child's binder -- the raw syntax can name only one binder,
+              -- and a constructor that binds several scopes binds the same name
+              -- in each of them.
+              firstScopeBinder = listToMaybe
+                [ binder
+                | (rawArgType, (binder : _, _, _, _)) <- zip (map snd rawArgTypes) perField
+                , isScopeField config rawArgType ]
+              rawFieldExp rawArgType (_, _, _, fieldExps)
+                | isBindingField config rawArgType = map VarE (maybeToList firstScopeBinder)
+                | isScopeField config rawArgType   = drop 1 fieldExps  -- the body; the binder is not a raw field
+                | otherwise                        = fieldExps
+              exps = concat (zipWith rawFieldExp (map snd rawArgTypes) perField)
+              -- Only the first scoped child's binder makes it back into the raw
+              -- syntax (see above), so matching the others' binders would bind a
+              -- variable we never use.
+              sigPats = goSigPats True (zip (map snd rawArgTypes) perField)
+              goSigPats _ [] = []
+              goSigPats isFirstScope ((rawArgType, (_, _, fieldPats, _)) : rest)
+                | isScopeField config rawArgType =
+                    (if isFirstScope then fieldPats else map ignoreBinder fieldPats)
+                      ++ goSigPats False rest
+                | otherwise = fieldPats ++ goSigPats isFirstScope rest
+              ignoreBinder = \case
+                TupP [_binder, body] -> TupP [WildP, body]
+                p                    -> p
+              pats' = sigPats
           return $
             if rawTypeName == rawTermName
               then [ (vars, ConP 'Foil.Node [] [ConP newConName [] pats], ConP newConName [] pats', exps) ]
@@ -521,6 +571,52 @@ termConToPatQuantified config@FreeFoilConfig{..} = go
       ForallC _params _ctx con -> go con
       RecGadtC conNames argTypes retType -> go (GadtC conNames (map removeName argTypes) retType)
 
+-- | Argument types of a pattern synonym for a single raw constructor.
+--
+-- This has to agree with 'termConToPat', which decides what the synonym's
+-- /arguments/ are, and the two used to disagree:
+--
+-- * a raw binding (pattern) field contributes __no__ argument, since a binder
+--   in the free foil lives inside the 'Foil.ScopedAST' it binds, not beside it;
+-- * a raw scoped-term field contributes __two__ arguments, a binder and a body;
+-- * every other field contributes one argument, as before.
+--
+-- Crucially, each scoped-term field gets a __fresh__ inner scope: a constructor
+-- with several scoped children (a recursive @let@, say) binds a separate name in
+-- each of them, so sharing one scope variable between them is wrong. A
+-- constructor with at most one scoped child keeps the inner scope named @i@,
+-- so the generated code for such constructors is unchanged.
+patternSynonymArgTypes :: FreeFoilConfig -> Type -> Type -> [Type] -> [Type]
+patternSynonymArgTypes config@FreeFoilConfig{..} outerScope innerScope rawArgTypes =
+    go (1 :: Int) rawArgTypes
+  where
+    -- Only when there are several scoped children do we need to number the
+    -- scopes; with one child, @i@ keeps the generated code as it was.
+    scopeCount = length (filter (isScopeField config) rawArgTypes)
+    innerScopeFor k
+      | scopeCount <= 1 = innerScope
+      | otherwise       = VarT (mkName ("i" ++ show k))
+
+    go _ [] = []
+    go k (rawArgType : rest) = case rawArgType of
+      PeelConT typeName _params
+        -- The binder is an argument of the ScopedAST, not of the node.
+        | Just _ <- lookupBindingName typeName freeFoilTermConfigs -> go k rest
+        -- A scoped child: its own binder, then its body, in its own scope.
+        | Just FreeFoilTermConfig{..} <- lookupScopeName typeName freeFoilTermConfigs ->
+            let inner = innerScopeFor k
+                rawBindingType = PeelConT rawBindingName (typeParamsOf rawArgType)
+             in toFreeFoilType SortTerm config outerScope inner rawBindingType
+                  : toFreeFoilType SortTerm config outerScope inner rawArgType
+                  : go (k + 1) rest
+      _ -> toFreeFoilType SortTerm config outerScope innerScope rawArgType : go k rest
+
+    -- A scoped type and its binding type are parametrised alike (both carry the
+    -- annotation type, if any), so the binder type reuses the scope's parameters.
+    typeParamsOf = \case
+      PeelConT _ params -> params
+      _                 -> []
+
 mkPatternSynonym :: Name -> FreeFoilConfig -> FreeFoilTermConfig -> Type -> Con -> Q [(Name, [Dec])]
 mkPatternSynonym rawTypeName config termConfig@FreeFoilTermConfig{..} rawRetType = go
   where
@@ -529,16 +625,18 @@ mkPatternSynonym rawTypeName config termConfig@FreeFoilTermConfig{..} rawRetType
       GadtC conNames rawArgTypes _rawRetType -> concat <$> do
         forM (conNames \\ [rawVarConName]) $ \conName -> do
           let patName = toConName config conName
-              rawConType = foldr (\x y -> AppT (AppT ArrowT x) y) rawRetType (map snd rawArgTypes)
               outerScope = VarT (mkName "o")
               innerScope
                 | rawTypeName `elem` rawSubScopeNames = outerScope
                 | otherwise = VarT (mkName "i")
+              synType = foldr (\x y -> AppT (AppT ArrowT x) y)
+                (toFreeFoilType SortTerm config outerScope innerScope rawRetType)
+                (patternSynonymArgTypes config outerScope innerScope (map snd rawArgTypes))
           [(vars, pat, _, _)] <- termConToPat rawTypeName config termConfig (GadtC [conName] rawArgTypes rawRetType)    -- FIXME: unsafe matching!
           addModFinalizer $ putDoc (DeclDoc patName)
             ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. Pattern synonym for an '" ++ show ''Foil.AST ++ "' node of type '" ++ show conName ++ "'.")
           return [(patName,
-            [ PatSynSigD patName (toFreeFoilType SortTerm config outerScope innerScope rawConType)
+            [ PatSynSigD patName synType
             , PatSynD patName (PrefixPatSyn vars) ImplBidir pat
             ])]
 
@@ -1187,6 +1285,19 @@ bindingConToClause rawType config FreeFoilTermConfig{..} = go
 sigConToClause :: Sort -> Type -> FreeFoilConfig -> FreeFoilTermConfig -> Con -> Q [Clause]
 sigConToClause sort rawRetType config@FreeFoilConfig{..} FreeFoilTermConfig{..} = go
   where
+    -- Matching a raw constructor, we must bind exactly one variable per raw
+    -- field. The binding (pattern) field binds @theBinder@, and each scoped
+    -- field binds only a body -- and then every scoped child of the free foil
+    -- node is given /the same/ @theBinder@, since the raw syntax names one
+    -- binder and a constructor binding several scopes binds it in each of them.
+    fromRawArgType :: Bool -> Name -> Name -> Type -> Q ([Pat], [Exp])
+    fromRawArgType isVarCon theIdent theBinder rawArgType
+      | isBindingField config rawArgType = return ([VarP theBinder], [])
+      | isScopeField config rawArgType = do
+          body <- newName "body"
+          return ([VarP body], [TupE [Just (VarE theBinder), Just (VarE body)]])
+      | otherwise = fromArgType isVarCon theIdent rawArgType
+
     fromArgType :: Bool -> Name -> Type -> Q ([Pat], [Exp])
     fromArgType isVarCon theIdent = \case
       PeelConT typeName _params
@@ -1227,11 +1338,12 @@ sigConToClause sort rawRetType config@FreeFoilConfig{..} FreeFoilTermConfig{..} 
     go = \case
       GadtC conNames rawArgTypes _rawRetType -> concat <$> do
         theIdent <- newName "_theRawIdent"
+        theBinder <- newName "binder"
         forM conNames $ \conName -> do
           let newConName = toSignatureName config conName
               isVarCon = conName == rawVarConName
           (concat -> pats, concat -> exps) <- unzip <$>
-            mapM (fromArgType isVarCon theIdent . snd) rawArgTypes
+            mapM (fromRawArgType isVarCon theIdent theBinder . snd) rawArgTypes
           case sort of
             SortTerm
               | isVarCon -> return
