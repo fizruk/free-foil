@@ -1,0 +1,37 @@
+name: Cleanup caches
+
+# A stack build caches its dependencies per platform, and the cache key includes
+# a hash of every package.yaml and *.cabal file. So a branch that bumps a version
+# or edits a dependency writes fresh dependency caches (a few hundred MB each),
+# which live on after the branch is merged and compete with `main`'s caches for
+# the repository's 10 GB budget. GitHub evicts least-recently-used, and `main`'s
+# caches are exactly the ones every new pull request wants to restore from.
+#
+# So when a pull request closes, delete the caches it created.
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cleanup:
+    name: Delete caches of the closed pull request
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🧹 Delete caches for refs/pull/${{ github.event.pull_request.number }}/merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          BRANCH: refs/pull/${{ github.event.pull_request.number }}/merge
+        run: |
+          echo "Deleting caches for $BRANCH"
+          # A cache is scoped to the ref that created it, so listing by ref gives
+          # exactly this pull request's caches and nothing of main's.
+          gh cache list --repo "$REPO" --ref "$BRANCH" --limit 100 --json id,key,sizeInBytes \
+            --jq '.[] | "\(.id) \(.sizeInBytes) \(.key)"' | while read -r id size key; do
+              echo "  deleting $key ($((size / 1024 / 1024)) MB)"
+              gh cache delete "$id" --repo "$REPO" || true
+            done
