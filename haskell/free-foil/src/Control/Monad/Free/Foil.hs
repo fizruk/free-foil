@@ -34,7 +34,6 @@ import           Data.Coerce                 (coerce)
 import           Data.Map                    (Map)
 import qualified Data.Map                    as Map
 import           Data.Maybe                  (mapMaybe)
-import           Data.Monoid                 (All (..))
 import           GHC.Generics                (Generic)
 import           Unsafe.Coerce               (unsafeCoerce)
 
@@ -83,6 +82,7 @@ instance Foil.InjectName (AST binder sig) where
 -- * Substitution
 
 -- | Substitution for free (scoped monads).
+{-# INLINABLE substitute #-}
 substitute
   :: (Bifunctor sig, Foil.Distinct o, Foil.CoSinkable binder, Foil.SinkableK binder)
   => Foil.Scope o
@@ -108,6 +108,7 @@ substitute scope subst = \case
 -- > substituteRefreshed scope subst = refreshAST scope . subtitute scope subst
 --
 -- In general, 'substitute' is more efficient since it does not always refresh binders.
+{-# INLINABLE substituteRefreshed #-}
 substituteRefreshed
   :: (Bifunctor sig, Foil.Distinct o, Foil.CoSinkable binder, Foil.SinkableK binder)
   => Foil.Scope o
@@ -158,6 +159,7 @@ substitutePattern scope env binders args body =
 -- * \(\alpha\)-equivalence
 
 -- | Refresh (force) all binders in a term, minimizing the used indices.
+{-# INLINABLE refreshAST #-}
 refreshAST
   :: (Bifunctor sig, Foil.Distinct n, Foil.CoSinkable binder, Foil.SinkableK binder)
   => Foil.Scope n
@@ -168,6 +170,7 @@ refreshAST scope = \case
   Node t -> Node (bimap (refreshScopedAST scope) (refreshAST scope) t)
 
 -- | Similar to `refreshAST`, but for scoped terms.
+{-# INLINABLE refreshScopedAST #-}
 refreshScopedAST :: (Bifunctor sig, Foil.Distinct n, Foil.CoSinkable binder, Foil.SinkableK binder)
   => Foil.Scope n
   -> ScopedAST binder sig n
@@ -183,6 +186,7 @@ refreshScopedAST scope (ScopedAST binder body) =
 --
 -- Compared to 'alphaEquiv', this function may perform some unnecessary
 -- changes of bound variables when the binders are the same on both sides.
+{-# INLINABLE alphaEquivRefreshed #-}
 alphaEquivRefreshed
   :: (Bitraversable sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder)
   => Foil.Scope n
@@ -196,6 +200,7 @@ alphaEquivRefreshed scope t1 t2 = refreshAST scope t1 `unsafeEqAST` refreshAST s
 --
 -- Compared to 'alphaEquivRefreshed', this function might skip unnecessary
 -- changes of bound variables when both binders in two matching scoped terms coincide.
+{-# INLINABLE alphaEquiv #-}
 alphaEquiv
   :: (Bitraversable sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder)
   => Foil.Scope n
@@ -204,12 +209,15 @@ alphaEquiv
   -> Bool
 alphaEquiv _scope (Var x) (Var y) = x == coerce y
 alphaEquiv scope (Node l) (Node r) =
-  case zipMatch2 l r of
+  case zipMatchWith2 (unit . alphaEquivScoped scope) (unit . alphaEquiv scope) l r of
     Nothing -> False
-    Just tt -> getAll (bifoldMap (All . uncurry (alphaEquivScoped scope)) (All . uncurry (alphaEquiv scope)) tt)
+    Just _  -> True
+  where
+    unit f x = if f x then Just () else Nothing
 alphaEquiv _ _ _ = False
 
 -- | Same as 'alphaEquiv' but for scoped terms.
+{-# INLINABLE alphaEquivScoped #-}
 alphaEquivScoped
   :: (Bitraversable sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder)
   => Foil.Scope n
@@ -255,6 +263,7 @@ alphaEquivScoped scope
 -- This check ignores the possibility that two terms might have different
 -- scope extensions under binders (which might happen due to substitution
 -- under a binder in absence of name conflicts).
+{-# INLINABLE unsafeEqAST #-}
 unsafeEqAST
   :: (Bitraversable sig, ZipMatchK sig, Foil.UnifiablePattern binder, Foil.Distinct n, Foil.Distinct l)
   => AST binder sig n
@@ -262,12 +271,15 @@ unsafeEqAST
   -> Bool
 unsafeEqAST (Var x) (Var y) = x == coerce y
 unsafeEqAST (Node t1) (Node t2) =
-  case zipMatch2 t1 t2 of
+  case zipMatchWith2 (unit . unsafeEqScopedAST) (unit . unsafeEqAST) t1 t2 of
     Nothing -> False
-    Just tt -> getAll (bifoldMap (All . uncurry unsafeEqScopedAST) (All . uncurry unsafeEqAST) tt)
+    Just _  -> True
+  where
+    unit f x = if f x then Just () else Nothing
 unsafeEqAST _ _ = False
 
 -- | A version of 'unsafeEqAST' for scoped terms.
+{-# INLINABLE unsafeEqScopedAST #-}
 unsafeEqScopedAST
   :: (Bitraversable sig, ZipMatchK sig, Foil.UnifiablePattern binder, Foil.Distinct n, Foil.Distinct l)
   => ScopedAST binder sig n

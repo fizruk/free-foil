@@ -48,6 +48,7 @@ module Control.Monad.Foil.Internal where
 import           Control.DeepSeq    (NFData (..))
 import           Data.Bifunctor
 import           Data.Coerce        (coerce)
+import           Data.Functor.Compose (Compose (..))
 import           Data.IntMap
 import qualified Data.IntMap        as IntMap
 import           Data.IntSet
@@ -58,6 +59,12 @@ import           Generics.Kind
 import           Unsafe.Coerce
 
 import Control.Monad.Foil.Internal.ValidNameBinders
+
+-- $setup
+-- >>> :set -XDataKinds
+-- >>> :set -XFlexibleContexts
+-- >>> :set -Wno-simplifiable-class-constraints
+-- >>> import qualified Data.Map as Map
 
 -- * Safe types and operations
 
@@ -662,12 +669,41 @@ class Sinkable (e :: S -> Type) where
 instance Sinkable Name where
   sinkabilityProof rename = rename
 
+-- | A container of sinkable expressions is sinkable, elementwise.
+--
+-- The point of this instance is 'sinkContainer': since the proof typechecks,
+-- sinking the whole container is a coercion, and does not walk its spine.
+instance (Functor f, Sinkable e) => Sinkable (Compose f e) where
+  sinkabilityProof rename (Compose xs) = Compose (fmap (sinkabilityProof rename) xs)
+
 -- | Efficient version of 'sinkabilityProof'.
 -- In fact, once 'sinkabilityProof' typechecks,
 -- it is safe to 'sink' by coercion.
 -- See Section 3.5 in [«The Foil: Capture-Avoiding Substitution With No Sharp Edges»](https://doi.org/10.1145/3587216.3587224) for the details.
 sink :: (Sinkable e, DExt n l) => e n -> e l
 sink = unsafeCoerce
+
+-- | Sink an entire container of sinkable expressions, in \(O(1)\).
+--
+-- The soundness argument for 'sink' extends to a container of sinkables — an
+-- 'Data.IntMap.IntMap' of terms, a 'Data.Map.Map' keyed by something else, a
+-- list of them — so there is no need to walk the spine with @'fmap' 'sink'@, and
+-- entering a binder need not be \(O(size)\).
+--
+-- >>> :{
+-- sinkEnv :: DExt n l => Map.Map String (Name n) -> Map.Map String (Name l)
+-- sinkEnv = sinkContainer
+-- :}
+--
+-- Two things this does /not/ cover:
+--
+-- * A 'Scope' is __not__ sinkable, and must not be sunk: it is the set of names
+--   /in/ scope @n@, and it has to grow when a binder is entered (see 'extendScope').
+-- * A 'NameMap' must stay __total__ on the names in scope ('lookupName' errors
+--   otherwise), so sinking one has to be paired with adding the new binder's
+--   entry (see 'addNameBinder').
+sinkContainer :: (Functor f, Sinkable e, DExt n l) => f (e n) -> f (e l)
+sinkContainer = getCompose . sink . Compose
 
 -- | Extend renaming when going under a 'CoSinkable' pattern (generalized binder).
 -- Note that the scope under pattern is independent of the codomain of the renaming.
