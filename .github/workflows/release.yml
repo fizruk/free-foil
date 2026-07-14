@@ -3,6 +3,11 @@ on:
   release:
     types: [published]
 
+  # A dry run: builds the source and documentation tarballs exactly as a real
+  # release would, and stops before uploading anything. Without this, the steps
+  # below are exercised for the first time on release day.
+  workflow_dispatch:
+
 permissions:
   contents: write
 
@@ -32,6 +37,13 @@ jobs:
           ghc-version: "9.8.2"
           cabal-version: "latest"
 
+      - name: 💾 Cache cabal store (for haddocks)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cabal/store
+          key: cabal-store-${{ runner.os }}-ghc9.8.2-${{ hashFiles('haskell/free-foil/free-foil.cabal') }}
+          restore-keys: cabal-store-${{ runner.os }}-ghc9.8.2-
+
       - name: 📚 Generate documentation tarball (free-foil)
         run: |
           cabal update
@@ -40,7 +52,17 @@ jobs:
           mv dist-docs/*-docs.tar.gz docs/
         working-directory: haskell/free-foil
 
+      - name: 📦 Upload tarballs as workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hackage-tarballs
+          path: |
+            packages/*.tar.gz
+            haskell/free-foil/docs/*-docs.tar.gz
+
+      # Only a published release uploads to Hackage; a manual run is a dry run.
       - name: 🚀 Upload on Hackage
+        if: github.event_name == 'release'
         uses: haskell-actions/hackage-publish@v1
         with:
           hackageToken: ${{ secrets.HACKAGE_AUTH_TOKEN }}

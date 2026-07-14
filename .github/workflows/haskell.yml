@@ -18,8 +18,13 @@ jobs:
     name: Run tests
     runs-on: ${{ matrix.os }}
     strategy:
+      # Pull requests are tested on Linux only; `main` and tags are tested on
+      # all three platforms. A release is cut from `main`, so the cross-platform
+      # signal is still there when it matters, while an ordinary PR no longer
+      # pays for the (slowest) Windows job or writes ~1 GB of platform caches
+      # that then evict `main`'s caches from the repository's 10 GB budget.
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "windows-latest", "macos-latest"]') }}
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
