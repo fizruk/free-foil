@@ -1,5 +1,35 @@
 # CHANGELOG for `free-foil`
 
+# 0.3.1 — 2026-07-14
+
+A bug fix and a set of additions, all of them prompted by the projects built on free-foil. Nothing is removed or changed, so upgrading from 0.3.0 needs no work.
+
+Fixes:
+
+- `mkFreeFoil` and `mkFreeFoilConversions` generated ill-typed code for a raw constructor whose shape does not line up with the free foil node it becomes (see [#38](https://github.com/fizruk/free-foil/pull/38)):
+
+  ```
+  Let    ::= Pattern Term ScopedTerm        -- a term between the pattern and its scope
+  LetRec ::= Pattern ScopedTerm ScopedTerm  -- one pattern binding two scopes
+  ```
+
+  - The pattern synonym's arguments and its type signature were computed by two traversals that disagreed, and the conversions had the mirror problem.
+  - A constructor binding several scopes binds the same raw name in each of them, so raw-to-foil now sends that one binder into every scoped child, and foil-to-raw reads it back from the first.
+  - Constructors with at most one scoped child generate exactly what they did before.
+  - Reported and diagnosed by [@AbsoluteNikola](https://github.com/AbsoluteNikola), who had to vendor the generated code by hand in [free-foil-refinement-types](https://github.com/AbsoluteNikola/free-foil-refinement-types).
+
+New functions, absorbed from the projects built on free-foil, several of which were importing `Control.Monad.Foil.Internal` to get at them (see [#40](https://github.com/fizruk/free-foil/pull/40)):
+
+- `popNameBinder` — the inverse of `addNameBinder`, for leaving a binder.
+- `withFreshNameBinderList` — a fresh binder for each element of a list, bound to it in a `NameMap`.
+- `snocNameBinderList` and `concatNameBinderLists`.
+- `nameBindersList`, `fromNameBindersList` and `nameMapToScope` are now exported (they existed, but were unreachable).
+- With thanks to [@Probirochniy](https://github.com/Probirochniy), [@fedor-ivn](https://github.com/fedor-ivn) and [@snejugal](https://github.com/snejugal) ([free-foil-hou](https://github.com/fedor-ivn/free-foil-hou)), and to [@evermake](https://github.com/evermake), [@frog-da](https://github.com/frog-da) and [@Vikono](https://github.com/Vikono) ([free-foil-typecheck](https://github.com/evermake/free-foil-typecheck)), whose copies of these helpers carried the comment *"Should be in `Control.Monad.Foil`"*.
+
+Documentation:
+
+- `unifyNameBinders` renames the binder with the larger name towards the one with the smaller name. That is safe, since the renaming is pushed through a term with `liftRM`, which refreshes a binder whenever it would capture. The haddock now says so, with a test to match (see [#39](https://github.com/fizruk/free-foil/pull/39)). Raised by [@AbsoluteNikola](https://github.com/AbsoluteNikola).
+
 # 0.3.0 — 2026-07-14
 
 This release makes generic deriving the default way to instantiate the library:
