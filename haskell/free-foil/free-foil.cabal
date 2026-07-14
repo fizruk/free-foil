@@ -91,6 +91,9 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      Control.Monad.Free.Foil.TH.MkFreeFoilSpec
+      Control.Monad.Free.Foil.TH.MkFreeFoilSpec.Config
+      Control.Monad.Free.Foil.TH.MkFreeFoilSpec.Syntax
       Paths_free_foil
   hs-source-dirs:
       test
@@ -102,7 +105,10 @@ test-suite spec
     , containers >=0.6 && <0.9
     , deepseq >=1.4 && <1.6
     , free-foil
+    , hspec
+    , hspec-discover
     , kind-generics >=0.5.0 && <0.6
+    , kind-generics-th
     , template-haskell >=2.21.0.0 && <2.24
     , text >=1.2.3.1 && <2.2
   default-language: Haskell2010
