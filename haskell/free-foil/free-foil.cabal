@@ -1,11 +1,11 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.37.0.
+-- This file has been generated from package.yaml by hpack version 0.39.1.
 --
 -- see: https://github.com/sol/hpack
 
 name:           free-foil
-version:        0.2.0
+version:        0.3.0
 synopsis:       Efficient Type-Safe Capture-Avoiding Substitution for Free (Scoped Monads)
 description:    Please see the README on GitHub at <https://github.com/fizruk/free-foil#readme>
 category:       Parsing
