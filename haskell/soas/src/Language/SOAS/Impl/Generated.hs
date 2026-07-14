@@ -25,6 +25,7 @@ import qualified Language.SOAS.Syntax.Lex    as Raw
 import qualified Language.SOAS.Syntax.Par    as Raw
 import qualified Language.SOAS.Syntax.Print  as Raw
 import Data.ZipMatchK
+import Data.ZipMatchK.TH (deriveZipMatchK2)
 import Generics.Kind.TH (deriveGenericK)
 import Language.SOAS.FreeFoilConfig (soasConfig)
 
@@ -90,9 +91,15 @@ instance ZipMatchK Raw.OpIdent where zipMatchWithK = zipMatchViaEq
 -- | Match 'Raw.MetaVarIdent' via 'Eq'.
 instance ZipMatchK Raw.MetaVarIdent where zipMatchWithK = zipMatchViaEq
 
-instance ZipMatchK a => ZipMatchK (Term'Sig a)
-instance ZipMatchK a => ZipMatchK (OpArg'Sig a)
-instance ZipMatchK a => ZipMatchK (Type'Sig a)
+-- | Match the signatures with the derived (rather than the generic) instances:
+-- the generic one reflects each node into a "Generics.Kind" representation on
+-- every comparison, and matching terms is most of what a SOAS implementation
+-- does.
+--
+-- The three signatures refer to one another, so they have to be derived in a
+-- single splice: a top-level splice ends a declaration group, and an instance
+-- from a later group is not visible to an earlier one.
+concat <$> traverse deriveZipMatchK2 [''Term'Sig, ''OpArg'Sig, ''Type'Sig]
 
 instance Foil.UnifiablePattern (Binders' a)
 
