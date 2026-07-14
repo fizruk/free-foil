@@ -408,6 +408,20 @@ data UnifyNameBinders (pattern :: S -> S -> Type) n l r where
 
 -- | Unify binders either by asserting that they are the same,
 -- or by providing a /safe/ renaming function to convert one binder to another.
+--
+-- When the binders differ, the one with the /larger/ name is renamed towards the
+-- one with the smaller name. The direction is deliberate, but it is not what makes
+-- the renaming safe, and it is worth being explicit about that, since the choice
+-- looks arbitrary and has been "fixed" downstream before.
+--
+-- The renaming returned here is not applied by substituting names blindly: callers
+-- push it through a term with 'Control.Monad.Foil.Relative.liftRM', which refreshes
+-- a binder whenever it would capture. So the target name may perfectly well be used
+-- by a binder /inside/ the term being renamed — a term built in a small scope keeps
+-- its small binder names when 'sink' places it in a larger one, so binder names do
+-- not always grow with depth — and the result is still correct. See
+-- @Control.Monad.Foil.UnifyNameBindersSpec@ for the term that exercises exactly
+-- this.
 unifyNameBinders
   :: forall i l r pattern. Distinct i
   => NameBinder i l -- ^ Left pattern.

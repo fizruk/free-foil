@@ -91,6 +91,7 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      Control.Monad.Foil.UnifyNameBindersSpec
       Control.Monad.Free.Foil.TH.MkFreeFoilSpec
       Control.Monad.Free.Foil.TH.MkFreeFoilSpec.Config
       Control.Monad.Free.Foil.TH.MkFreeFoilSpec.Syntax
