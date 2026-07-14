@@ -49,6 +49,7 @@ import           Data.Map                        (Map)
 import qualified Data.Map                        as Map
 import           Data.String                     (IsString (..))
 import           Data.ZipMatchK
+import           Data.ZipMatchK.TH   (deriveZipMatchK2)
 import           Generics.Kind.TH                (deriveGenericK)
 import qualified GHC.Generics                    as GHC
 import qualified Language.LambdaPi.Syntax.Abs    as Raw
@@ -107,8 +108,8 @@ deriveGenericK ''Term'Sig
 -- | Ignore 'Raw.BNFC'Position' when matching terms.
 instance ZipMatchK Raw.BNFC'Position where zipMatchWithK = zipMatchViaChooseLeft
 
--- | Generic 'ZipMatchK' instance.
-instance ZipMatchK a => ZipMatchK (Term'Sig a)
+-- | Derived (rather than generic) 'ZipMatchK' instance: see "Data.ZipMatchK.TH".
+deriveZipMatchK2 ''Term'Sig
 
 -- * User-defined code
 
