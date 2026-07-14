@@ -71,11 +71,21 @@ tests:
 benchmarks:
   zipmatchk:
     main: Main.hs
-    source-dirs: bench
+    source-dirs: bench/zipmatchk
     ghc-options:
       - -O2
       - -rtsopts
     dependencies:
       - free-foil
       - kind-generics-th
+      - tasty-bench
+
+  normalize:
+    main: Main.hs
+    source-dirs: bench/normalize
+    ghc-options:
+      - -O2
+      - -rtsopts
+    dependencies:
+      - free-foil
       - tasty-bench
