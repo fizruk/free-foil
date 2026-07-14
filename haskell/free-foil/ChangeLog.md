@@ -14,6 +14,14 @@ New:
 
 - A `zipmatchk` benchmark for `free-foil`, comparing the generic and the derived instance on `alphaEquiv` at several signature sizes. CI builds it, but does not run it.
 
+- `sinkContainer` sinks an entire container of sinkable expressions — an `IntMap` of terms, a `Map` keyed by something else — in O(1), by coercion, rather than walking the spine with `fmap sink`. The soundness argument for `sink` extends to a container of sinkables, and there was previously no way to say so, so downstream projects wrote their own `unsafeCoerce`. Note that a `Scope` is *not* sinkable (it must grow when a binder is entered) and a `NameMap` must stay total, so sinking one has to be paired with adding the new binder's entry; both are documented with the function.
+
+Performance:
+
+- `alphaEquiv` and `unsafeEqAST` no longer pair up the node they are comparing. They used to build a copy of the node with every field replaced by a tuple, and only then fold over the copy; they now recurse inside the zipping functions, which allocates no tuples and short-circuits on the first mismatch. On the benchmark this is 294 µs → 217 µs and 3.1 MB → 2.8 MB with a derived instance, and 541 µs → 362 µs with a generic one. Behaviour is unchanged.
+
+- The hot functions (`substitute`, `alphaEquiv`, `refreshAST` and friends) are now `INLINABLE`, so that a downstream call site can specialise them for its own signature instead of passing dictionaries. Worth a few percent on the benchmark, and more where the signature is bigger.
+
 Changed:
 
 - `soas` and `Language.LambdaPi.Impl.FreeFoilTH` now derive their `ZipMatchK` instances rather than taking the generic ones. `Language.LambdaPi.Impl.FreeFoil`, the implementation that does everything by hand, now writes them out by hand, so that the two implementations show the two ways.
