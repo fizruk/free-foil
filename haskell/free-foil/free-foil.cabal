@@ -40,6 +40,7 @@ library
       Control.Monad.Foil.TH.MkToFoil
       Control.Monad.Foil.TH.Util
       Control.Monad.Free.Foil
+      Control.Monad.Free.Foil.Annotated
       Control.Monad.Free.Foil.Example
       Control.Monad.Free.Foil.TH
       Control.Monad.Free.Foil.TH.Convert
@@ -93,6 +94,7 @@ test-suite spec
   other-modules:
       Control.Monad.Foil.NameMapSpec
       Control.Monad.Foil.UnifyNameBindersSpec
+      Control.Monad.Free.Foil.AnnotatedSpec
       Control.Monad.Free.Foil.TH.MkFreeFoilSpec
       Control.Monad.Free.Foil.TH.MkFreeFoilSpec.Config
       Control.Monad.Free.Foil.TH.MkFreeFoilSpec.Syntax
