@@ -42,9 +42,25 @@ jobs:
             haskell/lambda-pi/src/Language/LambdaPi/Syntax/Lex.hs
             haskell/lambda-pi/src/Language/LambdaPi/Syntax/Par.hs
 
+      # Install GHC and Stack through the toolchain cache, which is keyed on the
+      # GHC version alone. A stack-managed GHC would instead ride in the same
+      # cache as the built dependencies, and so be re-downloaded whenever a
+      # package.yaml or dependency changes. The version must match the resolver's
+      # GHC (nightly-2024-08-17 → 9.8.2); a mismatch makes '--system-ghc' fail loudly.
+      - name: 🧰 Setup GHC and Stack (cached toolchain)
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: "9.8.2"
+          enable-stack: true
+          stack-version: "latest"
+
       - name: 🧰 Setup Stack
         uses: freckle/stack-action@v5
         with:
+          # Use the GHC and Stack installed above, rather than a stack-managed GHC.
+          install-stack: false
+          upgrade-stack: false
+          stack-arguments: --system-ghc --no-install-ghc
           # Benchmarks are built (so that they cannot rot), but not run: timings
           # from a shared runner would mean nothing.
           stack-build-arguments: --pedantic --bench --no-run-benchmarks
@@ -71,9 +87,19 @@ jobs:
         with:
           ref: ${{ github.ref }}
 
+      - name: 🧰 Setup GHC and Stack (cached toolchain)
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: "9.8.2"
+          enable-stack: true
+          stack-version: "latest"
+
       - name: 🧰 Setup Stack
         uses: freckle/stack-action@v5
         with:
+          install-stack: false
+          upgrade-stack: false
+          stack-arguments: --system-ghc --no-install-ghc
           test: false
           stack-build-arguments: --fast --haddock
           cache-prefix: docs-
