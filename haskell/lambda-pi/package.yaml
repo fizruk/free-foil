@@ -1,5 +1,5 @@
 name: lambda-pi
-version: 0.3.1
+version: 0.3.2
 github: "fizruk/free-foil"
 license: BSD3
 author: "Nikolai Kudasov"
@@ -33,13 +33,13 @@ build-tools:
 
 dependencies:
   array: ">= 0.5.3.0"
-  base: ">= 4.7 && < 5"
+  base: ">= 4.19 && < 5"
   text: ">= 1.2.3.1"
   containers:
   bifunctors:
   template-haskell:
   deepseq:
-  free-foil: ">= 0.3.1"
+  free-foil: ">= 0.3.2"
   kind-generics-th:
 
 ghc-options:

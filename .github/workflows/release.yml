@@ -28,7 +28,12 @@ jobs:
         run: stack sdist haskell/free-foil --tar-dir packages/
 
       # Hackage does not build our documentation for us (it has produced no build
-      # report at all since 0.0.3), so we upload haddocks with the package.
+      # report at all since 0.0.3), so we build the haddocks ourselves. They are
+      # NOT uploaded here: uploading to a candidate is pointless, since promoting
+      # a candidate does not carry its documentation across. Instead the tarball
+      # is kept as a workflow artifact, and 'upload-docs.yml' uploads it to the
+      # published package after the candidate is promoted. Building it here also
+      # exercises 'cabal haddock' on every dry run, rather than first on release day.
       # This needs cabal and a GHC new enough for our template-haskell bound;
       # the resolver's GHC is the one we know the package builds with.
       - name: 🧰 Setup GHC and cabal (for haddocks)
@@ -61,11 +66,12 @@ jobs:
             haskell/free-foil/docs/*-docs.tar.gz
 
       # Only a published release uploads to Hackage; a manual run is a dry run.
+      # The package goes up as a candidate (publish: false); docs are not sent
+      # here (see above) — 'upload-docs.yml' handles them after promotion.
       - name: 🚀 Upload on Hackage
         if: github.event_name == 'release'
         uses: haskell-actions/hackage-publish@v1
         with:
           hackageToken: ${{ secrets.HACKAGE_AUTH_TOKEN }}
           packagesPath: packages
-          docsPath: haskell/free-foil/docs
           publish: false

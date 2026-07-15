@@ -5,7 +5,7 @@ cabal-version: 1.24
 -- see: https://github.com/sol/hpack
 
 name:           lambda-pi
-version:        0.3.1
+version:        0.3.2
 synopsis:       λΠ-calculus implemented in a few different ways.
 description:    Please see the README on GitHub at <https://github.com/fizruk/free-foil#readme>
 category:       Language
@@ -56,11 +56,11 @@ library
       BNFC:bnfc >=2.9.4.1
   build-depends:
       array >=0.5.3.0
-    , base >=4.7 && <5
+    , base >=4.19 && <5
     , bifunctors
     , containers
     , deepseq
-    , free-foil >=0.3.1
+    , free-foil >=0.3.2
     , kind-generics-th
     , template-haskell
     , text >=1.2.3.1
@@ -80,11 +80,11 @@ executable lambda-pi
       BNFC:bnfc >=2.9.4.1
   build-depends:
       array >=0.5.3.0
-    , base >=4.7 && <5
+    , base >=4.19 && <5
     , bifunctors
     , containers
     , deepseq
-    , free-foil >=0.3.1
+    , free-foil >=0.3.2
     , kind-generics-th
     , lambda-pi
     , template-haskell
@@ -105,12 +105,12 @@ test-suite doctests
       BNFC:bnfc >=2.9.4.1
   build-depends:
       array >=0.5.3.0
-    , base >=4.7 && <5
+    , base >=4.19 && <5
     , bifunctors
     , containers
     , deepseq
     , doctest-parallel
-    , free-foil >=0.3.1
+    , free-foil >=0.3.2
     , kind-generics-th
     , lambda-pi
     , template-haskell
@@ -135,11 +135,11 @@ test-suite spec
   build-depends:
       QuickCheck
     , array >=0.5.3.0
-    , base >=4.7 && <5
+    , base >=4.19 && <5
     , bifunctors
     , containers
     , deepseq
-    , free-foil >=0.3.1
+    , free-foil >=0.3.2
     , hspec
     , hspec-discover
     , kind-generics-th

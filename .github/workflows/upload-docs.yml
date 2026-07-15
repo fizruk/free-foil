@@ -1,0 +1,54 @@
+name: Upload docs to Hackage
+
+# Hackage does not build documentation for this package (it has produced no
+# build report at all since 0.0.3), and the release workflow uploads the package
+# as a *candidate* — promoting which does not carry its documentation across. So
+# the published package would otherwise show "Docs pending" and its doc URLs 404.
+#
+# Run this by hand AFTER promoting the candidate on Hackage: it rebuilds the
+# haddocks from the release tag and uploads them to the *published* package.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Released version to upload docs for, e.g. 0.3.2 (promote the candidate first)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    name: "Build and upload haddocks to the published package"
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout the release tag
+        uses: actions/checkout@v4
+        with:
+          ref: "v${{ inputs.version }}"
+
+      - name: 🧰 Setup GHC and cabal
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: "9.8.2"
+          cabal-version: "latest"
+
+      - name: 📚 Build the documentation tarball (free-foil)
+        run: |
+          cabal update
+          cabal haddock --haddock-for-hackage --builddir=dist-docs
+        working-directory: haskell/free-foil
+
+      - name: 🚀 Upload haddocks to the published package
+        env:
+          HACKAGE_TOKEN: ${{ secrets.HACKAGE_AUTH_TOKEN }}
+        run: |
+          set -euo pipefail
+          tarball="haskell/free-foil/dist-docs/free-foil-${{ inputs.version }}-docs.tar.gz"
+          test -f "$tarball" || { echo "not found: $tarball"; exit 1; }
+          curl --fail-with-body -X PUT \
+            -H 'Content-Type: application/x-tar' \
+            -H 'Content-Encoding: gzip' \
+            -H "Authorization: X-ApiKey $HACKAGE_TOKEN" \
+            --data-binary "@$tarball" \
+            "https://hackage.haskell.org/package/free-foil-${{ inputs.version }}/docs"
