@@ -8,6 +8,7 @@
 {-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE UndecidableInstances  #-}
@@ -34,21 +35,32 @@
 -- >     | l == r    = Just (Const l)
 -- >     | otherwise = Nothing
 --
--- An annotation that holds terms (a type, with a memoised normal form) and is
--- /ignored/, so that two terms differing only in their types are α-equivalent:
+-- An annotation that holds terms (a type, say) and is /ignored/, so that two
+-- terms differing only in their types are α-equivalent. Make the held term
+-- optional, so that pairing can fail /without/ failing the match:
 --
--- > data TypeInfo term = TypeInfo { infoType :: term, infoWHNF :: Maybe term }
+-- > newtype TypeOf term = TypeOf (Maybe term)
 -- >
--- > instance ZipMatchK TypeInfo where
--- >   zipMatchWithK (f :^: M0) (TypeInfo t1 w1) (TypeInfo t2 w2) =
--- >     TypeInfo <$> f t1 t2 <*> pure (do { a <- w1; b <- w2; f a b })
+-- > instance ZipMatchK TypeOf where
+-- >   zipMatchWithK (f :^: M0) (TypeOf l) (TypeOf r) =
+-- >     Just (TypeOf (do { a <- l; b <- r; f a b }))
+--
+-- __The instance must return 'Just' unconditionally, and lazily.__ Matching is
+-- annotation-blind, so it must succeed whatever the annotations are; the paired
+-- annotation is a thunk the (annotation-skipping) 'Bifoldable' never forces. A
+-- /strict/ shape — @TypeOf '<$>' f l r@, or anything that yields 'Nothing' when
+-- @f@ fails — is a footgun twice over: it breaks blindness (two nodes with
+-- different types would fail to match), and it /diverges/ for a finite or
+-- lazily-bottomed annotation (a universe tower ending in 'error', say), because
+-- forcing the annotation runs off the end. This is why the held term is a 'Maybe':
+-- a plain @term@ field would have no value to pair when @f@ fails, forcing a
+-- bottom into the result.
 --
 -- __Do not reach for the generic instance here.__ It compares the annotation's
 -- /shape/, so a node carrying a memoised normal form would fail to match the same
--- node without one. An annotation-blind instance is one that always succeeds,
--- pairing the terms it can and dropping the rest — as above. (Nor is
--- 'zipMatchViaChooseLeft' available: an annotation holding terms must /construct/ a
--- value at the result index, and cannot simply pick a side.)
+-- node without one. (Nor is 'zipMatchViaChooseLeft' available: an annotation
+-- holding terms must /construct/ a value at the result index, and cannot simply
+-- pick a side.)
 --
 -- __Note the asymmetry__ in the instances below: 'Bifunctor' and 'Bitraversable'
 -- traverse the annotation, but 'Bifoldable' does /not/. This is deliberate — see
@@ -67,7 +79,7 @@ import           Data.Bifunctor
 import           Data.Bitraversable
 import           Data.Kind             (Type)
 import           Data.Maybe            (mapMaybe)
-import           Data.ZipMatchK
+import           Data.ZipMatchK.TH     (deriveZipMatchK2)
 import           Generics.Kind         (GenericK (..), Field, Var0, Var1, (:$:),
                                         Atom ((:@:)), (:*:))
 import qualified GHC.Generics          as GHC
@@ -112,8 +124,16 @@ instance GenericK (AnnSig ann sig) where
   type RepK (AnnSig ann sig) =
     Field (ann :$: Var1) :*: Field ((sig :$: Var0) :@: Var1)
 
-instance (ZipMatchK ann, ZipMatchK sig)
-  => ZipMatchK (AnnSig (ann :: Type -> Type) (sig :: Type -> Type -> Type))
+-- | Matching for 'AnnSig' is /derived/, not left to the generic default.
+--
+-- The generic default would rebuild the "Generics.Kind" view of every node on
+-- every comparison, and comparing terms is most of what a typechecker does, so
+-- for an annotated signature — where it lands on the hottest path — that is a
+-- measurable cost. 'Data.ZipMatchK.TH.deriveZipMatchK2' generates the
+-- written-out instance instead: the annotation matched with the term zipper (an
+-- annotation is a functor of the term), the inner signature with both. Write
+-- @deriveZipMatchK2 ''YourAnnSig@ for a bespoke annotated signature.
+deriveZipMatchK2 ''AnnSig
 
 -- | An annotated scope-safe term.
 type AnnAST binder ann sig = AST binder (AnnSig ann sig)
