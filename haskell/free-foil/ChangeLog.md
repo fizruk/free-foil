@@ -28,6 +28,8 @@ Changed:
 
 - `soas` and `Language.LambdaPi.Impl.FreeFoilTH` now derive their `ZipMatchK` instances rather than taking the generic ones. `Language.LambdaPi.Impl.FreeFoil`, the implementation that does everything by hand, now writes them out by hand, so that the two implementations show the two ways.
 
+- `Control.Monad.Free.Foil.Annotated` now derives `AnnSig`'s `ZipMatchK` instance with `deriveZipMatchK2` rather than taking the generic one, for the same reason the derivers exist: on an annotated signature the generic instance lands on the hottest path in a typechecker. The `Annotated` haddock's annotation-blind example is also corrected. It showed a *strict* instance (`TypeInfo <$> f t1 t2 <*> …`), which forces the annotation — this breaks blindness when the term-zipper fails (two nodes with different types would not match) and diverges for a finite or lazily-bottomed annotation. The example now returns `Just` unconditionally with a thunked annotation the annotation-skipping `Bifoldable` never forces, and the module documents why. Both prompted by the rzk port.
+
 # 0.3.1 — 2026-07-14
 
 A bug fix and a set of additions, all of them prompted by the projects built on free-foil. Nothing is removed or changed, so upgrading from 0.3.0 needs no work.

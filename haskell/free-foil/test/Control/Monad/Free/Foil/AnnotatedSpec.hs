@@ -112,6 +112,15 @@ spec = do
     it "still distinguishes terms that differ in the term itself" $
       alphaEquiv Foil.emptyScope (typed Nothing) selfApp `shouldBe` False
 
+    it "never forces the annotation: matching is lazy in it" $
+      -- The blind instance returns 'Just' unconditionally with a thunked
+      -- annotation, so an annotation that is bottom must not break the match.
+      -- A strict instance would throw here instead of returning True.
+      alphaEquiv Foil.emptyScope
+        (typed (Just (error "annotation forced")))
+        (typed (Just (error "annotation forced")))
+        `shouldBe` True
+
   describe "freeVarsOfAnnotated" $
     it "sees a variable that freeVarsOf misses, because it occurs in an annotation" $
       Foil.withFresh Foil.emptyScope $ \outer ->
