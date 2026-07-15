@@ -14,6 +14,8 @@ New:
 
 - A `zipmatchk` benchmark for `free-foil`, comparing the generic and the derived instance on `alphaEquiv` at several signature sizes. CI builds it, but does not run it.
 
+- A `normalize` benchmark for `free-foil`: full β-normalisation of untyped λ-terms (Church-numeral exponentiation) over the free foil, exercising `substitute`. This is the same shape of workload as the free-foil module of [lambda-n-ways](https://github.com/sweirich/lambda-n-ways) in the Free Foil paper. CI builds it, but does not run it.
+
 - `sinkContainer` sinks an entire container of sinkable expressions — an `IntMap` of terms, a `Map` keyed by something else — in O(1), by coercion, rather than walking the spine with `fmap sink`. The soundness argument for `sink` extends to a container of sinkables, and there was previously no way to say so, so downstream projects wrote their own `unsafeCoerce`. Note that a `Scope` is *not* sinkable (it must grow when a binder is entered) and a `NameMap` must stay total, so sinking one has to be paired with adding the new binder's entry; both are documented with the function.
 
 Performance:
