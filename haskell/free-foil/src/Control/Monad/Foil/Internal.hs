@@ -226,6 +226,26 @@ withRefreshed scope@(UnsafeScope rawScope) name@(UnsafeName rawName) cont
 -- does not clash with the scope, it can be used immediately, without renaming.
 --
 -- This is a more general version of 'withRefreshed'.
+--
+-- Note that there is deliberately no fast path for the case when /every/ binder
+-- of the pattern is already fresh in the ambient scope. It is tempting to test
+-- all binders at once and, when none clashes, hand the continuation @sink@
+-- instead of a renaming composed per binder. That would be unsound.
+--
+-- Even when a binder is not renamed, the per-binder step is not the identity:
+-- 'addRename' /deletes/ the name from the substitution, which is how the binder
+-- shadows an outer binding of the same raw name. For skipping that delete to be
+-- harmless we would need the substitution's domain to avoid the pattern's binder
+-- names, but the substitution's domain lives in the pattern's own scope @n@,
+-- while freshness is tested against the unrelated ambient scope @o@.
+--
+-- The two can indeed disagree, because 'sink' is a coercion and does not rename:
+-- a term built in a small scope keeps its binder names when it is placed in a
+-- larger one, so a binder can share a raw name with its own enclosing scope. The
+-- @whnf@ examples in @Language.LambdaPi.Impl.FreeFoilTH@ show a @λ x1@ nested
+-- inside another @λ x1@ arising from ordinary evaluation. Handing such a caller
+-- @sink@ would apply its substitution to a name the pattern binds — that is,
+-- capture the bound variable.
 withRefreshedPattern
   :: (Distinct o, CoSinkable pattern, Sinkable e, InjectName e)
   => Scope o      -- ^ Ambient scope.
@@ -245,6 +265,11 @@ withRefreshedPattern scope pattern cont = withPattern
 -- | Refresh (if needed) bound variables introduced in a pattern.
 --
 -- This is a version of 'withRefreshedPattern' that uses functional renamings instead of 'Substitution'.
+--
+-- Like 'withRefreshedPattern', this has no all-binders-already-fresh fast path,
+-- and for the same reason. Here shadowing is handled by 'unsinkName' rather than
+-- by a delete: a name the pattern binds is routed to 'injectName' and never
+-- reaches the caller's renaming, whether or not the binder was refreshed.
 withRefreshedPattern'
   :: (CoSinkable pattern, Distinct o, InjectName e, Sinkable e)
   => Scope o
@@ -940,7 +965,13 @@ addSubstList subst (NameBinderListCons binder binders) (x:xs) =
 addSubstList _ _ [] = error "cannot add a binder to Substitution since the value list does not have enough elements"
 
 -- | Add variable renaming to a substitution.
--- This includes the performance optimization of eliding names mapped to themselves.
+--
+-- When the binder is mapped to its own name, the name is /deleted/ from the
+-- substitution rather than mapped to itself. This is an optimization, but it is
+-- not only an optimization: it is also how the binder shadows an outer binding
+-- of the same raw name, so the delete cannot be skipped even when nothing is
+-- being renamed. See 'withRefreshedPattern' for why that rules out an
+-- all-binders-fresh fast path.
 addRename :: InjectName e => Substitution e i o -> NameBinder i i' -> Name o -> Substitution e i' o
 addRename s@(UnsafeSubstitution env) b@(UnsafeNameBinder (UnsafeName name1)) n@(UnsafeName name2)
     | name1 == name2 = UnsafeSubstitution (IntMap.delete name1 env)
