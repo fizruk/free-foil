@@ -94,6 +94,7 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
       Control.Monad.Foil.NameMapSpec
+      Control.Monad.Foil.UnifiablePatternSpec
       Control.Monad.Foil.UnifyNameBindersSpec
       Control.Monad.Free.Foil.AnnotatedSpec
       Control.Monad.Free.Foil.TH.MkFreeFoilSpec

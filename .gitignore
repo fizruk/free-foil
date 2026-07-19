@@ -11,6 +11,10 @@ haskell/soas/src/Language/SOAS/Syntax/Test.hs
 haskell/soas/src/Language/SOAS/Syntax/Skel.hs
 haskell/soas/src/Language/SOAS/Syntax/ErrM.hs
 
+# Personal working notes
+# (no trailing slash, so the entry matches the symlink as well as a directory)
+/notes
+
 scala/free-foil/src/main/scala/.scala-build/
 
 dist

@@ -612,9 +612,36 @@ instance UnifiablePattern U2 where
 
 -- | A pattern type is unifiable if it is possible to match two
 -- patterns and decide how to rename binders.
+--
+-- Note that the default implementation compares patterns only up to their
+-- binders; see 'unifyPatterns' for what that does and does not distinguish.
 class CoSinkable pattern => UnifiablePattern pattern where
   -- | Unify two patterns and decide which binders need to be renamed.
   unifyPatterns :: Distinct n => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
+
+  -- | The default implementation flattens both patterns to their binders (via
+  -- 'nameBinderListOf') and unifies the resulting 'NameBinderList's. It therefore
+  -- compares only the /number and order/ of binders, and ignores
+  --
+  -- * the constructor, so two patterns built from /different/ constructors with
+  --   the same number of binders unify;
+  -- * non-binding fields (locations, sorts, literals), whatever their values;
+  -- * the nesting of sub-patterns, so @(x, (y, z))@ unifies with @((x, y), z)@.
+  --
+  -- For most languages this is the intended notion of α-equivalence: what the
+  -- body of a binding construct can refer to is precisely the pattern's binders,
+  -- in order. Since α-equivalence is defined in terms of 'unifyPatterns', this
+  -- also means that terms differing only in such a pattern are α-equivalent.
+  --
+  -- If your patterns carry data that is semantically relevant, this default is
+  -- not what you want and you should write the instance by hand — see the
+  -- @UnifiablePattern Pattern@ instance in @Language.LambdaPi.Impl.Foil@ for a
+  -- structural one. Use 'UnifiableInPattern' to compare non-binding fields, which
+  -- also lets you deliberately ignore some of them (as
+  -- @Language.LambdaPi.Impl.FreeFoilTH@ does for BNFC source positions).
+  --
+  -- The behaviour described here is pinned down in
+  -- @Control.Monad.Foil.UnifiablePatternSpec@.
   default unifyPatterns
     :: (CoSinkable pattern, Distinct n)
     => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
