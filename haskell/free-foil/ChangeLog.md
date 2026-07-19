@@ -1,5 +1,23 @@
 # CHANGELOG for `free-foil`
 
+# 0.3.3 — 2026-07-20
+
+A bugfix and documentation release. Upgrading from 0.3.2 needs no work.
+
+Fixes:
+
+- Unifying two patterns that bind different numbers of names no longer throws `PatternMatchFail`. The `UnifiablePattern NameBinderList` instance covered only the empty/empty and cons/cons cases, and since the default `unifyPatterns` flattens every pattern to a `NameBinderList`, this was reachable from any language with patterns of differing arity: in `lambda-pi`, `alphaEquiv` on `λ_.x` and `λy.x` crashed. Such patterns are now reported as not unifiable, so the terms are not α-equivalent. The missing case went unnoticed because `Control.Monad.Foil.Internal` sets `-Wno-incomplete-patterns`.
+
+Documentation:
+
+- `UnifiablePattern` states what its class default compares. The default flattens both patterns to their binders, so it ignores the constructor (two patterns built from different constructors with the same number of binders unify), non-binding fields, and the nesting of sub-patterns (`(x, (y, z))` unifies with `((x, y), z)`). For most languages this is the intended α-equivalence, since what a body can refer to is exactly the pattern's binders in order, but every client gets it from an empty instance and nothing said so. The new `Control.Monad.Foil.UnifiablePatternSpec` pins the behaviour down.
+
+- `withRefreshedPattern` and `withRefreshedPattern'` explain why they have no fast path for the case when every binder is already fresh in the ambient scope. Testing all binders at once and handing the continuation `sink` would be unsound: `addRename`'s delete is how a binder shadows an outer binding of the same raw name, and `sink` is a coercion that does not rename, so a binder can share a raw name with its own enclosing scope. `addRename` now says that its delete is not only an optimization.
+
+Changed:
+
+- `deriveUnifiablePattern` is deprecated. It reifies the raw (BNFC) pattern type and synthesises the scope-safe type and constructor names by prefixing `"Foil"`, and it errors on GADT constructors, so it cannot produce an instance for any pattern type `mkFoilPattern` or `mkFreeFoil` generates, nor for a hand-written pattern GADT. It has no call sites and predates the `GenericK` route clients use. Deprecated rather than removed, since `Control.Monad.Foil.TH` re-exports the module wholesale; removal is scheduled for the next major. Structural derivation of `UnifiablePattern` remains tracked in [#23](https://github.com/fizruk/free-foil/issues/23), and when it lands it will be opt-in rather than a new default, since changing the default would silently change α-equivalence for every existing client.
+
 # 0.3.2 — 2026-07-15
 
 An additive release: the annotation layer, the `ZipMatchK` derivers, and a set of performance improvements. Upgrading from 0.3.1 needs no work.
