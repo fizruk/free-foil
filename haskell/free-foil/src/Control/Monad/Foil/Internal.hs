@@ -625,6 +625,12 @@ instance UnifiablePattern NameBinderList where
   unifyPatterns (NameBinderListCons x xs) (NameBinderListCons y ys) =
     case (assertDistinct x, assertDistinct y) of
       (Distinct, Distinct) -> unifyNameBinders x y `andThenUnifyPatterns` (xs, ys)
+  -- Lists of different lengths are not unifiable. This case is reachable
+  -- whenever a language has patterns that bind different numbers of names --
+  -- a wildcard and a variable, say -- since the default 'unifyPatterns'
+  -- flattens every pattern to a 'NameBinderList'. Note that this module sets
+  -- @-Wno-incomplete-patterns@, so its absence was not reported.
+  unifyPatterns _ _ = NotUnifiable
 
 -- | Unification of values in patterns.
 -- By default, 'Eq' instance is used, but it may be useful to ignore
