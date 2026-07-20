@@ -226,6 +226,26 @@ withRefreshed scope@(UnsafeScope rawScope) name@(UnsafeName rawName) cont
 -- does not clash with the scope, it can be used immediately, without renaming.
 --
 -- This is a more general version of 'withRefreshed'.
+--
+-- Note that there is deliberately no fast path for the case when /every/ binder
+-- of the pattern is already fresh in the ambient scope. It is tempting to test
+-- all binders at once and, when none clashes, hand the continuation @sink@
+-- instead of a renaming composed per binder. That would be unsound.
+--
+-- Even when a binder is not renamed, the per-binder step is not the identity:
+-- 'addRename' /deletes/ the name from the substitution, which is how the binder
+-- shadows an outer binding of the same raw name. For skipping that delete to be
+-- harmless we would need the substitution's domain to avoid the pattern's binder
+-- names, but the substitution's domain lives in the pattern's own scope @n@,
+-- while freshness is tested against the unrelated ambient scope @o@.
+--
+-- The two can indeed disagree, because 'sink' is a coercion and does not rename:
+-- a term built in a small scope keeps its binder names when it is placed in a
+-- larger one, so a binder can share a raw name with its own enclosing scope. The
+-- @whnf@ examples in @Language.LambdaPi.Impl.FreeFoilTH@ show a @λ x1@ nested
+-- inside another @λ x1@ arising from ordinary evaluation. Handing such a caller
+-- @sink@ would apply its substitution to a name the pattern binds — that is,
+-- capture the bound variable.
 withRefreshedPattern
   :: (Distinct o, CoSinkable pattern, Sinkable e, InjectName e)
   => Scope o      -- ^ Ambient scope.
@@ -245,6 +265,11 @@ withRefreshedPattern scope pattern cont = withPattern
 -- | Refresh (if needed) bound variables introduced in a pattern.
 --
 -- This is a version of 'withRefreshedPattern' that uses functional renamings instead of 'Substitution'.
+--
+-- Like 'withRefreshedPattern', this has no all-binders-already-fresh fast path,
+-- and for the same reason. Here shadowing is handled by 'unsinkName' rather than
+-- by a delete: a name the pattern binds is routed to 'injectName' and never
+-- reaches the caller's renaming, whether or not the binder was refreshed.
 withRefreshedPattern'
   :: (CoSinkable pattern, Distinct o, InjectName e, Sinkable e)
   => Scope o
@@ -612,9 +637,36 @@ instance UnifiablePattern U2 where
 
 -- | A pattern type is unifiable if it is possible to match two
 -- patterns and decide how to rename binders.
+--
+-- Note that the default implementation compares patterns only up to their
+-- binders; see 'unifyPatterns' for what that does and does not distinguish.
 class CoSinkable pattern => UnifiablePattern pattern where
   -- | Unify two patterns and decide which binders need to be renamed.
   unifyPatterns :: Distinct n => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
+
+  -- | The default implementation flattens both patterns to their binders (via
+  -- 'nameBinderListOf') and unifies the resulting 'NameBinderList's. It therefore
+  -- compares only the /number and order/ of binders, and ignores
+  --
+  -- * the constructor, so two patterns built from /different/ constructors with
+  --   the same number of binders unify;
+  -- * non-binding fields (locations, sorts, literals), whatever their values;
+  -- * the nesting of sub-patterns, so @(x, (y, z))@ unifies with @((x, y), z)@.
+  --
+  -- For most languages this is the intended notion of α-equivalence: what the
+  -- body of a binding construct can refer to is precisely the pattern's binders,
+  -- in order. Since α-equivalence is defined in terms of 'unifyPatterns', this
+  -- also means that terms differing only in such a pattern are α-equivalent.
+  --
+  -- If your patterns carry data that is semantically relevant, this default is
+  -- not what you want and you should write the instance by hand — see the
+  -- @UnifiablePattern Pattern@ instance in @Language.LambdaPi.Impl.Foil@ for a
+  -- structural one. Use 'UnifiableInPattern' to compare non-binding fields, which
+  -- also lets you deliberately ignore some of them (as
+  -- @Language.LambdaPi.Impl.FreeFoilTH@ does for BNFC source positions).
+  --
+  -- The behaviour described here is pinned down in
+  -- @Control.Monad.Foil.UnifiablePatternSpec@.
   default unifyPatterns
     :: (CoSinkable pattern, Distinct n)
     => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
@@ -625,6 +677,12 @@ instance UnifiablePattern NameBinderList where
   unifyPatterns (NameBinderListCons x xs) (NameBinderListCons y ys) =
     case (assertDistinct x, assertDistinct y) of
       (Distinct, Distinct) -> unifyNameBinders x y `andThenUnifyPatterns` (xs, ys)
+  -- Lists of different lengths are not unifiable. This case is reachable
+  -- whenever a language has patterns that bind different numbers of names --
+  -- a wildcard and a variable, say -- since the default 'unifyPatterns'
+  -- flattens every pattern to a 'NameBinderList'. Note that this module sets
+  -- @-Wno-incomplete-patterns@, so its absence was not reported.
+  unifyPatterns _ _ = NotUnifiable
 
 -- | Unification of values in patterns.
 -- By default, 'Eq' instance is used, but it may be useful to ignore
@@ -907,7 +965,13 @@ addSubstList subst (NameBinderListCons binder binders) (x:xs) =
 addSubstList _ _ [] = error "cannot add a binder to Substitution since the value list does not have enough elements"
 
 -- | Add variable renaming to a substitution.
--- This includes the performance optimization of eliding names mapped to themselves.
+--
+-- When the binder is mapped to its own name, the name is /deleted/ from the
+-- substitution rather than mapped to itself. This is an optimization, but it is
+-- not only an optimization: it is also how the binder shadows an outer binding
+-- of the same raw name, so the delete cannot be skipped even when nothing is
+-- being renamed. See 'withRefreshedPattern' for why that rules out an
+-- all-binders-fresh fast path.
 addRename :: InjectName e => Substitution e i o -> NameBinder i i' -> Name o -> Substitution e i' o
 addRename s@(UnsafeSubstitution env) b@(UnsafeNameBinder (UnsafeName name1)) n@(UnsafeName name2)
     | name1 == name2 = UnsafeSubstitution (IntMap.delete name1 env)

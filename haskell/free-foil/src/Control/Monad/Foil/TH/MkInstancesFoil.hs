@@ -168,11 +168,25 @@ deriveCoSinkable nameT patternT = do
           where
             xi = mkName ("x" ++ show i)
 
--- | Generate 'Foil.Sinkable' and 'Foil.CoSinkable' instances.
+-- | Generate a structural 'Foil.UnifiablePattern' instance, comparing
+-- constructors and non-binding fields rather than only the binders.
+--
+-- This deriver does not work and has no call sites; see the deprecation note.
 deriveUnifiablePattern
   :: Name -- ^ Type name for raw variable identifiers.
   -> Name -- ^ Type name for raw patterns.
   -> Q [Dec]
+{-# DEPRECATED deriveUnifiablePattern
+  "This deriver does not work and has no call sites. It reifies the raw \
+  \(BNFC) pattern type and guesses the scope-safe type and constructor names \
+  \by prefixing \"Foil\", and it rejects GADT constructors -- so it cannot \
+  \handle the pattern types that mkFoilPattern and mkFreeFoil generate, nor a \
+  \hand-written pattern GADT. Instead, derive GenericK and take an empty \
+  \instance (see Control.Monad.Foil), or write the instance by hand as \
+  \Language.LambdaPi.Impl.Foil does. Note that the empty instance compares \
+  \only the binders; see UnifiablePattern. Structural derivation is tracked \
+  \in https://github.com/fizruk/free-foil/issues/23. To be removed in the \
+  \next major release." #-}
 deriveUnifiablePattern nameT patternT = do
   TyConI (DataD _ctx _name patternTVars _kind patternCons _deriv) <- reify patternT
 
