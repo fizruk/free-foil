@@ -11,6 +11,16 @@ haskell/soas/src/Language/SOAS/Syntax/Test.hs
 haskell/soas/src/Language/SOAS/Syntax/Skel.hs
 haskell/soas/src/Language/SOAS/Syntax/ErrM.hs
 
+# BNFC output that nothing imports (Skel, Test, ErrM) and the alex/happy inputs
+# it produces on the way to Lex.hs and Par.hs. Only the modules the library
+# actually imports are tracked, so that hpack sees a complete module list on a
+# fresh checkout, before Setup.hs has had a chance to run bnfc.
+haskell/mltt/src/Language/MLTT/Syntax/Skel.hs
+haskell/mltt/src/Language/MLTT/Syntax/Test.hs
+haskell/mltt/src/Language/MLTT/Syntax/ErrM.hs
+haskell/mltt/src/Language/MLTT/Syntax/Lex.x
+haskell/mltt/src/Language/MLTT/Syntax/Par.y
+
 # Personal working notes
 # (no trailing slash, so the entry matches the symlink as well as a directory)
 /notes
