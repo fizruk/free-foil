@@ -4,7 +4,7 @@ github: "fizruk/free-foil"
 license: BSD3
 author: "Nikolai Kudasov"
 maintainer: "nickolay.kudasov@gmail.com"
-copyright: "2023–2026 Nikolai Kudasov, Renata Shakirova, Egor Shalagin, Karina Tyulebaeva"
+copyright: "2026 Nikolai Kudasov"
 
 extra-source-files:
   - README.md

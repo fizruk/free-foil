@@ -13,7 +13,7 @@ homepage:       https://github.com/fizruk/free-foil#readme
 bug-reports:    https://github.com/fizruk/free-foil/issues
 author:         Nikolai Kudasov
 maintainer:     nickolay.kudasov@gmail.com
-copyright:      2023–2026 Nikolai Kudasov, Renata Shakirova, Egor Shalagin, Karina Tyulebaeva
+copyright:      2026 Nikolai Kudasov
 license:        BSD3
 license-file:   LICENSE
 build-type:     Custom
