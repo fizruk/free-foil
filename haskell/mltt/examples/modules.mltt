@@ -1,0 +1,47 @@
+-- The module layer: namespaces, qualified names, `open`, imports, and a
+-- private helper that a client can reduce through but cannot name.
+
+module Prelude ;
+
+namespace Logic ;
+  def id : Π (A : 𝕌) → A → A
+    := λ A → λ x → x ;
+end ;
+
+namespace Nat ;
+  -- Private, so no importer can write `Nat.twice`.
+  private def twice : Π (A : 𝕌) → (A → A) → A → A
+    := λ A → λ f → λ x → f (f x) ;
+
+  -- Public, and its body mentions the private helper.
+  def quadruple : Π (A : 𝕌) → (A → A) → A → A
+    := λ A → λ f → twice A (twice A f) ;
+end ;
+
+-- A namespace is a namespace, not a file: `Nat` here has nothing to do with
+-- the name of this module.
+namespace Nat.Extra ;
+  def octuple : Π (A : 𝕌) → (A → A) → A → A
+    := λ A → λ f → Nat.quadruple A (Nat.quadruple A f) ;
+end ;
+
+module Client ;
+
+import Prelude ;
+
+-- Qualified names reach into the imported module's namespaces.
+check Logic.id : Π (A : 𝕌) → A → A ;
+compute Logic.id 𝟙 tt ;
+
+-- `open` adds the bare spellings, and keeps the qualified ones.
+open Logic ;
+compute id 𝟙 tt ;
+compute Logic.id 𝟙 tt ;
+
+-- Nested namespaces are reached the same way.
+compute Nat.Extra.octuple 𝟙 (λ x → x) tt ;
+
+-- The point of the layer. `Nat.twice` is private, so this module cannot name
+-- it — and yet computing `Nat.quadruple` unfolds it without complaint, because
+-- narrowing restricts the resolver's table and never the terms.
+compute Nat.quadruple 𝟙 (λ x → x) tt ;

@@ -26,6 +26,11 @@ The core is deliberately small.
   `A × B`.
 - Top-level definitions, unfolded by δ-reduction.
 
+λ is written `λ x → e` rather than `λ x . e`, because a dot inside an
+identifier is part of the identifier: `Nat.zero` is one token, so the parser
+never has to decide whether a dot qualifies a name or separates a binder from
+a body. Declarations are terminated by `;`.
+
 Conversion is naive: both sides are normalised and compared with the library's
 `alphaEquiv`.
 
@@ -59,24 +64,75 @@ waiting to be filled here.
   never printed; `let` substitutes rather than sharing; `conv` normalises both
   sides in full. Nothing here has been measured.
 
-Modules, namespaces, qualified names and telescopes are not in this list. They
-are not out of scope — they are what comes next, and the core above was built
-to carry them.
+Telescopes, module parameters with a verified `uses` clause, interned
+qualified names, separate checking with linking, and serialisation are not in
+this list. They are not out of scope — they are what comes next, and what is
+here was built to carry them.
+
+## The module layer
+
+A file is a module, and a module declares namespaces, imports other modules,
+and marks declarations private.
+
+```
+module Prelude ;
+
+namespace Nat ;
+  private def twice : Π (A : 𝕌) → (A → A) → A → A
+    := λ A → λ f → λ x → f (f x) ;
+
+  def quadruple : Π (A : 𝕌) → (A → A) → A → A
+    := λ A → λ f → twice A (twice A f) ;
+end ;
+
+module Client ;
+import Prelude ;
+
+open Nat ;
+compute quadruple 𝟙 (λ x → x) tt ;
+```
+
+A namespace has nothing to do with the file a declaration lives in: `module
+Data.Nat` may declare `namespace Peano`, and importers then write
+`Peano.zero`. The module name orders the build; the namespace qualifies the
+name.
+
+**The point of the layer is that visibility is a property of a name table and
+of nothing else.** A top-level definition is an ordinary `Foil.Name` whose
+entry in a `NameMap` says what it unfolds to. Making a declaration `private`
+removes a spelling from `Language.MLTT.Resolve`'s table; it does not touch the
+term, the scope, or the definition map. So a client cannot *name* a private
+helper and can still *reduce* through it:
+
+```
+$ stack run mltt -- prelude-and-client.mltt
+module Prelude
+  ✓ defined Nat.twice
+  ✓ defined Nat.quadruple
+module Client
+  ↦ tt                          -- computing Nat.quadruple unfolded Nat.twice
+  ✗ not in scope: Nat.twice     -- but the client cannot write it
+```
+
+That distinction is the reason narrowing belongs above free foil rather than
+inside it, and `Language.MLTT.Resolve` is where it lives: nothing in that
+module mentions a scope, a `Foil.Name`, or the kind `S`.
 
 ## Running it
 
 ```sh
-stack run mltt < haskell/mltt/examples/core.mltt
+stack run mltt -- haskell/mltt/examples/core.mltt haskell/mltt/examples/modules.mltt
 ```
 
-The interpreter understands three commands, separated by layout or by `;`:
+With no arguments the interpreter reads a program on standard input. Inside a
+module it understands three commands:
 
 ```
-def id : Π (A : 𝕌) → A → A := λ A . λ x . x
+def id : Π (A : 𝕌) → A → A := λ A → λ x → x ;
 
-check id : Π (A : 𝕌) → A → A
+check id : Π (A : 𝕌) → A → A ;
 
-compute id 𝟙 tt
+compute id 𝟙 tt ;
 ```
 
 ## How it is put together
@@ -88,7 +144,8 @@ compute id 𝟙 tt
 | `Language.MLTT.Impl.Generated` | Where `mkFreeFoil` and `mkFreeFoilConversions` are spliced, plus the instances they need that Template Haskell does not supply. |
 | `Language.MLTT.Eval` | Reduction: pattern matching as a substitution, `whnf`, `nf`, `conv`, and the desugaring of `→` and `×`. |
 | `Language.MLTT.Typecheck` | A bidirectional type checker. |
-| `Language.MLTT.Impl` | The interpreter: commands, the growing top-level scope, and printing. |
+| `Language.MLTT.Resolve` | Name resolution: paths, name tables, `open`, and the free identifiers of a raw term. Deliberately free of any dependency on the foil. |
+| `Language.MLTT.Impl` | The interpreter: build order, modules, declarations, the growing top-level scope, and printing. |
 
 Two things are worth reading for the design rather than for the type theory.
 

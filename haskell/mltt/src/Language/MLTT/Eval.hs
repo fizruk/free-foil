@@ -115,14 +115,14 @@ extendDefs binder defs =
 -- | Compute the weak head normal form of a term.
 --
 -- >>> let scope = Foil.emptyScope
--- >>> whnf scope emptyDefs (desugar ("(λ (x, y) . y) (tt, λ z . z)" :: Term Foil.VoidS))
--- λ x0 . x0
+-- >>> whnf scope emptyDefs (desugar ("(λ (x, y) → y) (tt, λ z → z)" :: Term Foil.VoidS))
+-- λ x0 → x0
 --
 -- Projections reduce on an explicit pair, and @J@ on @refl@:
 --
 -- >>> whnf scope emptyDefs (desugar ("π₁ (tt, 𝕌)" :: Term Foil.VoidS))
 -- tt
--- >>> whnf scope emptyDefs (desugar ("J (λ x . λ p . 𝟙, tt, refl (tt))" :: Term Foil.VoidS))
+-- >>> whnf scope emptyDefs (desugar ("J (λ x → λ p → 𝟙, tt, refl (tt))" :: Term Foil.VoidS))
 -- tt
 whnf :: forall a n. Foil.Distinct n => Foil.Scope n -> Defs a n -> Term' a n -> Term' a n
 whnf scope defs = go
@@ -154,8 +154,8 @@ whnf scope defs = go
 -- term. That is a deliberate simplification: the demo is about scoping, not
 -- about consistency.
 --
--- >>> nf Foil.emptyScope emptyDefs (desugar ("λ f . λ x . (λ y . f y) x" :: Term Foil.VoidS))
--- λ x0 . λ x1 . x0 x1
+-- >>> nf Foil.emptyScope emptyDefs (desugar ("λ f → λ x → (λ y → f y) x" :: Term Foil.VoidS))
+-- λ x0 → λ x1 → x0 x1
 nf :: forall a n. Foil.Distinct n => Foil.Scope n -> Defs a n -> Term' a n -> Term' a n
 nf scope defs term = case whnf scope defs term of
     Var x     -> Var x
@@ -170,9 +170,9 @@ nf scope defs term = case whnf scope defs term of
 -- | Conversion: are two terms equal up to reduction and renaming of bound
 -- variables?
 --
--- >>> conv Foil.emptyScope emptyDefs (desugar ("(λ x . x) tt" :: Term Foil.VoidS)) (desugar "tt")
+-- >>> conv Foil.emptyScope emptyDefs (desugar ("(λ x → x) tt" :: Term Foil.VoidS)) (desugar "tt")
 -- True
--- >>> conv Foil.emptyScope emptyDefs (desugar ("λ x . x" :: Term Foil.VoidS)) (desugar "λ y . tt")
+-- >>> conv Foil.emptyScope emptyDefs (desugar ("λ x → x" :: Term Foil.VoidS)) (desugar "λ y → tt")
 -- False
 conv
   :: (Foil.Distinct n, ZipMatchK a)

@@ -35,7 +35,6 @@ import           Generics.Kind.TH                      (deriveGenericK)
 import           Language.MLTT.FreeFoilConfig          (mlttConfig, rawScopedTerm,
                                                         rawVar)
 import qualified Language.MLTT.Syntax.Abs              as Raw
-import qualified Language.MLTT.Syntax.Layout           as Raw
 import qualified Language.MLTT.Syntax.Lex              as Raw
 import qualified Language.MLTT.Syntax.Par              as Raw
 import qualified Language.MLTT.Syntax.Print            as Raw
@@ -92,21 +91,21 @@ unsafeParse parse input =
     Left err -> error ("could not parse an MLTT term: " <> input <> "\n  " <> err)
     Right x  -> x
 
--- | Parse a raw program, resolving the top-level layout first.
+-- | Parse a raw program: a sequence of modules.
 parseProgram :: String -> Either String Raw.Program
-parseProgram input = Raw.pProgram (Raw.resolveLayout True (Raw.tokens input))
+parseProgram = Raw.pProgram . Raw.tokens
 
 -- |
--- >>> "λ x . λ y . x" :: Term' Raw.BNFC'Position Foil.VoidS
--- λ x0 . λ x1 . x0
+-- >>> "λ x → λ y → x" :: Term' Raw.BNFC'Position Foil.VoidS
+-- λ x0 → λ x1 → x0
 --
 -- >>> "Π (A : 𝕌) → Π (x : A) → A" :: Term' Raw.BNFC'Position Foil.VoidS
 -- Π (x0 : 𝕌) → Π (x1 : x0) → x0
 --
 -- Pattern binders bind more than one name at a time:
 --
--- >>> "λ (x, y) . y" :: Term' Raw.BNFC'Position Foil.VoidS
--- λ (x0, x1) . x1
+-- >>> "λ (x, y) → y" :: Term' Raw.BNFC'Position Foil.VoidS
+-- λ (x0, x1) → x1
 instance IsString (Term' Raw.BNFC'Position Foil.VoidS) where
   fromString = toTerm' Foil.emptyScope Map.empty . unsafeParse Raw.pTerm
 

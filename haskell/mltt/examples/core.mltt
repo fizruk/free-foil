@@ -1,29 +1,31 @@
+module Core ;
+
 -- The polymorphic identity function.
 def id : Π (A : 𝕌) → A → A
-  := λ A . λ x . x
+  := λ A → λ x → x ;
 
 -- Composition, to exercise higher-order functions.
 def compose
   : Π (A : 𝕌) → Π (B : 𝕌) → Π (C : 𝕌) → (B → C) → (A → B) → A → C
-  := λ A . λ B . λ C . λ g . λ f . λ x . g (f x)
+  := λ A → λ B → λ C → λ g → λ f → λ x → g (f x) ;
 
 -- A dependent pair, destructured by a pattern binder rather than by a
 -- projection: the type of the second component mentions the first.
 def snd
   : Π (p : Σ (A : 𝕌) × A) → π₁ p
-  := λ (A, x) . x
+  := λ (A, x) → x ;
 
-check id : Π (A : 𝕌) → A → A
-check snd (𝟙, tt) : 𝟙
+check id : Π (A : 𝕌) → A → A ;
+check snd (𝟙, tt) : 𝟙 ;
 
-compute id 𝟙 tt
-compute compose 𝟙 𝟙 𝟙 (id 𝟙) (id 𝟙) tt
-compute snd (𝟙, tt)
+compute id 𝟙 tt ;
+compute compose 𝟙 𝟙 𝟙 (id 𝟙) (id 𝟙) tt ;
+compute snd (𝟙, tt) ;
 
 -- The identity type, and J on refl.
 def transport
   : Π (A : 𝕌) → Π (B : A → 𝕌) → Π (x : A) → Π (y : A) → Id(A, x, y) → B x → B y
-  := λ A . λ B . λ x . λ y . λ p . λ b .
-       J (λ z . λ q . B x → B z, λ c . c, p) b
+  := λ A → λ B → λ x → λ y → λ p → λ b →
+       J (λ z → λ q → B x → B z, λ c → c, p) b ;
 
-compute transport 𝟙 (λ _ . 𝟙) tt tt (refl (tt)) tt
+compute transport 𝟙 (λ _ → 𝟙) tt tt (refl (tt)) tt ;

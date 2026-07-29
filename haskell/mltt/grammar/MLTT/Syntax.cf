@@ -1,18 +1,37 @@
 comment "--" ;
 comment "{-" "-}" ;
 
-layout toplevel ;
+-- A dot inside an identifier is part of the identifier, so that @Nat.zero@ is
+-- one token and the parser never has to decide whether a dot qualifies a name
+-- or separates a binder from a body. That is why λ is written @λ x → e@ rather
+-- than @λ x . e@: with both spellings of the dot in play, @λ x.x@ is ambiguous
+-- at the lexical level, and no amount of grammar can recover it.
+--
+-- Resolution of a dotted identifier is not the parser's business at all; see
+-- "Language.MLTT.Resolve".
+token VarIdent letter (letter | digit | '_' | '\'' | '.')* ;
 
-token VarIdent letter (letter | digit | '_' | '\'')* ;
+-- * Modules
 
--- * Programs and commands
+-- A program is a sequence of modules. Normally each one is its own file, but
+-- putting several in one file is convenient for tests and for a one-file demo.
+AProgram. Program ::= [Module] ;
+terminator Module "" ;
 
-AProgram. Program ::= [Command] ;
-terminator Command ";" ;
+AModule.  Module ::= "module" VarIdent ";" [Import] [Decl] ;
 
-CommandCheck.   Command ::= "check" Term ":" Term ;
-CommandCompute. Command ::= "compute" Term ;
-CommandDef.     Command ::= "def" VarIdent ":" Term ":=" Term ;
+AnImport. Import ::= "import" VarIdent ;
+terminator Import ";" ;
+
+-- * Declarations
+
+DeclDef.        Decl ::= "def" VarIdent ":" Term ":=" Term ;
+DeclPrivateDef. Decl ::= "private" "def" VarIdent ":" Term ":=" Term ;
+DeclNamespace.  Decl ::= "namespace" VarIdent ";" [Decl] "end" ;
+DeclOpen.       Decl ::= "open" VarIdent ;
+DeclCheck.      Decl ::= "check" Term ":" Term ;
+DeclCompute.    Decl ::= "compute" Term ;
+terminator Decl ";" ;
 
 -- * Terms
 --
@@ -22,7 +41,7 @@ CommandDef.     Command ::= "def" VarIdent ":" Term ":=" Term ;
 
 Pi.       Term ::= "Π" "(" Pattern ":" Term ")" "→" ScopedTerm ;
 Sigma.    Term ::= "Σ" "(" Pattern ":" Term ")" "×" ScopedTerm ;
-Lam.      Term ::= "λ" Pattern "." ScopedTerm ;
+Lam.      Term ::= "λ" Pattern "→" ScopedTerm ;
 Let.      Term ::= "let" Pattern "=" Term "in" ScopedTerm ;
 Arrow.    Term ::= Term1 "→" Term ;
 Product.  Term ::= Term1 "×" Term ;
