@@ -1,4 +1,6 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveFoldable      #-}
+{-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -40,6 +42,8 @@ module Language.MLTT.Impl where
 
 import           Control.Monad                (foldM)
 import qualified Control.Monad.Foil           as Foil
+import           Data.Foldable                (toList)
+import           Data.Functor.Identity        (Identity (..))
 import           Data.List                    (intercalate)
 import           Data.Map                     (Map)
 import qualified Data.Map                     as Map
@@ -219,6 +223,15 @@ finishModule :: Raw.VarIdent -> Env l -> Env l
 finishModule name env =
   env { envModules = Map.insert name (envExports env) (envModules env) }
 
+-- | Exactly two of something.
+--
+-- A declaration that elaborates a type and a value, or a term and its type,
+-- asks 'withElaborated' for both at once. Using this rather than a list is what
+-- makes "elaborated the wrong number of terms" unrepresentable instead of an
+-- @error@ in an unreachable branch.
+data Two a = Two a a
+  deriving (Functor, Foldable)
+
 -- | Check a block of declarations at a namespace path.
 --
 -- The path is lexical, so a nested @namespace@ is just a recursive call with a
@@ -235,8 +248,8 @@ withDecls
 withDecls env _path [] cont = cont env []
 withDecls env path (decl : decls) cont = case decl of
 
-  Raw.DeclDef loc name ty value        -> define Public loc name ty value
-  Raw.DeclPrivateDef loc name ty value -> define Private loc name ty value
+  Raw.DeclDef _loc name ty value        -> define Public name ty value
+  Raw.DeclPrivateDef _loc name ty value -> define Private name ty value
 
   Raw.DeclNamespace _loc name inner ->
     withDecls env (path <> segments name) inner $ \envInner innerResults ->
@@ -247,18 +260,17 @@ withDecls env path (decl : decls) cont = case decl of
     withDecls (env { envDeclared = openNamespace (qualify path name) (envDeclared env) })
               path decls cont
 
-  Raw.DeclCheck _loc rawTerm rawType -> withElaborated [rawTerm, rawType] $ \case
-    Right [term, ty] ->
-      case check (envCtx env) ty universe >> check (envCtx env) term ty of
+  Raw.DeclCheck _loc rawTerm rawType ->
+    withElaborated (Two rawTerm rawType) $ \(Two term ty) ->
+      case check ctx ty universe >> check ctx term ty of
         Left err -> continue (Failed err)
         Right () -> continue (Checked (display' term) (display' ty))
-    _ -> error "impossible: elaborated the wrong number of terms"
 
-  Raw.DeclCompute _loc rawTerm -> withElaborated [rawTerm] $ \case
-    Right [term] -> case infer (envCtx env) term of
-      Left err  -> continue (Failed err)
-      Right _ty -> continue (Computed (display' (nf (ctxScope ctx) (ctxDefs ctx) term)))
-    _ -> error "impossible: elaborated the wrong number of terms"
+  Raw.DeclCompute _loc rawTerm ->
+    withElaborated (Identity rawTerm) $ \(Identity term) ->
+      case infer ctx term of
+        Left err  -> continue (Failed err)
+        Right _ty -> continue (Computed (display' (nf (ctxScope ctx) (ctxDefs ctx) term)))
 
   where
     ctx = envCtx env
@@ -269,17 +281,24 @@ withDecls env path (decl : decls) cont = case decl of
     -- Continue with the remaining declarations, with one result in front.
     continue result = withDecls env path decls $ \env' rest -> cont env' (result : rest)
 
-    -- Resolve and convert a batch of raw terms, or report the first spelling
-    -- that does not resolve. Checking before converting is what keeps an
+    -- Resolve and convert some raw terms, or report the first spelling that
+    -- does not resolve. Checking before converting is what keeps an
     -- out-of-scope name a diagnostic rather than a crash.
-    withElaborated raws k = case concatMap (unresolved visible) raws of
+    --
+    -- The terms come and go in a container of the caller's choosing, so a
+    -- declaration that needs two of them asks with 'Two' and is handed back a
+    -- 'Two'. Conversion cannot fail once the check has passed, so there is no
+    -- 'Either' either.
+    withElaborated
+      :: (Functor f, Foldable f) => f Raw.Term -> (f (Term n) -> r) -> r
+    withElaborated raws k = case concatMap (unresolved visible) (toList raws) of
       (x : _) -> continue (Failed (notInScope x))
-      []      -> k (Right (map (desugar . toTerm' (ctxScope ctx) visible) raws))
+      []      -> k (fmap (desugar . toTerm' (ctxScope ctx) visible) raws)
 
     notInScope x = "not in scope: " <> prettyVarIdent x
 
-    define visibility loc name rawType rawValue = withElaborated [rawType, rawValue] $ \case
-      Right [ty, value] ->
+    define visibility name rawType rawValue =
+      withElaborated (Two rawType rawValue) $ \(Two ty value) ->
         case check ctx ty universe >> check ctx value ty of
           Left err -> continue (Failed err)
           Right () ->
@@ -288,8 +307,6 @@ withDecls env path (decl : decls) cont = case decl of
                   env' = extendEnv ctx' binder full visibility env
                in withDecls env' path decls $ \env'' rest ->
                     cont env'' (Defined (prettyVarIdent full) : rest)
-      _ -> error "impossible: elaborated the wrong number of terms"
-      where _ = loc
 
 -- | Show a raw identifier as it was written.
 prettyVarIdent :: Raw.VarIdent -> String
