@@ -14,6 +14,24 @@
 -- reducible while being unnameable. That is the distinction between what can be
 -- /named/ and what can be /reduced/, and it is why narrowing needs no support
 -- from the library at all.
+--
+-- == Influences
+--
+-- * Separating resolution from everything downstream of it, and treating a
+--   module as a construct that is named, encapsulates declarations and can be
+--   imported rather than as a primitive, follows Néron, Tolmach, Visser and
+--   Wachsmuth's
+--   <https://eelcovisser.org/publications/2015/NeronTVW15.pdf A Theory of Name Resolution>
+--   (ESOP 2015). None of the scope-graph machinery is reproduced here; the
+--   two-stage split is.
+-- * 'visibleAt' and 'openNamespace' follow Lean 4's
+--   <https://github.com/leanprover/lean4/blob/master/src/Lean/ResolveName.lean ResolveName>
+--   (@resolveUsingNamespace@, @resolveOpenDecls@), with one simplification:
+--   Lean collects every candidate and reports an ambiguity, whereas here a
+--   nearer declaration silently shadows a farther one.
+-- * Restricting the resolver's table rather than the environment is Jon
+--   Sterling's, from the <https://jonmsterling.com/01HC/ Pterodactyl worklog>,
+--   where @NarrowToUnit@ runs before @ElaborateUnit@.
 module Language.MLTT.Resolve where
 
 import           Data.List                (inits, intercalate, nub, stripPrefix)
