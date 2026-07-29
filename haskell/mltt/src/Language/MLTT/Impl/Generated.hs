@@ -29,8 +29,6 @@ import           Control.Monad.Free.Foil.TH.MkFreeFoil
 import qualified Control.Monad.Foil                    as Foil
 import           Data.Bifunctor                        (bimap)
 import           Data.Bifunctor.TH
-import           Data.IntSet                           (IntSet)
-import qualified Data.IntSet                           as IntSet
 import qualified Data.Map                              as Map
 import           Data.String                           (IsString (..))
 import           Data.ZipMatchK
@@ -116,51 +114,48 @@ instance IsString (Term' Raw.BNFC'Position Foil.VoidS) where
 
 instance Show (Term' a n) where show = Raw.printTree . fromTerm'
 
--- | Convert back to raw syntax, choosing how to name the variables that occur
--- /free in the whole term/. Bound variables keep their index.
+-- | Convert back to raw syntax, naming the variables that occur /free in the
+-- whole term/ from a 'Foil.NameMap' and leaving bound ones as their index.
 --
--- The distinction has to be made here rather than left to
--- 'Control.Monad.Free.Foil.convertFromAST', which applies its naming function
--- to every variable it meets, bound or not. That is unavoidable on its side:
--- it descends under binders, so the function it is given has to work at every
--- scope index, and a raw name is all that survives.
+-- The distinction cannot be left to 'Control.Monad.Free.Foil.convertFromAST',
+-- whose naming function is @'Int' -> rawIdent@ and is applied to every variable
+-- it meets, bound or free. That matters, because raw names are __not__ unique
+-- across scope indices: a definition\'s body is elaborated before the
+-- definition\'s own name is allocated, so @def f := λ x ⇒ x@ gives both @f@ and
+-- the @x@ it binds the raw name 0, and naming every 0 after @f@ printed the
+-- body as @λ x0 ⇒ f@.
 --
--- It matters because raw names are __not__ unique across scope indices. A
--- definition\'s body is elaborated before the definition\'s own name is
--- allocated, so the two routinely collide: @def f := λ x ⇒ x@ gives both @f@
--- and its own bound @x@ the raw name 0, and naming every 0 after @f@ printed
--- the body as @λ x0 ⇒ f@. Tracking the binders passed on the way down is what
--- keeps them apart.
-fromTermWith :: forall a n. (Int -> Raw.VarIdent) -> Term' a n -> Raw.Term' a
-fromTermWith names = go IntSet.empty
+-- Making the walk keep the /typed/ name is what fixes it, and the library
+-- already has the operation for that: 'Foil.unsinkNamePattern' sends a name
+-- under a pattern back to the enclosing scope, or reports that the pattern
+-- binds it. Composing one per binder on the way down gives a
+-- @'Foil.Name' x -> Maybe ('Foil.Name' n)@ that is exactly the test wanted, so
+-- the lookup happens at @n@ and a 'Foil.NameMap' is total on the nose.
+fromTermWith
+  :: forall a n. Foil.Distinct n
+  => Foil.NameMap n Raw.VarIdent -> Term' a n -> Raw.Term' a
+fromTermWith names = go Just
   where
-    go :: forall x. IntSet -> Term' a x -> Raw.Term' a
-    go bound = \case
-      Var x     -> rawVar (nameFor bound (Foil.nameId x))
-      Node node -> fromTerm'Sig (bimap (goScoped bound) (go bound) node)
+    go :: forall x. Foil.Distinct x
+       => (Foil.Name x -> Maybe (Foil.Name n)) -> Term' a x -> Raw.Term' a
+    go unsink = \case
+      Var x -> rawVar $ case unsink x of
+        Just top -> Foil.lookupName top names
+        Nothing  -> intToVarIdent (Foil.nameId x)
+      Node node -> fromTerm'Sig (bimap (goScoped unsink) (go unsink) node)
 
-    goScoped :: forall x. IntSet -> ScopedTerm' a x -> (Raw.Pattern' a, Raw.ScopedTerm' a)
-    goScoped bound (ScopedAST binder body) =
-      ( fromPattern' binder
-      , rawScopedTerm (go (IntSet.union bound (boundNames binder)) body) )
+    goScoped :: forall x. Foil.Distinct x
+             => (Foil.Name x -> Maybe (Foil.Name n))
+             -> ScopedTerm' a x -> (Raw.Pattern' a, Raw.ScopedTerm' a)
+    goScoped unsink (ScopedAST binder body) =
+      case Foil.assertDistinct binder of
+        Foil.Distinct ->
+          ( fromPattern' binder
+          , rawScopedTerm
+              (go (\name -> Foil.unsinkNamePattern binder name >>= unsink) body) )
 
-    nameFor bound i
-      | i `IntSet.member` bound = intToVarIdent i
-      | otherwise               = names i
-
--- | The raw names a pattern binds.
---
--- Note the detour through 'Foil.getNameBinders': the direct route,
--- @nameBinderListOf@, is not exported by "Control.Monad.Foil".
-boundNames :: Foil.HasNameBinders binder => binder n l -> IntSet
-boundNames = IntSet.fromList . go . Foil.nameBindersList . Foil.getNameBinders
-  where
-    go :: Foil.NameBinderList n l -> [Int]
-    go Foil.NameBinderListEmpty          = []
-    go (Foil.NameBinderListCons b binders) = Foil.nameId (Foil.nameOf b) : go binders
-
--- | Print a term, naming free variables with a given function.
-showTermWith :: (Int -> Raw.VarIdent) -> Term' a n -> String
+-- | Print a term, naming its free variables from a 'Foil.NameMap'.
+showTermWith :: Foil.Distinct n => Foil.NameMap n Raw.VarIdent -> Term' a n -> String
 showTermWith names = Raw.printTree . fromTermWith names
 
 -- * Convenient monomorphic synonyms

@@ -45,7 +45,6 @@ import           Data.Map                     (Map)
 import qualified Data.Map                     as Map
 import qualified Data.Set                     as Set
 import           Language.MLTT.Eval
-import           Language.MLTT.FreeFoilConfig (intToVarIdent)
 import           Language.MLTT.Impl.Generated
 import           Language.MLTT.Resolve
 import qualified Language.MLTT.Syntax.Abs     as Raw
@@ -58,13 +57,17 @@ import           System.Exit                  (exitFailure)
 
 -- * The elaboration environment
 
--- | How to print a free variable: a top-level definition by its fully
--- qualified name, and anything else by its allocated index.
+-- | What each name in scope is called: the read-back direction of a 'Table'.
 --
--- This is the read-back direction of a 'Table', and the seed of the interner a
--- serialisation layer would need: a 'Foil.Name' is an allocation artefact, so
--- printing it, or writing it to disk, has to go through a table.
-type Display = Map Int Raw.VarIdent
+-- This is a 'Foil.NameMap', and it is /total/ on the top-level scope, because
+-- the only thing that extends that scope is a definition and every definition
+-- is entered here. Bound variables never reach it: 'showTermWith' sends a name
+-- back through the binders it passed and only consults the map for what is
+-- free in the whole term.
+--
+-- It is also the seed of the interner a serialisation layer would need, since
+-- a 'Foil.Name' is an allocation artefact and cannot be written to disk.
+type Display = Foil.NameMap
 
 -- | Everything carried from one declaration to the next.
 data Env n = Env
@@ -77,28 +80,40 @@ data Env n = Env
     -- ^ Those declarations of the current module that are public.
   , envModules  :: Map Raw.VarIdent (Table (Foil.Name n))
     -- ^ What each module checked so far exports.
-  , envDisplay  :: Display
+  , envDisplay  :: Display n Raw.VarIdent
+    -- ^ What each top-level name is called.
   }
 
 -- | An empty environment, before any module is checked.
 emptyEnv :: Env Foil.VoidS
-emptyEnv = Env emptyCtx Map.empty Map.empty Map.empty Map.empty
+emptyEnv = Env emptyCtx Map.empty Map.empty Map.empty Foil.emptyNameMap
 
--- | Sink an environment into a larger scope. Every field is a container of
--- sinkables, so this is \(O(1)\) except for the map of modules, whose spine is
--- walked but whose contents are not.
-sinkEnv :: Foil.DExt n l => Ctx Raw.BNFC'Position l -> Env n -> Env l
-sinkEnv ctx env = Env
+-- | Extend an environment with one top-level definition.
+--
+-- Every map is a container of sinkables, so widening them is \(O(1)\); only the
+-- new entry is inserted, and only the map of modules has its spine walked.
+extendEnv
+  :: Foil.DExt n l
+  => Ctx Raw.BNFC'Position l
+  -> Foil.NameBinder n l
+  -> Raw.VarIdent           -- ^ The fully qualified name of the definition.
+  -> Bool                   -- ^ Is it public?
+  -> Env n
+  -> Env l
+extendEnv ctx binder full public env = Env
   { envCtx      = ctx
-  , envDeclared = Foil.sinkContainer (envDeclared env)
-  , envExports  = Foil.sinkContainer (envExports env)
+  , envDeclared = Map.insert full name (Foil.sinkContainer (envDeclared env))
+  , envExports  = (if public then Map.insert full name else id)
+                    (Foil.sinkContainer (envExports env))
   , envModules  = fmap Foil.sinkContainer (envModules env)
-  , envDisplay  = envDisplay env
+  , envDisplay  = Foil.addNameBinder binder full (envDisplay env)
   }
+  where
+    name = Foil.nameOf binder
 
 -- | Print a term, showing top-level definitions by name.
-display :: Display -> Term n -> String
-display names = showTermWith (\i -> Map.findWithDefault (intToVarIdent i) i names)
+display :: Foil.Distinct n => Env n -> Term n -> String
+display env = showTermWith (envDisplay env)
 
 -- * Results
 
@@ -247,7 +262,7 @@ withDecls env path (decl : decls) cont = case decl of
   where
     ctx = envCtx env
     universe = Universe Raw.BNFC'NoPosition
-    display' = display (envDisplay env)
+    display' = display env
     visible = visibleAt path (envDeclared env)
 
     -- Continue with the remaining declarations, with one result in front.
@@ -267,16 +282,9 @@ withDecls env path (decl : decls) cont = case decl of
         case check ctx ty universe >> check ctx value ty of
           Left err -> continue (Failed err)
           Right () ->
-            withDefinition ctx ty value $ \ctx' fresh ->
+            withDefinition ctx ty value $ \ctx' binder ->
               let full = qualify path name
-                  env' = (sinkEnv ctx' env)
-                    { envDeclared = Map.insert full fresh
-                        (Foil.sinkContainer (envDeclared env))
-                    , envExports = if public
-                        then Map.insert full fresh (Foil.sinkContainer (envExports env))
-                        else Foil.sinkContainer (envExports env)
-                    , envDisplay = Map.insert (Foil.nameId fresh) full (envDisplay env)
-                    }
+                  env' = extendEnv ctx' binder full public env
                in withDecls env' path decls $ \env'' rest ->
                     cont env'' (Defined (prettyVarIdent full) : rest)
       _ -> error "impossible: elaborated the wrong number of terms"

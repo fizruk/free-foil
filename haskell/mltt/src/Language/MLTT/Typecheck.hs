@@ -77,15 +77,17 @@ emptyCtx = Ctx Foil.emptyScope Foil.emptyNameMap emptyDefs
 -- \(\delta\)-reduction unfolds it and nothing else has to change. Note that this
 -- makes a top-level constant a 'Foil.Name' in a growing scope, which is one of
 -- the two possible designs for a global environment.
+-- The continuation receives the /binder/ rather than just its name, so that a
+-- caller can extend a 'Foil.NameMap' of its own alongside the context.
 withDefinition
   :: Foil.Distinct n
   => Ctx a n
   -> Term' a n            -- ^ The type of the definition.
   -> Term' a n            -- ^ Its value.
-  -> (forall l. Foil.DExt n l => Ctx a l -> Foil.Name l -> r)
+  -> (forall l. Foil.DExt n l => Ctx a l -> Foil.NameBinder n l -> r)
   -> r
 withDefinition ctx ty value cont = Foil.withFresh (ctxScope ctx) $ \binder ->
-  cont (extend ctx binder ty (Just value)) (Foil.nameOf binder)
+  cont (extend ctx binder ty (Just value)) binder
 
 -- | Extend a context with a fresh variable of a given type.
 withVar
