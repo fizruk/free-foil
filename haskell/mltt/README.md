@@ -26,11 +26,13 @@ The core is deliberately small.
   `A × B`.
 - Top-level definitions, unfolded by δ-reduction.
 
-λ is written `λ x → e` rather than `λ x . e`, because a dot inside an
-identifier is part of the identifier: `Nat.zero` is one token, so the parser
-never has to decide whether a dot qualifies a name or separates a binder from
-a body. Declarations are laid out rather than punctuated, and a `namespace`
-block is opened by indenting under it.
+λ is written `λ x ⇒ e`. Not `λ x . e`, because a dot inside an identifier is
+part of the identifier — `Nat.zero` is one token, so the parser never has to
+decide whether a dot qualifies a name or separates a binder from a body. And
+not `λ x → e`, so that the arrow of a λ-abstraction is not read as the arrow
+of a Π-type; both turn up in one expression often enough for the distinction
+to be worth seeing. Declarations are laid out rather than punctuated, and a
+`namespace` block is opened by indenting under it.
 
 Conversion is naive: both sides are normalised and compared with the library's
 `alphaEquiv`.
@@ -80,21 +82,21 @@ module Prelude
 
 namespace Nat where
   private def twice : Π (A : 𝕌) → (A → A) → A → A
-    := λ A → λ f → λ x → f (f x)
+    := λ A ⇒ λ f ⇒ λ x ⇒ f (f x)
 
   def quadruple : Π (A : 𝕌) → (A → A) → A → A
-    := λ A → λ f → twice A (twice A f)
+    := λ A ⇒ λ f ⇒ twice A (twice A f)
 
   -- A namespace may contain a namespace.
   namespace Extra where
     def octuple : Π (A : 𝕌) → (A → A) → A → A
-      := λ A → λ f → quadruple A (quadruple A f)
+      := λ A ⇒ λ f ⇒ quadruple A (quadruple A f)
 
 module Client
 import Prelude
 
 open Nat
-compute quadruple 𝟙 (λ x → x) tt
+compute quadruple 𝟙 (λ x ⇒ x) tt
 ```
 
 A namespace has nothing to do with the file a declaration lives in: `module
@@ -133,7 +135,7 @@ With no arguments the interpreter reads a program on standard input. Inside a
 module it understands three commands:
 
 ```
-def id : Π (A : 𝕌) → A → A := λ A → λ x → x
+def id : Π (A : 𝕌) → A → A := λ A ⇒ λ x ⇒ x
 
 check id : Π (A : 𝕌) → A → A
 
@@ -154,11 +156,11 @@ compute id 𝟙 tt
 
 Two things are worth reading for the design rather than for the type theory.
 
-**Opening a binder at one fresh variable.** To check `λ p . e` against
+**Opening a binder at one fresh variable.** To check `λ p ⇒ e` against
 `Π (q : A) → B`, the checker allocates a *single* fresh variable and opens both
 `p` and `q` at it, via `instantiate`. The two patterns need not have the same
-shape, and neither needs to bind anything, so `λ (x, y) . e` against
-`Π (z : Σ …) → B` and `λ _ . e` against `Π (z : A) → B` are the same rule. The
+shape, and neither needs to bind anything, so `λ (x, y) ⇒ e` against
+`Π (z : Σ …) → B` and `λ _ ⇒ e` against `Π (z : A) → B` are the same rule. The
 alternative — relating the two patterns' binders directly — cannot work, since
 they may bind different numbers of names.
 

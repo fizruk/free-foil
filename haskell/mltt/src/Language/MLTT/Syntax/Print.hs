@@ -177,7 +177,7 @@ instance Print (Language.MLTT.Syntax.Abs.Term' a) where
   prt i = \case
     Language.MLTT.Syntax.Abs.Pi _ pattern_ term scopedterm -> prPrec i 0 (concatD [doc (showString "\928"), doc (showString "("), prt 0 pattern_, doc (showString ":"), prt 0 term, doc (showString ")"), doc (showString "\8594"), prt 0 scopedterm])
     Language.MLTT.Syntax.Abs.Sigma _ pattern_ term scopedterm -> prPrec i 0 (concatD [doc (showString "\931"), doc (showString "("), prt 0 pattern_, doc (showString ":"), prt 0 term, doc (showString ")"), doc (showString "\215"), prt 0 scopedterm])
-    Language.MLTT.Syntax.Abs.Lam _ pattern_ scopedterm -> prPrec i 0 (concatD [doc (showString "\955"), prt 0 pattern_, doc (showString "\8594"), prt 0 scopedterm])
+    Language.MLTT.Syntax.Abs.Lam _ pattern_ scopedterm -> prPrec i 0 (concatD [doc (showString "\955"), prt 0 pattern_, doc (showString "\8658"), prt 0 scopedterm])
     Language.MLTT.Syntax.Abs.Let _ pattern_ term scopedterm -> prPrec i 0 (concatD [doc (showString "let"), prt 0 pattern_, doc (showString "="), prt 0 term, doc (showString "in"), prt 0 scopedterm])
     Language.MLTT.Syntax.Abs.Arrow _ term1 term2 -> prPrec i 0 (concatD [prt 1 term1, doc (showString "\8594"), prt 0 term2])
     Language.MLTT.Syntax.Abs.Product _ term1 term2 -> prPrec i 0 (concatD [prt 1 term1, doc (showString "\215"), prt 0 term2])

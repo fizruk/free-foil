@@ -11,11 +11,11 @@
 -- variable, 'Foil.NameMap' holds the context, and 'instantiate' opens a binder.
 -- Nothing here manipulates a de Bruijn index or a name supply by hand.
 --
--- One rule is worth reading for the design: to check @λ p → e@ against
+-- One rule is worth reading for the design: to check @λ p ⇒ e@ against
 -- @Π (q : A) → B@, 'check' allocates /one/ fresh variable and opens both @p@
 -- and @q@ at it. The two patterns need not have the same shape, and neither
--- needs to bind anything, so @λ (x, y) → e@ against @Π (z : Σ …) → B@ and
--- @λ _ → e@ against @Π (z : A) → B@ are both handled by the same rule.
+-- needs to bind anything, so @λ (x, y) ⇒ e@ against @Π (z : Σ …) → B@ and
+-- @λ _ ⇒ e@ against @Π (z : A) → B@ are both handled by the same rule.
 --
 -- == What this checker deliberately does not do
 --
@@ -120,7 +120,7 @@ type TypeError = String
 
 -- | Infer the type of a term.
 --
--- >>> infer emptyCtx (desugar ("(λ x → x : 𝟙 → 𝟙) tt" :: Term Foil.VoidS))
+-- >>> infer emptyCtx (desugar ("(λ x ⇒ x : 𝟙 → 𝟙) tt" :: Term Foil.VoidS))
 -- Right 𝟙
 --
 -- The second component of a pair is typed by substituting the first into the
@@ -225,12 +225,12 @@ motiveType scope loc tyA a = Foil.withFresh scope $ \binder ->
 
 -- | Check a term against a type.
 --
--- >>> check emptyCtx (desugar ("λ A → λ x → x" :: Term Foil.VoidS)) (desugar "Π (A : 𝕌) → Π (x : A) → A")
+-- >>> check emptyCtx (desugar ("λ A ⇒ λ x ⇒ x" :: Term Foil.VoidS)) (desugar "Π (A : 𝕌) → Π (x : A) → A")
 -- Right ()
 --
 -- Pattern binders are checked against the type of what they destructure:
 --
--- >>> check emptyCtx (desugar ("λ (A, x) → x" :: Term Foil.VoidS)) (desugar "Π (p : Σ (A : 𝕌) × A) → π₁ p")
+-- >>> check emptyCtx (desugar ("λ (A, x) ⇒ x" :: Term Foil.VoidS)) (desugar "Π (p : Σ (A : 𝕌) × A) → π₁ p")
 -- Right ()
 check
   :: forall a n. (Foil.Distinct n, ZipMatchK a)

@@ -18,15 +18,15 @@ spec :: Spec
 spec = do
   describe "type checking" $ do
     it "accepts the polymorphic identity" $
-      check emptyCtx (term "λ A → λ x → x") (term "Π (A : 𝕌) → A → A")
+      check emptyCtx (term "λ A ⇒ λ x ⇒ x") (term "Π (A : 𝕌) → A → A")
         `shouldBe` Right ()
 
     it "accepts a Σ-type destructured by a pattern binder" $
-      check emptyCtx (term "λ (A, x) → x") (term "Π (p : Σ (A : 𝕌) × A) → π₁ p")
+      check emptyCtx (term "λ (A, x) ⇒ x") (term "Π (p : Σ (A : 𝕌) × A) → π₁ p")
         `shouldBe` Right ()
 
     it "accepts a wildcard where the Π-type binds a variable" $
-      check emptyCtx (term "λ _ → tt") (term "Π (A : 𝕌) → 𝟙")
+      check emptyCtx (term "λ _ ⇒ tt") (term "Π (A : 𝕌) → 𝟙")
         `shouldBe` Right ()
 
     it "infers a dependent projection" $
@@ -34,27 +34,27 @@ spec = do
         `shouldBe` Right "𝟙"
 
     it "rejects an argument of the wrong type" $
-      check emptyCtx (term "(λ x → x : 𝟙 → 𝟙) 𝕌") (term "𝟙")
+      check emptyCtx (term "(λ x ⇒ x : 𝟙 → 𝟙) 𝕌") (term "𝟙")
         `shouldSatisfy` isLeft
 
     it "rejects a λ against a non-Π type" $
-      check emptyCtx (term "λ x → x") (term "𝟙")
+      check emptyCtx (term "λ x ⇒ x") (term "𝟙")
         `shouldSatisfy` isLeft
 
     it "refuses to infer a type for a bare λ" $
-      infer emptyCtx (term "λ x → x")
+      infer emptyCtx (term "λ x ⇒ x")
         `shouldSatisfy` isLeft
 
   describe "conversion" $ do
     it "sees through β-reduction" $
-      conv Foil.emptyScope emptyDefs (term "(λ x → x) tt") (term "tt")
+      conv Foil.emptyScope emptyDefs (term "(λ x ⇒ x) tt") (term "tt")
         `shouldBe` True
 
     it "is up to renaming of bound variables" $
-      conv Foil.emptyScope emptyDefs (term "λ x → x") (term "λ y → y")
+      conv Foil.emptyScope emptyDefs (term "λ x ⇒ x") (term "λ y ⇒ y")
         `shouldBe` True
 
     it "distinguishes different normal forms" $
-      conv Foil.emptyScope emptyDefs (term "λ x → x") (term "λ x → tt")
+      conv Foil.emptyScope emptyDefs (term "λ x ⇒ x") (term "λ x ⇒ tt")
         `shouldBe` False
 

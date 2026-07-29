@@ -11,9 +11,14 @@ layout "where" ;
 
 -- A dot inside an identifier is part of the identifier, so that @Nat.zero@ is
 -- one token and the parser never has to decide whether a dot qualifies a name
--- or separates a binder from a body. That is why λ is written @λ x → e@ rather
--- than @λ x . e@: with both spellings of the dot in play, @λ x.x@ is ambiguous
--- at the lexical level, and no amount of grammar can recover it.
+-- or separates a binder from a body. So λ cannot be written @λ x . e@: with
+-- both spellings of the dot in play, @λ x.x@ is ambiguous at the lexical
+-- level, and no amount of grammar can recover it.
+--
+-- It is written @λ x ⇒ e@ rather than @λ x → e@ so that the arrow of a
+-- λ-abstraction cannot be mistaken for the arrow of a Π-type, which is a
+-- distinction worth keeping visible in a language where both appear in the
+-- same expression.
 --
 -- Resolution of a dotted identifier is not the parser's business at all; see
 -- "Language.MLTT.Resolve".
@@ -49,7 +54,7 @@ separator Decl ";" ;
 
 Pi.       Term ::= "Π" "(" Pattern ":" Term ")" "→" ScopedTerm ;
 Sigma.    Term ::= "Σ" "(" Pattern ":" Term ")" "×" ScopedTerm ;
-Lam.      Term ::= "λ" Pattern "→" ScopedTerm ;
+Lam.      Term ::= "λ" Pattern "⇒" ScopedTerm ;
 Let.      Term ::= "let" Pattern "=" Term "in" ScopedTerm ;
 Arrow.    Term ::= Term1 "→" Term ;
 Product.  Term ::= Term1 "×" Term ;

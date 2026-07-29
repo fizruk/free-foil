@@ -97,16 +97,16 @@ parseProgram :: String -> Either String Raw.Program
 parseProgram input = Raw.pProgram (Raw.resolveLayout True (Raw.tokens input))
 
 -- |
--- >>> "λ x → λ y → x" :: Term' Raw.BNFC'Position Foil.VoidS
--- λ x0 → λ x1 → x0
+-- >>> "λ x ⇒ λ y ⇒ x" :: Term' Raw.BNFC'Position Foil.VoidS
+-- λ x0 ⇒ λ x1 ⇒ x0
 --
 -- >>> "Π (A : 𝕌) → Π (x : A) → A" :: Term' Raw.BNFC'Position Foil.VoidS
 -- Π (x0 : 𝕌) → Π (x1 : x0) → x0
 --
 -- Pattern binders bind more than one name at a time:
 --
--- >>> "λ (x, y) → y" :: Term' Raw.BNFC'Position Foil.VoidS
--- λ (x0, x1) → x1
+-- >>> "λ (x, y) ⇒ y" :: Term' Raw.BNFC'Position Foil.VoidS
+-- λ (x0, x1) ⇒ x1
 instance IsString (Term' Raw.BNFC'Position Foil.VoidS) where
   fromString = toTerm' Foil.emptyScope Map.empty . unsafeParse Raw.pTerm
 

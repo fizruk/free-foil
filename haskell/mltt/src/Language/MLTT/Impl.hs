@@ -10,7 +10,7 @@
 -- > import Prelude
 -- >
 -- > namespace Nat where
--- >   def id : Π (A : 𝕌) → A → A := λ A → λ x → x
+-- >   def id : Π (A : 𝕌) → A → A := λ A ⇒ λ x ⇒ x
 -- >   private def helper : 𝟙 := tt
 -- >
 -- > open Nat
