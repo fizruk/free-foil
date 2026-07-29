@@ -74,8 +74,14 @@ here was built to carry them.
 
 ## The module layer
 
-A file is a module, and a module declares namespaces, imports other modules,
-and marks declarations private.
+A module is introduced by a `module` header and runs to the next one. It
+declares namespaces, imports other modules, and marks declarations private.
+
+Usually a module is a file, and the interpreter takes any number of files; but
+nothing requires it, and the example below puts two modules in one file so
+that the whole of it can be read at once. Build order is computed over every
+module the interpreter was given, wherever it came from, so a file may import
+a module declared in another file — or, as here, later in the same one.
 
 ```
 module Prelude

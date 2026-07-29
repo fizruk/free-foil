@@ -6,6 +6,13 @@
 -- | The MLTT interpreter: the generated syntax, the evaluator, the type checker
 -- and the resolver glued into a program that reads modules.
 --
+-- A module is introduced by a @module@ header and runs to the next one. Usually
+-- a file holds one, and the interpreter takes any number of files; but nothing
+-- stops a file from holding several, which is what the tests and
+-- @examples/modules.mltt@ do so that a whole example fits in one place. Build
+-- order is computed over every module the interpreter was given, wherever it
+-- came from.
+--
 -- > module Data.Nat
 -- > import Prelude
 -- >
@@ -162,7 +169,14 @@ moduleDecls (Raw.AModule _ _ _ decls) = decls
 
 -- | Interpret a program: order its modules by their imports, then check each.
 interpretProgram :: Raw.Program -> [CommandResult]
-interpretProgram (Raw.AProgram _loc modules) = case buildOrder modules of
+interpretProgram (Raw.AProgram _loc modules) = interpretModules modules
+
+-- | Interpret modules gathered from any number of sources.
+--
+-- Build order is computed over all of them at once, so a module may import one
+-- declared in another file, or later in the same file.
+interpretModules :: [Raw.Module] -> [CommandResult]
+interpretModules modules = case buildOrder modules of
   Left err      -> [Failed err]
   Right ordered -> goModules emptyEnv ordered
 
@@ -272,18 +286,31 @@ withDecls env path (decl : decls) cont = case decl of
 prettyVarIdent :: Raw.VarIdent -> String
 prettyVarIdent (Raw.VarIdent x) = x
 
--- | Parse and interpret a program.
+-- | Parse and interpret one source.
 interpret :: String -> Either String [CommandResult]
 interpret input = interpretProgram <$> parseProgram input
+
+-- | Parse and interpret several named sources.
+--
+-- Each source is parsed on its own, so a syntax error is reported against the
+-- line of the file it is in rather than against a concatenation of them all.
+-- The modules are pooled afterwards, which is what lets one file import
+-- another.
+interpretSources :: [(FilePath, String)] -> Either String [CommandResult]
+interpretSources sources = interpretModules . concat <$> traverse parseSource sources
+  where
+    parseSource (path, input) = case parseProgram input of
+      Left err                    -> Left (path <> ":" <> err)
+      Right (Raw.AProgram _ms ms) -> Right ms
 
 -- | Read modules from the given files, or from standard input if none are
 -- given, and interpret them.
 defaultMain :: [FilePath] -> IO ()
 defaultMain paths = do
-  input <- case paths of
-    [] -> getContents
-    _  -> unlines <$> mapM readFile paths
-  case interpret input of
+  sources <- case paths of
+    [] -> (\input -> [("<stdin>", input)]) <$> getContents
+    _  -> mapM (\path -> (,) path <$> readFile path) paths
+  case interpretSources sources of
     Left err -> do
       putStrLn err
       exitFailure

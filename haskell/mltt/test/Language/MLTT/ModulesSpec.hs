@@ -106,6 +106,18 @@ spec = do
       computed (run (withClient "compute Nat.quadruple 𝟙 (λ x ⇒ x) tt"))
         `shouldBe` ["tt"]
 
+  describe "printing" $
+    it "does not confuse a bound variable with a definition of the same raw name" $
+      -- A definition's body is elaborated before the definition's own name is
+      -- allocated, so `f` and the `x` it binds are both raw name 0. Naming
+      -- every occurrence of 0 after `f` used to print the body as `λ x0 ⇒ f`.
+      computed (run (unlines
+        [ "module M"
+        , "def f : 𝟙 → 𝟙 := λ x ⇒ x"
+        , "def g : 𝟙 := tt"
+        , "compute f" ]))
+        `shouldBe` ["λ x0 ⇒ x0"]
+
   describe "the example programs" $
     forM_ ["examples/core.mltt", "examples/modules.mltt"] $ \path ->
       it (path <> " is accepted in full") $ do
