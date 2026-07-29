@@ -16,6 +16,28 @@
 -- and @q@ at it. The two patterns need not have the same shape, and neither
 -- needs to bind anything, so @λ (x, y) . e@ against @Π (z : Σ …) → B@ and
 -- @λ _ . e@ against @Π (z : A) → B@ are both handled by the same rule.
+--
+-- == What this checker deliberately does not do
+--
+-- It is a demonstration of scope handling, not a type checker anyone should
+-- copy wholesale. Four omissions are worth naming, because each is somebody
+-- else's work in this ecosystem rather than a gap to be filled here.
+--
+-- * __No elaboration.__ 'infer' returns a type and discards everything else,
+--   so there is no elaborated output term, no implicit arguments, and no
+--   inserted coercions. The library does have a scope-indexed annotation layer
+--   ("Control.Monad.Free.Foil.Annotated"); it is not used here.
+-- * __No normalisation by evaluation.__ Conversion normalises both sides and
+--   compares them ('Language.MLTT.Eval.conv'). There are no closures, no
+--   delayed substitutions, and no readback.
+-- * __No generic typing algebra.__ The rules below are written by hand for
+--   this one signature. Deriving a checker from per-constructor typing rules,
+--   and the Pfenning recipe that chooses the judgement, are a separate line of
+--   work.
+-- * __No metavariables.__ No holes, no unification, no higher-order matching.
+--   That is what the @soas@ package is for.
+--
+-- It is also inconsistent on purpose: see 'Language.MLTT.Eval.nf'.
 module Language.MLTT.Typecheck where
 
 import qualified Control.Monad.Foil           as Foil

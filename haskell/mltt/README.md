@@ -29,6 +29,37 @@ The core is deliberately small.
 Conversion is naive: both sides are normalised and compared with the library's
 `alphaEquiv`.
 
+## What is deliberately not here
+
+The package exists to exercise free foil's scope handling, and to be the thing a
+module and namespace layer is built on. Everything below is out of scope, and
+most of it is somebody else's work elsewhere in this ecosystem rather than a gap
+waiting to be filled here.
+
+- **Elaboration and type-annotated terms.** The checker returns a type and
+  throws away everything else: no elaborated output term, no implicit
+  arguments, no inserted coercions. The library's scope-indexed annotation
+  layer (`Control.Monad.Free.Foil.Annotated`) is not used.
+- **Normalisation by evaluation.** Conversion normalises both sides and
+  compares them. No closures, no delayed substitutions, no readback.
+- **A generic typing algebra.** The rules are hand-written for this one
+  signature. Deriving a checker from per-constructor typing rules, and the
+  Pfenning recipe that picks the judgement, are a separate line of work.
+- **Metavariables, unification and matching.** No holes and no `?m`; that is
+  what `soas` is for.
+- **Data types, recursion and termination.** There are no declarations, no
+  eliminators beyond `π₁`, `π₂` and `J`, and nothing is checked for
+  termination or positivity.
+- **Consistency.** Type-in-type is deliberate, so `nf` can diverge on a
+  well-typed term.
+- **Good errors and speed.** Source positions are carried through the AST but
+  never printed; `let` substitutes rather than sharing; `conv` normalises both
+  sides in full. Nothing here has been measured.
+
+Modules, namespaces, qualified names and telescopes are not in this list. They
+are not out of scope — they are what comes next, and the core above was built
+to carry them.
+
 ## Running it
 
 ```sh
