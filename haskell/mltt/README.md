@@ -45,8 +45,11 @@ waiting to be filled here.
 - **A generic typing algebra.** The rules are hand-written for this one
   signature. Deriving a checker from per-constructor typing rules, and the
   Pfenning recipe that picks the judgement, are a separate line of work.
-- **Metavariables, unification and matching.** No holes and no `?m`; that is
-  what `soas` is for.
+- **Metavariables, unification and matching.** No holes and no `?m`. Generic
+  second-order matching, higher-order preunification and pattern unification
+  over free foil are Kudasov, Starikov, Ivanov and Afliatonov's
+  ([UNIF 2025](https://hal.science/hal-05148806)), implemented in
+  [`free-foil-hou`](https://github.com/fedor-ivn/free-foil-hou).
 - **Data types, recursion and termination.** There are no declarations, no
   eliminators beyond `π₁`, `π₂` and `J`, and nothing is checked for
   termination or positivity.
