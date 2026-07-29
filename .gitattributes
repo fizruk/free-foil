@@ -1,1 +1,10 @@
-haskell/free-foil/src/Language/LambdaPi/Syntax/* linguist-generated=true
+# Generated sources, committed so that a fresh checkout has a complete module
+# list before the custom Setup.hs gets a chance to run.
+
+# BNFC, then alex and happy, from grammar/*/Syntax.cf on every configure.
+haskell/lambda-pi/src/Language/LambdaPi/Syntax/* linguist-generated=true
+haskell/mltt/src/Language/MLTT/Syntax/*          linguist-generated=true
+haskell/soas/src/Language/SOAS/Syntax/*          linguist-generated=true
+
+# hpack, from the package.yaml beside them.
+haskell/*/*.cabal linguist-generated=true
