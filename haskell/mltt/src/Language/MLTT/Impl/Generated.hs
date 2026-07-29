@@ -34,8 +34,8 @@ import           Data.String                           (IsString (..))
 import           Data.ZipMatchK
 import           Data.ZipMatchK.TH                     (deriveZipMatchK2)
 import           Generics.Kind.TH                      (deriveGenericK)
-import           Language.MLTT.FreeFoilConfig          (intToVarIdent, mlttConfig,
-                                                        rawScopedTerm, rawVar)
+import           Language.MLTT.FreeFoilConfig          (mlttConfig, rawScopedTerm,
+                                                        rawVar)
 import qualified Language.MLTT.Syntax.Abs              as Raw
 import qualified Language.MLTT.Syntax.Layout           as Raw
 import qualified Language.MLTT.Syntax.Lex              as Raw
@@ -114,8 +114,11 @@ instance IsString (Term' Raw.BNFC'Position Foil.VoidS) where
 
 instance Show (Term' a n) where show = Raw.printTree . fromTerm'
 
--- | Convert back to raw syntax, naming the variables that occur /free in the
--- whole term/ from a 'Foil.NameMap' and leaving bound ones as their index.
+-- | Convert back to raw syntax, naming free and bound variables separately.
+--
+-- A variable free in the whole term is named from a 'Foil.NameMap'; a bound one
+-- is named from its index by the given function, as
+-- 'Control.Monad.Free.Foil.convertFromAST' names every variable.
 --
 -- The distinction cannot be left to 'Control.Monad.Free.Foil.convertFromAST',
 -- whose naming function is @'Int' -> rawIdent@ and is applied to every variable
@@ -133,15 +136,18 @@ instance Show (Term' a n) where show = Raw.printTree . fromTerm'
 -- the lookup happens at @n@ and a 'Foil.NameMap' is total on the nose.
 fromTermWith
   :: forall a n. Foil.Distinct n
-  => Foil.NameMap n Raw.VarIdent -> Term' a n -> Raw.Term' a
-fromTermWith names = go Just
+  => (Int -> Raw.VarIdent)          -- ^ Name a bound variable, from its index.
+  -> Foil.NameMap n Raw.VarIdent    -- ^ Name a variable free in the whole term.
+  -> Term' a n
+  -> Raw.Term' a
+fromTermWith bound names = go Just
   where
     go :: forall x. Foil.Distinct x
        => (Foil.Name x -> Maybe (Foil.Name n)) -> Term' a x -> Raw.Term' a
     go unsink = \case
       Var x -> rawVar $ case unsink x of
         Just top -> Foil.lookupName top names
-        Nothing  -> intToVarIdent (Foil.nameId x)
+        Nothing  -> bound (Foil.nameId x)
       Node node -> fromTerm'Sig (bimap (goScoped unsink) (go unsink) node)
 
     goScoped :: forall x. Foil.Distinct x
@@ -154,9 +160,11 @@ fromTermWith names = go Just
           , rawScopedTerm
               (go (\name -> Foil.unsinkNamePattern binder name >>= unsink) body) )
 
--- | Print a term, naming its free variables from a 'Foil.NameMap'.
-showTermWith :: Foil.Distinct n => Foil.NameMap n Raw.VarIdent -> Term' a n -> String
-showTermWith names = Raw.printTree . fromTermWith names
+-- | Print a term, naming free and bound variables separately.
+showTermWith
+  :: Foil.Distinct n
+  => (Int -> Raw.VarIdent) -> Foil.NameMap n Raw.VarIdent -> Term' a n -> String
+showTermWith bound names = Raw.printTree . fromTermWith bound names
 
 -- * Convenient monomorphic synonyms
 --

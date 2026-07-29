@@ -45,6 +45,7 @@ import           Data.Map                     (Map)
 import qualified Data.Map                     as Map
 import qualified Data.Set                     as Set
 import           Language.MLTT.Eval
+import           Language.MLTT.FreeFoilConfig (intToVarIdent)
 import           Language.MLTT.Impl.Generated
 import           Language.MLTT.Resolve
 import qualified Language.MLTT.Syntax.Abs     as Raw
@@ -111,9 +112,10 @@ extendEnv ctx binder full public env = Env
   where
     name = Foil.nameOf binder
 
--- | Print a term, showing top-level definitions by name.
+-- | Print a term, showing top-level definitions by name and bound variables by
+-- their index.
 display :: Foil.Distinct n => Env n -> Term n -> String
-display env = showTermWith (envDisplay env)
+display env = showTermWith intToVarIdent (envDisplay env)
 
 -- * Results
 
