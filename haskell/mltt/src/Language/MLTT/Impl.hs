@@ -98,14 +98,13 @@ extendEnv
   => Ctx Raw.BNFC'Position l
   -> Foil.NameBinder n l
   -> Raw.VarIdent           -- ^ The fully qualified name of the definition.
-  -> Bool                   -- ^ Is it public?
+  -> Visibility             -- ^ Does it leave the module?
   -> Env n
   -> Env l
-extendEnv ctx binder full public env = Env
+extendEnv ctx binder full visibility env = Env
   { envCtx      = ctx
   , envDeclared = Map.insert full name (Foil.sinkContainer (envDeclared env))
-  , envExports  = (if public then Map.insert full name else id)
-                    (Foil.sinkContainer (envExports env))
+  , envExports  = export visibility full name (Foil.sinkContainer (envExports env))
   , envModules  = fmap Foil.sinkContainer (envModules env)
   , envDisplay  = Foil.addNameBinder binder full (envDisplay env)
   }
@@ -236,8 +235,8 @@ withDecls
 withDecls env _path [] cont = cont env []
 withDecls env path (decl : decls) cont = case decl of
 
-  Raw.DeclDef loc name ty value        -> define True loc name ty value
-  Raw.DeclPrivateDef loc name ty value -> define False loc name ty value
+  Raw.DeclDef loc name ty value        -> define Public loc name ty value
+  Raw.DeclPrivateDef loc name ty value -> define Private loc name ty value
 
   Raw.DeclNamespace _loc name inner ->
     withDecls env (path <> segments name) inner $ \envInner innerResults ->
@@ -279,14 +278,14 @@ withDecls env path (decl : decls) cont = case decl of
 
     notInScope x = "not in scope: " <> prettyVarIdent x
 
-    define public loc name rawType rawValue = withElaborated [rawType, rawValue] $ \case
+    define visibility loc name rawType rawValue = withElaborated [rawType, rawValue] $ \case
       Right [ty, value] ->
         case check ctx ty universe >> check ctx value ty of
           Left err -> continue (Failed err)
           Right () ->
             withDefinition ctx ty value $ \ctx' binder ->
               let full = qualify path name
-                  env' = extendEnv ctx' binder full public env
+                  env' = extendEnv ctx' binder full visibility env
                in withDecls env' path decls $ \env'' rest ->
                     cont env'' (Defined (prettyVarIdent full) : rest)
       _ -> error "impossible: elaborated the wrong number of terms"

@@ -141,6 +141,27 @@ openNamespace prefix t = Map.union (Map.fromList opened) t
         [] -> Nothing
         _  -> Just (joinSegments suffix, v)
 
+-- * Visibility
+
+-- | Whether a declaration leaves the module that declares it.
+data Visibility
+  = Public
+    -- ^ Exported: an importing module may name it.
+  | Private
+    -- ^ Not exported. An importing module cannot /name/ it — and can still
+    -- /reduce/ through it, since withholding a spelling touches no term.
+  deriving (Eq, Show)
+
+-- | Add a declaration to what a module exports, if it is public.
+--
+-- >>> Map.keys (export Public (Raw.VarIdent "Nat.two") "Nat.two" Map.empty)
+-- [VarIdent "Nat.two"]
+-- >>> Map.keys (export Private (Raw.VarIdent "Nat.two") "Nat.two" Map.empty)
+-- []
+export :: Visibility -> Raw.VarIdent -> v -> Table v -> Table v
+export Public  name v = Map.insert name v
+export Private _    _ = id
+
 -- | Every spelling in a table, for an error message.
 spellings :: Table v -> [String]
 spellings t = [x | Raw.VarIdent x <- Map.keys t]
