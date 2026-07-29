@@ -1,6 +1,14 @@
 comment "--" ;
 comment "{-" "-}" ;
 
+-- Declarations are laid out, not punctuated: a newline at the same indentation
+-- ends a declaration, and a `namespace ... where` block is opened by indenting
+-- under it. BNFC resolves this into the explicit `;` and `{ }` that the rules
+-- below are written with, so nested blocks work — a namespace may contain a
+-- namespace.
+layout toplevel ;
+layout "where" ;
+
 -- A dot inside an identifier is part of the identifier, so that @Nat.zero@ is
 -- one token and the parser never has to decide whether a dot qualifies a name
 -- or separates a binder from a body. That is why λ is written @λ x → e@ rather
@@ -27,11 +35,11 @@ terminator Import ";" ;
 
 DeclDef.        Decl ::= "def" VarIdent ":" Term ":=" Term ;
 DeclPrivateDef. Decl ::= "private" "def" VarIdent ":" Term ":=" Term ;
-DeclNamespace.  Decl ::= "namespace" VarIdent ";" [Decl] "end" ;
+DeclNamespace.  Decl ::= "namespace" VarIdent "where" "{" [Decl] "}" ;
 DeclOpen.       Decl ::= "open" VarIdent ;
 DeclCheck.      Decl ::= "check" Term ":" Term ;
 DeclCompute.    Decl ::= "compute" Term ;
-terminator Decl ";" ;
+separator Decl ";" ;
 
 -- * Terms
 --

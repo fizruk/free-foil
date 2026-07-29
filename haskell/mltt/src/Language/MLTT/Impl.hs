@@ -6,16 +6,15 @@
 -- | The MLTT interpreter: the generated syntax, the evaluator, the type checker
 -- and the resolver glued into a program that reads modules.
 --
--- > module Data.Nat ;
--- > import Prelude ;
+-- > module Data.Nat
+-- > import Prelude
 -- >
--- > namespace Nat ;
--- >   def id : Π (A : 𝕌) → A → A := λ A → λ x → x ;
--- >   private def helper : 𝟙 := tt ;
--- > end ;
+-- > namespace Nat where
+-- >   def id : Π (A : 𝕌) → A → A := λ A → λ x → x
+-- >   private def helper : 𝟙 := tt
 -- >
--- > open Nat ;
--- > compute id 𝟙 tt ;
+-- > open Nat
+-- > compute id 𝟙 tt
 --
 -- Everything lives in one growing foil scope: a top-level definition is an
 -- ordinary 'Foil.Name' whose 'Def' says what it unfolds to, and a module,

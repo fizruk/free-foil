@@ -29,7 +29,8 @@ The core is deliberately small.
 λ is written `λ x → e` rather than `λ x . e`, because a dot inside an
 identifier is part of the identifier: `Nat.zero` is one token, so the parser
 never has to decide whether a dot qualifies a name or separates a binder from
-a body. Declarations are terminated by `;`.
+a body. Declarations are laid out rather than punctuated, and a `namespace`
+block is opened by indenting under it.
 
 Conversion is naive: both sides are normalised and compared with the library's
 `alphaEquiv`.
@@ -75,21 +76,25 @@ A file is a module, and a module declares namespaces, imports other modules,
 and marks declarations private.
 
 ```
-module Prelude ;
+module Prelude
 
-namespace Nat ;
+namespace Nat where
   private def twice : Π (A : 𝕌) → (A → A) → A → A
-    := λ A → λ f → λ x → f (f x) ;
+    := λ A → λ f → λ x → f (f x)
 
   def quadruple : Π (A : 𝕌) → (A → A) → A → A
-    := λ A → λ f → twice A (twice A f) ;
-end ;
+    := λ A → λ f → twice A (twice A f)
 
-module Client ;
-import Prelude ;
+  -- A namespace may contain a namespace.
+  namespace Extra where
+    def octuple : Π (A : 𝕌) → (A → A) → A → A
+      := λ A → λ f → quadruple A (quadruple A f)
 
-open Nat ;
-compute quadruple 𝟙 (λ x → x) tt ;
+module Client
+import Prelude
+
+open Nat
+compute quadruple 𝟙 (λ x → x) tt
 ```
 
 A namespace has nothing to do with the file a declaration lives in: `module
@@ -128,11 +133,11 @@ With no arguments the interpreter reads a program on standard input. Inside a
 module it understands three commands:
 
 ```
-def id : Π (A : 𝕌) → A → A := λ A → λ x → x ;
+def id : Π (A : 𝕌) → A → A := λ A → λ x → x
 
-check id : Π (A : 𝕌) → A → A ;
+check id : Π (A : 𝕌) → A → A
 
-compute id 𝟙 tt ;
+compute id 𝟙 tt
 ```
 
 ## How it is put together

@@ -22,16 +22,17 @@ The set of reserved words is the set of terminals appearing in the grammar. Thos
 
 The reserved words used in Syntax are the following:
   | ``Id`` | ``J`` | ``check`` | ``compute``
-  | ``def`` | ``end`` | ``import`` | ``in``
-  | ``let`` | ``module`` | ``namespace`` | ``open``
-  | ``private`` | ``refl`` | ``tt`` | ``Π``
+  | ``def`` | ``import`` | ``in`` | ``let``
+  | ``module`` | ``namespace`` | ``open`` | ``private``
+  | ``refl`` | ``tt`` | ``where`` | ``Π``
   | ``Σ`` | ``λ`` | ``π₁`` | ``π₂``
   | ``𝕌`` |  |  |
 
 The symbols used in Syntax are the following:
-  | ; | : | := | (
-  | ) | → | × | =
-  | 𝟙 | , | _ |
+  | ; | : | := | {
+  | } | ( | ) | →
+  | × | = | 𝟙 | ,
+  | _ |  |  |
 
 ===Comments===
 Single-line comments begin with --.Multiple-line comments are  enclosed with {- and -}.
@@ -51,11 +52,12 @@ All other symbols are terminals.
   |  |  **|**  | //Import// ``;`` //[Import]//
   | //Decl// | -> | ``def`` //VarIdent// ``:`` //Term// ``:=`` //Term//
   |  |  **|**  | ``private`` ``def`` //VarIdent// ``:`` //Term// ``:=`` //Term//
-  |  |  **|**  | ``namespace`` //VarIdent// ``;`` //[Decl]// ``end``
+  |  |  **|**  | ``namespace`` //VarIdent// ``where`` ``{`` //[Decl]// ``}``
   |  |  **|**  | ``open`` //VarIdent//
   |  |  **|**  | ``check`` //Term// ``:`` //Term//
   |  |  **|**  | ``compute`` //Term//
   | //[Decl]// | -> | **eps**
+  |  |  **|**  | //Decl//
   |  |  **|**  | //Decl// ``;`` //[Decl]//
   | //Term// | -> | ``Π`` ``(`` //Pattern// ``:`` //Term// ``)`` ``→`` //ScopedTerm//
   |  |  **|**  | ``Σ`` ``(`` //Pattern// ``:`` //Term// ``)`` ``×`` //ScopedTerm//

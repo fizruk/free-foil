@@ -27,16 +27,15 @@ computed results = [term | Computed term <- results]
 -- and a client that imports it.
 withClient :: String -> String
 withClient clientBody = unlines
-  [ "module Prelude ;"
-  , "namespace Nat ;"
+  [ "module Prelude"
+  , "namespace Nat where"
   , "  private def twice : Π (A : 𝕌) → (A → A) → A → A"
-  , "    := λ A → λ f → λ x → f (f x) ;"
+  , "    := λ A → λ f → λ x → f (f x)"
   , "  def quadruple : Π (A : 𝕌) → (A → A) → A → A"
-  , "    := λ A → λ f → twice A (twice A f) ;"
-  , "end ;"
+  , "    := λ A → λ f → twice A (twice A f)"
   , ""
-  , "module Client ;"
-  , "import Prelude ;"
+  , "module Client"
+  , "import Prelude"
   , clientBody
   ]
 
@@ -45,67 +44,66 @@ spec = do
   describe "build order" $ do
     it "checks an imported module first, whatever the file order" $
       failures (run (unlines
-        [ "module Client ;"
-        , "import Prelude ;"
-        , "compute Logic.id 𝟙 tt ;"
-        , "module Prelude ;"
-        , "namespace Logic ;"
-        , "  def id : Π (A : 𝕌) → A → A := λ A → λ x → x ;"
-        , "end ;" ]))
+        [ "module Client"
+        , "import Prelude"
+        , "compute Logic.id 𝟙 tt"
+        , "module Prelude"
+        , "namespace Logic where"
+        , "  def id : Π (A : 𝕌) → A → A := λ A → λ x → x" ]))
         `shouldBe` []
 
     it "reports an import of a module that is not there" $
-      failures (run "module A ;\nimport Nowhere ;\n")
+      failures (run "module A\nimport Nowhere\n")
         `shouldSatisfy` any ("imported module not found" `isInfixOf`)
 
     it "reports an import cycle instead of looping" $
       failures (run (unlines
-        [ "module A ;", "import B ;"
-        , "module B ;", "import A ;" ]))
+        [ "module A", "import B"
+        , "module B", "import A" ]))
         `shouldSatisfy` any ("import cycle" `isInfixOf`)
 
   describe "namespaces and qualified names" $ do
     it "qualifies a declaration by its namespace, not by its module" $
-      run (withClient "check Nat.quadruple : Π (A : 𝕌) → (A → A) → A → A ;")
+      run (withClient "check Nat.quadruple : Π (A : 𝕌) → (A → A) → A → A")
         `shouldSatisfy` (Defined "Nat.quadruple" `elem`)
 
     it "does not make a namespaced name available unqualified" $
-      failures (run (withClient "compute quadruple 𝟙 (λ x → x) tt ;"))
+      failures (run (withClient "compute quadruple 𝟙 (λ x → x) tt"))
         `shouldSatisfy` any ("not in scope: quadruple" `isInfixOf`)
 
     it "makes it available unqualified after open, without hiding the qualified spelling" $
       computed (run (withClient (unlines
-        [ "open Nat ;"
-        , "compute quadruple 𝟙 (λ x → x) tt ;"
-        , "compute Nat.quadruple 𝟙 (λ x → x) tt ;" ])))
+        [ "open Nat"
+        , "compute quadruple 𝟙 (λ x → x) tt"
+        , "compute Nat.quadruple 𝟙 (λ x → x) tt" ])))
         `shouldBe` ["tt", "tt"]
 
-    it "reaches a nested namespace by its full path" $
+    it "reaches a namespace nested inside a namespace by its full path" $
       computed (run (unlines
-        [ "module M ;"
-        , "namespace Outer.Inner ;"
-        , "  def unit : 𝟙 := tt ;"
-        , "end ;"
-        , "compute Outer.Inner.unit ;" ]))
+        [ "module M"
+        , "namespace Outer where"
+        , "  namespace Inner where"
+        , "    def unit : 𝟙 := tt"
+        , "compute Outer.Inner.unit" ]))
         `shouldBe` ["tt"]
 
   describe "narrowing: naming versus reducing" $ do
     it "lets a module name its own private declaration" $
       failures (run (unlines
-        [ "module Prelude ;"
-        , "private def secret : 𝟙 := tt ;"
-        , "compute secret ;" ]))
+        [ "module Prelude"
+        , "private def secret : 𝟙 := tt"
+        , "compute secret" ]))
         `shouldBe` []
 
     it "hides a private declaration from an importing module" $
-      failures (run (withClient "compute Nat.twice 𝟙 (λ x → x) tt ;"))
+      failures (run (withClient "compute Nat.twice 𝟙 (λ x → x) tt"))
         `shouldSatisfy` any ("not in scope: Nat.twice" `isInfixOf`)
 
     it "still reduces through that private declaration" $
       -- The client cannot write `Nat.twice`, and yet normalising
       -- `Nat.quadruple` has to unfold it to reach `tt`. Restricting the
       -- resolver's table leaves the terms, and δ-reduction, untouched.
-      computed (run (withClient "compute Nat.quadruple 𝟙 (λ x → x) tt ;"))
+      computed (run (withClient "compute Nat.quadruple 𝟙 (λ x → x) tt"))
         `shouldBe` ["tt"]
 
   describe "the example programs" $

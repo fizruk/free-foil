@@ -35,6 +35,7 @@ import           Generics.Kind.TH                      (deriveGenericK)
 import           Language.MLTT.FreeFoilConfig          (mlttConfig, rawScopedTerm,
                                                         rawVar)
 import qualified Language.MLTT.Syntax.Abs              as Raw
+import qualified Language.MLTT.Syntax.Layout           as Raw
 import qualified Language.MLTT.Syntax.Lex              as Raw
 import qualified Language.MLTT.Syntax.Par              as Raw
 import qualified Language.MLTT.Syntax.Print            as Raw
@@ -91,9 +92,9 @@ unsafeParse parse input =
     Left err -> error ("could not parse an MLTT term: " <> input <> "\n  " <> err)
     Right x  -> x
 
--- | Parse a raw program: a sequence of modules.
+-- | Parse a raw program: a sequence of modules, laid out.
 parseProgram :: String -> Either String Raw.Program
-parseProgram = Raw.pProgram . Raw.tokens
+parseProgram input = Raw.pProgram (Raw.resolveLayout True (Raw.tokens input))
 
 -- |
 -- >>> "λ x → λ y → x" :: Term' Raw.BNFC'Position Foil.VoidS

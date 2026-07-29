@@ -163,13 +163,14 @@ instance Print (Language.MLTT.Syntax.Abs.Decl' a) where
   prt i = \case
     Language.MLTT.Syntax.Abs.DeclDef _ varident term1 term2 -> prPrec i 0 (concatD [doc (showString "def"), prt 0 varident, doc (showString ":"), prt 0 term1, doc (showString ":="), prt 0 term2])
     Language.MLTT.Syntax.Abs.DeclPrivateDef _ varident term1 term2 -> prPrec i 0 (concatD [doc (showString "private"), doc (showString "def"), prt 0 varident, doc (showString ":"), prt 0 term1, doc (showString ":="), prt 0 term2])
-    Language.MLTT.Syntax.Abs.DeclNamespace _ varident decls -> prPrec i 0 (concatD [doc (showString "namespace"), prt 0 varident, doc (showString ";"), prt 0 decls, doc (showString "end")])
+    Language.MLTT.Syntax.Abs.DeclNamespace _ varident decls -> prPrec i 0 (concatD [doc (showString "namespace"), prt 0 varident, doc (showString "where"), doc (showString "{"), prt 0 decls, doc (showString "}")])
     Language.MLTT.Syntax.Abs.DeclOpen _ varident -> prPrec i 0 (concatD [doc (showString "open"), prt 0 varident])
     Language.MLTT.Syntax.Abs.DeclCheck _ term1 term2 -> prPrec i 0 (concatD [doc (showString "check"), prt 0 term1, doc (showString ":"), prt 0 term2])
     Language.MLTT.Syntax.Abs.DeclCompute _ term -> prPrec i 0 (concatD [doc (showString "compute"), prt 0 term])
 
 instance Print [Language.MLTT.Syntax.Abs.Decl' a] where
   prt _ [] = concatD []
+  prt _ [x] = concatD [prt 0 x]
   prt _ (x:xs) = concatD [prt 0 x, doc (showString ";"), prt 0 xs]
 
 instance Print (Language.MLTT.Syntax.Abs.Term' a) where

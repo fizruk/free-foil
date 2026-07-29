@@ -41,6 +41,7 @@ library
       Language.MLTT.Impl.Generated
       Language.MLTT.Resolve
       Language.MLTT.Syntax.Abs
+      Language.MLTT.Syntax.Layout
       Language.MLTT.Syntax.Lex
       Language.MLTT.Syntax.Par
       Language.MLTT.Syntax.Print
