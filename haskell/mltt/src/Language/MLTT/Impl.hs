@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveFoldable      #-}
 {-# LANGUAGE DeriveFunctor       #-}
+{-# LANGUAGE DeriveTraversable   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -43,7 +44,9 @@ module Language.MLTT.Impl where
 import           Control.Monad                (foldM)
 import qualified Control.Monad.Foil           as Foil
 import           Data.Functor.Identity        (Identity (..))
+import           Control.Monad.Free.Foil      (UnresolvedName (..))
 import           Data.List                    (intercalate)
+import qualified Data.List.NonEmpty           as NonEmpty
 import           Data.Map                     (Map)
 import qualified Data.Map                     as Map
 import qualified Data.Set                     as Set
@@ -229,7 +232,7 @@ finishModule name env =
 -- makes "elaborated the wrong number of terms" unrepresentable instead of an
 -- @error@ in an unreachable branch.
 data Two a = Two a a
-  deriving (Functor, Foldable)
+  deriving (Functor, Foldable, Traversable)
 
 -- | Check a block of declarations at a namespace path.
 --
@@ -280,21 +283,23 @@ withDecls env path (decl : decls) cont = case decl of
     -- Continue with the remaining declarations, with one result in front.
     continue result = withDecls env path decls $ \env' rest -> cont env' (result : rest)
 
-    -- Resolve and convert some raw terms, or report the first spelling that
-    -- does not resolve. Checking before converting is what keeps an
-    -- out-of-scope name a diagnostic rather than a crash.
+    -- Convert some raw terms, or report the identifiers that do not resolve.
     --
     -- The terms come and go in a container of the caller's choosing, so a
     -- declaration that needs two of them asks with 'Two' and is handed back a
-    -- 'Two'. Conversion cannot fail once the check has passed, so there is no
-    -- 'Either' either.
+    -- 'Two'.
     withElaborated
-      :: (Functor f, Foldable f) => f Raw.Term -> (f (Term n) -> r) -> r
-    withElaborated raws k = case foldMap (unresolved visible) raws of
-      (x : _) -> continue (Failed (notInScope x))
-      []      -> k (fmap (desugar . toTerm' (ctxScope ctx) visible) raws)
+      :: Traversable f => f Raw.Term -> (f (Term n) -> r) -> r
+    withElaborated raws k =
+      case traverse (tryToTerm' (ctxScope ctx) visible) raws of
+        Left errs -> continue (Failed (notInScope (NonEmpty.head errs)))
+        Right ts  -> k (fmap desugar ts)
 
-    notInScope x = "not in scope: " <> prettyVarIdent x
+    notInScope (UnresolvedName x inScope) =
+      case suggestions x inScope of
+        []    -> "not in scope: " <> prettyVarIdent x
+        hints -> "not in scope: " <> prettyVarIdent x
+                   <> "; did you mean " <> intercalate ", " (map prettyVarIdent hints) <> "?"
 
     define visibility name rawType rawValue =
       withElaborated (Two rawType rawValue) $ \(Two ty value) ->

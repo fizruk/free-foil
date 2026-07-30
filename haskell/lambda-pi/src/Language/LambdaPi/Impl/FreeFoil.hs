@@ -15,7 +15,7 @@
 -- 1. Freely generated (from a simple signature) scope-safe AST.
 -- 2. Correct capture-avoiding substitution (see 'substitute').
 -- 3. Correct \(\alpha\)-equivalence checks (see 'alphaEquiv' and 'alphaEquivRefreshed') as well as \(\alpha\)-normalization (see 'refreshAST').
--- 4. Conversion helpers (see 'convertToAST' and 'convertFromAST').
+-- 4. Conversion helpers (see 'unsafeConvertToAST' and 'convertFromAST').
 --
 -- The following is implemented __manually__ in this module:
 --
