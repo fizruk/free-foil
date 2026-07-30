@@ -46,7 +46,6 @@ import qualified Control.Monad.Foil           as Foil
 import           Data.Functor.Identity        (Identity (..))
 import           Control.Monad.Free.Foil      (UnresolvedName (..))
 import           Data.List                    (intercalate)
-import qualified Data.List.NonEmpty           as NonEmpty
 import           Data.Map                     (Map)
 import qualified Data.Map                     as Map
 import qualified Data.Set                     as Set
@@ -292,7 +291,7 @@ withDecls env path (decl : decls) cont = case decl of
       :: Traversable f => f Raw.Term -> (f (Term n) -> r) -> r
     withElaborated raws k =
       case traverse (tryToTerm' (ctxScope ctx) visible) raws of
-        Left errs -> continue (Failed (notInScope (NonEmpty.head errs)))
+        Left err -> continue (Failed (notInScope err))
         Right ts  -> k (fmap desugar ts)
 
     notInScope (UnresolvedName x inScope) =

@@ -26,7 +26,6 @@ import           Data.Maybe                 (catMaybes, listToMaybe, mapMaybe,
                                              maybeToList)
 import Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.List.NonEmpty         (NonEmpty)
 import qualified GHC.Generics               as GHC
 
 -- | Config for the Template Haskell generation of data types,
@@ -970,9 +969,7 @@ mkFreeFoilConversions config@FreeFoilConfig{..} = concat <$> sequence
           termType =  toFreeFoilType SortTerm config (VarT outerScope) (VarT innerScope) rawTermType
           tryFunName = mkName ("try" ++ capitalizeFirst (nameBase funName))
           unresolvedType = ConT ''Foil.UnresolvedName `AppT` rawIdentType
-          tryTermType = ConT ''Either
-            `AppT` (ConT ''NonEmpty `AppT` unresolvedType)
-            `AppT` termType
+          tryTermType = ConT ''Either `AppT` unresolvedType `AppT` termType
           convertArgs f = VarE f
             `AppE` VarE funSigName
             `AppE` VarE funBindingName
@@ -980,7 +977,7 @@ mkFreeFoilConversions config@FreeFoilConfig{..} = concat <$> sequence
       addModFinalizer $ putDoc (DeclDoc funName)
         ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. Convert from raw to scope-safe representation, calling 'error' on an identifier that does not resolve. See '" ++ nameBase tryFunName ++ "'.")
       addModFinalizer $ putDoc (DeclDoc tryFunName)
-        ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. Convert from raw to scope-safe representation, reporting every identifier that does not resolve.")
+        ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. Convert from raw to scope-safe representation, reporting the first identifier that does not resolve.")
       return
         [ SigD funName $
             ForallT

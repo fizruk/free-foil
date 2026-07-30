@@ -34,7 +34,6 @@ import Data.ZipMatchK
 import qualified Generics.Kind as Kind
 import Generics.Kind (GenericK(..), Field, Exists, Var0, Var1, (:$:), Atom((:@:), Kon), (:+:), (:*:))
 import           Data.Coerce                 (coerce)
-import           Data.List.NonEmpty          (NonEmpty (..))
 import           Data.Map                    (Map)
 import qualified Data.Map                    as Map
 import           Data.Maybe                  (mapMaybe)
@@ -361,14 +360,21 @@ unresolvedNames toSig fromRawPattern getScopedTerm = go
       fromRawPattern scope names pat $ \binder' names' ->
         go (Foil.extendScopePattern binder' scope) names' (getScopedTerm scopedTerm)
 
--- | Convert a raw term into a scope-safe term, reporting every identifier that
--- does not resolve instead of crashing on the first.
+-- | Convert a raw term into a scope-safe term, reporting the first identifier
+-- that does not resolve.
 --
--- Resolution is checked in full before anything is converted, so the result is
--- either every failure or a term. Conversion itself cannot fail once the check
--- has passed, which is why the success side is not wrapped in anything.
+-- One pass, short-circuiting at the first failure, so a term that resolves
+-- costs no more than 'unsafeConvertToAST' does. The report is complete for that
+-- one identifier — 'unresolvedInScope' is built where it fails and so is never
+-- computed on the way through.
+--
+-- A caller wanting /every/ unresolved identifier rather than the first pays a
+-- second pass for it, with 'unresolvedNames'. That is the right way round: the
+-- successful path should be fast, and a failure can afford to be walked again
+-- for a better message.
 tryConvertToAST
-  :: (Foil.Distinct n, Bifunctor sig, Bifoldable sig, Ord rawIdent, Foil.CoSinkable binder)
+  :: forall sig binder rawIdent rawTerm rawPattern rawScopedTerm n.
+     (Foil.Distinct n, Bitraversable sig, Ord rawIdent, Foil.CoSinkable binder)
   => (rawTerm -> Either rawIdent (sig (rawPattern, rawScopedTerm) rawTerm))
   -- ^ Unpeel one syntax node (or a variable) from a raw term.
   -> (forall x z. Foil.Distinct x
@@ -389,11 +395,26 @@ tryConvertToAST
   -- ^ Known names of free variables in scope @n@.
   -> rawTerm
   -- ^ Raw term.
-  -> Either (NonEmpty (UnresolvedName rawIdent)) (AST binder sig n)
-tryConvertToAST toSig fromRawPattern getScopedTerm scope names t =
-  case unresolvedNames toSig fromRawPattern getScopedTerm scope names t of
-    []       -> Right (unsafeConvertToAST toSig fromRawPattern getScopedTerm scope names t)
-    (e : es) -> Left (e :| es)
+  -> Either (UnresolvedName rawIdent) (AST binder sig n)
+tryConvertToAST toSig fromRawPattern getScopedTerm = go
+  where
+    go :: forall x. Foil.Distinct x
+       => Foil.Scope x -> Map rawIdent (Foil.Name x) -> rawTerm
+       -> Either (UnresolvedName rawIdent) (AST binder sig x)
+    go scope names t = case toSig t of
+      Left x -> case Map.lookup x names of
+        Nothing   -> Left (UnresolvedName x (Map.keys names))
+        Just name -> Right (Var name)
+      Right node -> Node <$> bitraverse (goScoped scope names) (go scope names) node
+
+    goScoped :: forall x. Foil.Distinct x
+             => Foil.Scope x -> Map rawIdent (Foil.Name x)
+             -> (rawPattern, rawScopedTerm)
+             -> Either (UnresolvedName rawIdent) (ScopedAST binder sig x)
+    goScoped scope names (pat, scopedTerm) =
+      fromRawPattern scope names pat $ \binder' names' ->
+        ScopedAST binder'
+          <$> go (Foil.extendScopePattern binder' scope) names' (getScopedTerm scopedTerm)
 
 -- | Convert a raw term into a scope-safe term, calling 'error' on an
 -- identifier that does not resolve.
