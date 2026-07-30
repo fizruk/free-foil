@@ -106,6 +106,18 @@ spec = do
       computed (run (withClient "compute Nat.quadruple 𝟙 (λ x ⇒ x) tt"))
         `shouldBe` ["tt"]
 
+  describe "diagnostics" $ do
+    it "suggests a qualified spelling for a bare one" $
+      failures (run (withClient "compute quadruple 𝟙 (λ x ⇒ x) tt"))
+        `shouldSatisfy` any ("did you mean Nat.quadruple?" `isInfixOf`)
+
+    it "reports an unresolved name rather than crashing on an integer" $
+      -- convertToAST used to call `error "undefined variable"` here.
+      failures (run (unlines
+        [ "module M"
+        , "compute nowhere" ]))
+        `shouldBe` ["not in scope: nowhere"]
+
   describe "printing" $
     it "does not confuse a bound variable with a definition of the same raw name" $
       -- A definition's body is elaborated before the definition's own name is

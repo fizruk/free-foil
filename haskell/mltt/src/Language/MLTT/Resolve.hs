@@ -1,4 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
 -- | Name resolution: which surface spellings denote which declarations.
 --
 -- Nothing in this module mentions a scope, a 'Control.Monad.Foil.Name', or the
@@ -34,12 +33,10 @@
 --   where @NarrowToUnit@ runs before @ElaborateUnit@.
 module Language.MLTT.Resolve where
 
-import           Data.List                (inits, intercalate, nub, stripPrefix)
+import           Data.List                (inits, intercalate, stripPrefix)
 import           Data.Map                 (Map)
 import qualified Data.Map                 as Map
 import           Data.Maybe               (mapMaybe)
-import           Data.Set                 (Set)
-import qualified Data.Set                 as Set
 import qualified Language.MLTT.Syntax.Abs as Raw
 
 -- $setup
@@ -162,59 +159,22 @@ export :: Visibility -> Raw.VarIdent -> v -> Table v -> Table v
 export Public  name v = Map.insert name v
 export Private _    _ = id
 
--- | Every spelling in a table, for an error message.
-spellings :: Table v -> [String]
-spellings t = [x | Raw.VarIdent x <- Map.keys t]
+-- * Suggestions
 
--- * Free identifiers of a raw term
+-- | Spellings in scope that end in the same segment as an unresolved one.
 --
--- The elaborator has to know that every identifier a term mentions resolves
--- /before/ it converts the term, because conversion crashes on an unknown name
--- rather than reporting one. Doing the check here is what turns an unnameable
--- private helper into a diagnostic with a name in it.
-
--- | The identifiers a raw pattern binds.
+-- @Nat.quadruple@ is a plausible thing to have meant by @quadruple@, and in a
+-- language with namespaces it is usually the only useful hint there is.
 --
--- >>> patternIdents (Raw.PatternPair () (Raw.PatternVar () (Raw.VarIdent "x")) (Raw.PatternWildcard ()))
--- [VarIdent "x"]
-patternIdents :: Raw.Pattern' a -> [Raw.VarIdent]
-patternIdents = \case
-  Raw.PatternWildcard _ -> []
-  Raw.PatternVar _ x    -> [x]
-  Raw.PatternPair _ l r -> patternIdents l <> patternIdents r
-
--- | The identifiers a raw term mentions free, in order of first occurrence.
-freeIdents :: Raw.Term' a -> [Raw.VarIdent]
-freeIdents = nub . go Set.empty
+-- >>> suggestions (Raw.VarIdent "double") (Map.keys declared)
+-- [VarIdent "Nat.Extra.double"]
+-- >>> suggestions (Raw.VarIdent "nope") (Map.keys declared)
+-- []
+suggestions :: Raw.VarIdent -> [Raw.VarIdent] -> [Raw.VarIdent]
+suggestions name inScope =
+    [ candidate
+    | candidate <- inScope
+    , candidate /= name
+    , lastSegment candidate == lastSegment name ]
   where
-    scoped bound (Raw.AScopedTerm _ body) = go bound body
-
-    bind :: Raw.Pattern' a -> Set Raw.VarIdent -> Set Raw.VarIdent
-    bind p bound = foldr Set.insert bound (patternIdents p)
-
-    go :: Set Raw.VarIdent -> Raw.Term' a -> [Raw.VarIdent]
-    go bound = \case
-      Raw.Var _ x
-        | x `Set.member` bound -> []
-        | otherwise            -> [x]
-      Raw.Pi _ p ty body    -> go bound ty <> scoped (bind p bound) body
-      Raw.Sigma _ p ty body -> go bound ty <> scoped (bind p bound) body
-      Raw.Lam _ p body      -> scoped (bind p bound) body
-      Raw.Let _ p val body  -> go bound val <> scoped (bind p bound) body
-      Raw.Arrow _ a b       -> go bound a <> go bound b
-      Raw.Product _ a b     -> go bound a <> go bound b
-      Raw.App _ f x         -> go bound f <> go bound x
-      Raw.First _ t         -> go bound t
-      Raw.Second _ t        -> go bound t
-      Raw.Universe _        -> []
-      Raw.UnitType _        -> []
-      Raw.UnitVal _         -> []
-      Raw.IdType _ a x y    -> go bound a <> go bound x <> go bound y
-      Raw.Refl _ x          -> go bound x
-      Raw.J _ m c p         -> go bound m <> go bound c <> go bound p
-      Raw.Pair _ l r        -> go bound l <> go bound r
-      Raw.Ann _ t ty        -> go bound t <> go bound ty
-
--- | The identifiers a term mentions that the table cannot resolve.
-unresolved :: Table v -> Raw.Term' a -> [Raw.VarIdent]
-unresolved table = filter (`Map.notMember` table) . freeIdents
+    lastSegment = last . segments

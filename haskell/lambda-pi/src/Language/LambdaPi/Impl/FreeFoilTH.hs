@@ -18,7 +18,7 @@
 -- 1. Freely generated (from a simple signature) scope-safe AST.
 -- 2. Correct capture-avoiding substitution (see 'substitute').
 -- 3. Correct \(\alpha\)-equivalence checks (see 'alphaEquiv' and 'alphaEquivRefreshed') as well as \(\alpha\)-normalization (see 'refreshAST').
--- 4. Conversion helpers (see 'convertToAST' and 'convertFromAST').
+-- 4. Conversion helpers (see 'unsafeConvertToAST' and 'convertFromAST').
 --
 -- The following is provided via __generic__ representation via [kind-generics](https://hackage.haskell.org/package/kind-generics) (see "Generics.Kind"):
 -- 1. 'ZipMatch' instances for signatures (enabling general \(\alpha\)-equivalence).
@@ -125,9 +125,9 @@ type FoilPattern = FoilPattern' Raw.BNFC'Position
 -- ** Conversion helpers
 
 -- | Convert 'Raw.Term'' into a scope-safe term.
--- This is a special case of 'convertToAST'.
+-- This is a special case of 'unsafeConvertToAST'.
 toTerm' :: Foil.Distinct n => Foil.Scope n -> Map Raw.VarIdent (Foil.Name n) -> Raw.Term' a -> Term' a n
-toTerm' = convertToAST convertToTerm'Sig toFoilPattern' getTerm'FromScopedTerm'
+toTerm' = unsafeConvertToAST convertToTerm'Sig toFoilPattern' getTerm'FromScopedTerm'
 
 -- | Convert 'Raw.Term'' into a closed scope-safe term.
 -- This is a special case of 'toTerm''.

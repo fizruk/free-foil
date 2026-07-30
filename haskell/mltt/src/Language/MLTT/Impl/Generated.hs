@@ -23,11 +23,9 @@
 -- instances of the signature, and the pattern instances of 'Pattern''.
 module Language.MLTT.Impl.Generated where
 
-import           Control.Monad.Free.Foil                 (AST (..),
-                                                          ScopedAST (..))
+import           Control.Monad.Free.Foil                 (convertFromASTWith)
 import           Control.Monad.Free.Foil.TH.MkFreeFoil
 import qualified Control.Monad.Foil                    as Foil
-import           Data.Bifunctor                        (bimap)
 import           Data.Bifunctor.TH
 import qualified Data.Map                              as Map
 import           Data.String                           (IsString (..))
@@ -117,48 +115,19 @@ instance Show (Term' a n) where show = Raw.printTree . fromTerm'
 -- | Convert back to raw syntax, naming free and bound variables separately.
 --
 -- A variable free in the whole term is named from a 'Foil.NameMap'; a bound one
--- is named from its index by the given function, as
--- 'Control.Monad.Free.Foil.convertFromAST' names every variable.
---
--- The distinction cannot be left to 'Control.Monad.Free.Foil.convertFromAST',
--- whose naming function is @'Int' -> rawIdent@ and is applied to every variable
--- it meets, bound or free. That matters, because raw names are __not__ unique
--- across scope indices: a definition\'s body is elaborated before the
--- definition\'s own name is allocated, so @def f := λ x ⇒ x@ gives both @f@ and
--- the @x@ it binds the raw name 0, and naming every 0 after @f@ printed the
--- body as @λ x0 ⇒ f@.
---
--- Making the walk keep the /typed/ name is what fixes it, and the library
--- already has the operation for that: 'Foil.unsinkNamePattern' sends a name
--- under a pattern back to the enclosing scope, or reports that the pattern
--- binds it. Composing one per binder on the way down gives a
--- @'Foil.Name' x -> Maybe ('Foil.Name' n)@ that is exactly the test wanted, so
--- the lookup happens at @n@ and a 'Foil.NameMap' is total on the nose.
+-- is named from its index. Keeping the two apart matters because raw names are
+-- not unique across scope indices: a definition\'s body is elaborated before
+-- the definition\'s own name is allocated, so @def f := λ x ⇒ x@ gives both @f@
+-- and the @x@ it binds the raw name 0.
 fromTermWith
-  :: forall a n. Foil.Distinct n
+  :: Foil.Distinct n
   => (Int -> Raw.VarIdent)          -- ^ Name a bound variable, from its index.
   -> Foil.NameMap n Raw.VarIdent    -- ^ Name a variable free in the whole term.
   -> Term' a n
   -> Raw.Term' a
-fromTermWith bound names = go Just
-  where
-    go :: forall x. Foil.Distinct x
-       => (Foil.Name x -> Maybe (Foil.Name n)) -> Term' a x -> Raw.Term' a
-    go unsink = \case
-      Var x -> rawVar $ case unsink x of
-        Just top -> Foil.lookupName top names
-        Nothing  -> bound (Foil.nameId x)
-      Node node -> fromTerm'Sig (bimap (goScoped unsink) (go unsink) node)
-
-    goScoped :: forall x. Foil.Distinct x
-             => (Foil.Name x -> Maybe (Foil.Name n))
-             -> ScopedTerm' a x -> (Raw.Pattern' a, Raw.ScopedTerm' a)
-    goScoped unsink (ScopedAST binder body) =
-      case Foil.assertDistinct binder of
-        Foil.Distinct ->
-          ( fromPattern' binder
-          , rawScopedTerm
-              (go (\name -> Foil.unsinkNamePattern binder name >>= unsink) body) )
+fromTermWith bound names =
+  convertFromASTWith fromTerm'Sig rawVar fromPattern' rawScopedTerm
+    (`Foil.lookupName` names) bound
 
 -- | Print a term, naming free and bound variables separately.
 showTermWith

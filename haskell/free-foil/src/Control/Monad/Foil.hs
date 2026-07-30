@@ -80,6 +80,7 @@ module Control.Monad.Foil (
   withFreshNameBinderList,
   NameBinderList(..),
   nameBindersList,
+  nameBinderListOf,
   fromNameBindersList,
   snocNameBinderList,
   concatNameBinderLists,

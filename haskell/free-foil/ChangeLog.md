@@ -1,5 +1,27 @@
 # CHANGELOG for `free-foil`
 
+# Unreleased
+
+Conversion between raw and scope-safe syntax. An additive release apart from one new requirement on `mkFreeFoilConversions`, noted below.
+
+New:
+
+- `tryConvertToAST` converts a raw term and reports the first identifier that does not resolve, instead of `error`-ing on it. `convertToAST` called `error "undefined variable"` on a name outside its map, which is the ordinary unbound-variable case in any front-end, so every client had either to pre-check names itself or to crash. The failure is an `UnresolvedName rawIdent`, carrying the identifier and what was in scope at that occurrence — including the binders passed on the way down, which is what a caller checking names beforehand cannot know. It is one pass, short-circuiting at the failure, so a term that resolves costs no more than `unsafeConvertToAST`; `unresolvedInScope` is built where it fails and is never computed on the way through. A caller wanting *every* unresolved identifier rather than the first pays a second pass for it, with `unresolvedNames`. That is the right way round: the successful path should be fast, and a failing one can afford to be walked again for a better message.
+
+  Note what neither carries: a source position. These functions are generic in the raw term and see it only through `toSig`, so a location, if the syntax has one, is not theirs to read.
+
+- `convertFromASTWith` names the variables that occur free in the whole term separately from the bound ones, taking a `Name n -> rawIdent` for the former and an `Int -> rawIdent` for the latter. `convertFromAST` applies one function to every variable it meets and gives it only a raw name, which is not enough: raw names are not unique across scope indices, so a binder inside a term may share one with a name of the ambient scope, and naming by raw name alone prints the bound variable as whatever the ambient scope calls that name. Keeping the typed name is what tells them apart, and `unsinkNamePattern`, composed one per binder on the way down, is the operation for it. `mltt` hit exactly this: a definition's body is elaborated before the definition's own name is allocated, so `def f := λ x ⇒ x` gave both `f` and its bound `x` the raw name 0, and the printer showed the body as `λ x0 ⇒ f`.
+
+- `mkFreeFoilConversions` generates a `tryToX` beside each `toX`, so that clients of `mkFreeFoil` get the reporting conversion without spelling out its six arguments. The name is derived from the existing one rather than configured, to leave `FreeFoilConfig` alone.
+
+- `Control.Monad.Foil` exports `nameBinderListOf`. It already exported `nameBindersList` and `getNameBinders`, so the list of a pattern's binders was reachable only by composing them.
+
+Changed:
+
+- `convertToAST` and `convertToScopedAST` are deprecated in favour of `unsafeConvertToAST` and `unsafeConvertToScopedAST`, which are the same functions under names that admit they call `error`. The old names still work.
+
+- **`mkFreeFoilConversions` now requires a `Bifoldable` instance for each signature**, since the generated `tryToX` needs one to walk a term collecting unresolved names. Every client in this repository already derives it alongside `Bifunctor`; one that does not will need `deriveBifoldable` on its signature.
+
 # 0.3.3 — 2026-07-20
 
 A bugfix and documentation release. Upgrading from 0.3.2 needs no work.

@@ -20,6 +20,7 @@ import qualified Control.Monad.Foil         as Foil
 import           Control.Monad.Foil.TH.Util
 import qualified Control.Monad.Free.Foil    as Foil
 import           Data.Bifunctor
+import           Data.Char                  (toUpper)
 import           Data.List                  (find, unzip4, (\\), nub)
 import           Data.Maybe                 (catMaybes, listToMaybe, mapMaybe,
                                              maybeToList)
@@ -107,6 +108,11 @@ data FreeFoilTermConfig = FreeFoilTermConfig
     -- ^ Name of a function that extracts a raw term from a raw scoped term.
     -- Normally, this is something like @(\(ScopedTerm term) -> term)@.
   }
+
+-- | Capitalize the first letter, so that @toTerm'@ gives @tryToTerm'@.
+capitalizeFirst :: String -> String
+capitalizeFirst []       = []
+capitalizeFirst (c : cs) = toUpper c : cs
 
 toFreeFoilName :: FreeFoilConfig -> Name -> Name
 toFreeFoilName FreeFoilConfig{..} name = mkName (freeFoilNameModifier (nameBase name))
@@ -961,8 +967,17 @@ mkFreeFoilConversions config@FreeFoilConfig{..} = concat <$> sequence
           funBindingName = toFreeFoilNameTo config rawBindingName
           rawTermType = PeelConT rawTermName (map (VarT . tvarName) tvars)
           termType =  toFreeFoilType SortTerm config (VarT outerScope) (VarT innerScope) rawTermType
+          tryFunName = mkName ("try" ++ capitalizeFirst (nameBase funName))
+          unresolvedType = ConT ''Foil.UnresolvedName `AppT` rawIdentType
+          tryTermType = ConT ''Either `AppT` unresolvedType `AppT` termType
+          convertArgs f = VarE f
+            `AppE` VarE funSigName
+            `AppE` VarE funBindingName
+            `AppE` VarE rawScopeToTermName
       addModFinalizer $ putDoc (DeclDoc funName)
-        ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. Convert from scope-safe to raw representation.")
+        ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. Convert from raw to scope-safe representation, calling 'error' on an identifier that does not resolve. See '" ++ nameBase tryFunName ++ "'.")
+      addModFinalizer $ putDoc (DeclDoc tryFunName)
+        ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. Convert from raw to scope-safe representation, reporting the first identifier that does not resolve.")
       return
         [ SigD funName $
             ForallT
@@ -973,13 +988,17 @@ mkFreeFoilConversions config@FreeFoilConfig{..} = concat <$> sequence
                 --> (ConT ''Map `AppT` rawIdentType `AppT` (ConT ''Foil.Name `AppT` VarT outerScope))
                 --> rawTermType
                 --> termType
-        , FunD funName [
-            Clause [] (NormalB
-              (VarE 'Foil.convertToAST
-                `AppE` VarE funSigName
-                `AppE` VarE funBindingName
-                `AppE` VarE rawScopeToTermName)) []
-          ]
+        , FunD funName [ Clause [] (NormalB (convertArgs 'Foil.unsafeConvertToAST)) [] ]
+        , SigD tryFunName $
+            ForallT
+              (PlainTV outerScope SpecifiedSpec : map (SpecifiedSpec <$) tvars)
+              [ ConT ''Foil.Distinct `AppT` VarT outerScope
+              , ConT ''Ord `AppT` rawIdentType ] $
+                (ConT ''Foil.Scope `AppT` VarT outerScope)
+                --> (ConT ''Map `AppT` rawIdentType `AppT` (ConT ''Foil.Name `AppT` VarT outerScope))
+                --> rawTermType
+                --> tryTermType
+        , FunD tryFunName [ Clause [] (NormalB (convertArgs 'Foil.tryConvertToAST)) [] ]
         ]
 
     mkConvertToSig sort termConfig@FreeFoilTermConfig{..} rawName = do
