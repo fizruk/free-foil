@@ -1,18 +1,50 @@
 comment "--" ;
 comment "{-" "-}" ;
 
+-- Declarations are laid out, not punctuated: a newline at the same indentation
+-- ends a declaration, and a `namespace ... where` block is opened by indenting
+-- under it. BNFC resolves this into the explicit `;` and `{ }` that the rules
+-- below are written with, so nested blocks work — a namespace may contain a
+-- namespace.
 layout toplevel ;
+layout "where" ;
 
-token VarIdent letter (letter | digit | '_' | '\'')* ;
+-- A dot inside an identifier is part of the identifier, so that @Nat.zero@ is
+-- one token and the parser never has to decide whether a dot qualifies a name
+-- or separates a binder from a body. So λ cannot be written @λ x . e@: with
+-- both spellings of the dot in play, @λ x.x@ is ambiguous at the lexical
+-- level, and no amount of grammar can recover it.
+--
+-- It is written @λ x ⇒ e@ rather than @λ x → e@ so that the arrow of a
+-- λ-abstraction cannot be mistaken for the arrow of a Π-type, which is a
+-- distinction worth keeping visible in a language where both appear in the
+-- same expression.
+--
+-- Resolution of a dotted identifier is not the parser's business at all; see
+-- "Language.MLTT.Resolve".
+token VarIdent letter (letter | digit | '_' | '\'' | '.')* ;
 
--- * Programs and commands
+-- * Modules
 
-AProgram. Program ::= [Command] ;
-terminator Command ";" ;
+-- A program is a sequence of modules. Normally each one is its own file, but
+-- putting several in one file is convenient for tests and for a one-file demo.
+AProgram. Program ::= [Module] ;
+terminator Module "" ;
 
-CommandCheck.   Command ::= "check" Term ":" Term ;
-CommandCompute. Command ::= "compute" Term ;
-CommandDef.     Command ::= "def" VarIdent ":" Term ":=" Term ;
+AModule.  Module ::= "module" VarIdent ";" [Import] [Decl] ;
+
+AnImport. Import ::= "import" VarIdent ;
+terminator Import ";" ;
+
+-- * Declarations
+
+DeclDef.        Decl ::= "def" VarIdent ":" Term ":=" Term ;
+DeclPrivateDef. Decl ::= "private" "def" VarIdent ":" Term ":=" Term ;
+DeclNamespace.  Decl ::= "namespace" VarIdent "where" "{" [Decl] "}" ;
+DeclOpen.       Decl ::= "open" VarIdent ;
+DeclCheck.      Decl ::= "check" Term ":" Term ;
+DeclCompute.    Decl ::= "compute" Term ;
+separator Decl ";" ;
 
 -- * Terms
 --
@@ -22,7 +54,7 @@ CommandDef.     Command ::= "def" VarIdent ":" Term ":=" Term ;
 
 Pi.       Term ::= "Π" "(" Pattern ":" Term ")" "→" ScopedTerm ;
 Sigma.    Term ::= "Σ" "(" Pattern ":" Term ")" "×" ScopedTerm ;
-Lam.      Term ::= "λ" Pattern "." ScopedTerm ;
+Lam.      Term ::= "λ" Pattern "⇒" ScopedTerm ;
 Let.      Term ::= "let" Pattern "=" Term "in" ScopedTerm ;
 Arrow.    Term ::= Term1 "→" Term ;
 Product.  Term ::= Term1 "×" Term ;

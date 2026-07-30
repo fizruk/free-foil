@@ -141,23 +141,43 @@ instance Print Language.MLTT.Syntax.Abs.VarIdent where
   prt _ (Language.MLTT.Syntax.Abs.VarIdent i) = doc $ showString i
 instance Print (Language.MLTT.Syntax.Abs.Program' a) where
   prt i = \case
-    Language.MLTT.Syntax.Abs.AProgram _ commands -> prPrec i 0 (concatD [prt 0 commands])
+    Language.MLTT.Syntax.Abs.AProgram _ modules -> prPrec i 0 (concatD [prt 0 modules])
 
-instance Print [Language.MLTT.Syntax.Abs.Command' a] where
+instance Print [Language.MLTT.Syntax.Abs.Module' a] where
+  prt _ [] = concatD []
+  prt _ (x:xs) = concatD [prt 0 x, prt 0 xs]
+
+instance Print (Language.MLTT.Syntax.Abs.Module' a) where
+  prt i = \case
+    Language.MLTT.Syntax.Abs.AModule _ varident imports decls -> prPrec i 0 (concatD [doc (showString "module"), prt 0 varident, doc (showString ";"), prt 0 imports, prt 0 decls])
+
+instance Print (Language.MLTT.Syntax.Abs.Import' a) where
+  prt i = \case
+    Language.MLTT.Syntax.Abs.AnImport _ varident -> prPrec i 0 (concatD [doc (showString "import"), prt 0 varident])
+
+instance Print [Language.MLTT.Syntax.Abs.Import' a] where
   prt _ [] = concatD []
   prt _ (x:xs) = concatD [prt 0 x, doc (showString ";"), prt 0 xs]
 
-instance Print (Language.MLTT.Syntax.Abs.Command' a) where
+instance Print (Language.MLTT.Syntax.Abs.Decl' a) where
   prt i = \case
-    Language.MLTT.Syntax.Abs.CommandCheck _ term1 term2 -> prPrec i 0 (concatD [doc (showString "check"), prt 0 term1, doc (showString ":"), prt 0 term2])
-    Language.MLTT.Syntax.Abs.CommandCompute _ term -> prPrec i 0 (concatD [doc (showString "compute"), prt 0 term])
-    Language.MLTT.Syntax.Abs.CommandDef _ varident term1 term2 -> prPrec i 0 (concatD [doc (showString "def"), prt 0 varident, doc (showString ":"), prt 0 term1, doc (showString ":="), prt 0 term2])
+    Language.MLTT.Syntax.Abs.DeclDef _ varident term1 term2 -> prPrec i 0 (concatD [doc (showString "def"), prt 0 varident, doc (showString ":"), prt 0 term1, doc (showString ":="), prt 0 term2])
+    Language.MLTT.Syntax.Abs.DeclPrivateDef _ varident term1 term2 -> prPrec i 0 (concatD [doc (showString "private"), doc (showString "def"), prt 0 varident, doc (showString ":"), prt 0 term1, doc (showString ":="), prt 0 term2])
+    Language.MLTT.Syntax.Abs.DeclNamespace _ varident decls -> prPrec i 0 (concatD [doc (showString "namespace"), prt 0 varident, doc (showString "where"), doc (showString "{"), prt 0 decls, doc (showString "}")])
+    Language.MLTT.Syntax.Abs.DeclOpen _ varident -> prPrec i 0 (concatD [doc (showString "open"), prt 0 varident])
+    Language.MLTT.Syntax.Abs.DeclCheck _ term1 term2 -> prPrec i 0 (concatD [doc (showString "check"), prt 0 term1, doc (showString ":"), prt 0 term2])
+    Language.MLTT.Syntax.Abs.DeclCompute _ term -> prPrec i 0 (concatD [doc (showString "compute"), prt 0 term])
+
+instance Print [Language.MLTT.Syntax.Abs.Decl' a] where
+  prt _ [] = concatD []
+  prt _ [x] = concatD [prt 0 x]
+  prt _ (x:xs) = concatD [prt 0 x, doc (showString ";"), prt 0 xs]
 
 instance Print (Language.MLTT.Syntax.Abs.Term' a) where
   prt i = \case
     Language.MLTT.Syntax.Abs.Pi _ pattern_ term scopedterm -> prPrec i 0 (concatD [doc (showString "\928"), doc (showString "("), prt 0 pattern_, doc (showString ":"), prt 0 term, doc (showString ")"), doc (showString "\8594"), prt 0 scopedterm])
     Language.MLTT.Syntax.Abs.Sigma _ pattern_ term scopedterm -> prPrec i 0 (concatD [doc (showString "\931"), doc (showString "("), prt 0 pattern_, doc (showString ":"), prt 0 term, doc (showString ")"), doc (showString "\215"), prt 0 scopedterm])
-    Language.MLTT.Syntax.Abs.Lam _ pattern_ scopedterm -> prPrec i 0 (concatD [doc (showString "\955"), prt 0 pattern_, doc (showString "."), prt 0 scopedterm])
+    Language.MLTT.Syntax.Abs.Lam _ pattern_ scopedterm -> prPrec i 0 (concatD [doc (showString "\955"), prt 0 pattern_, doc (showString "\8658"), prt 0 scopedterm])
     Language.MLTT.Syntax.Abs.Let _ pattern_ term scopedterm -> prPrec i 0 (concatD [doc (showString "let"), prt 0 pattern_, doc (showString "="), prt 0 term, doc (showString "in"), prt 0 scopedterm])
     Language.MLTT.Syntax.Abs.Arrow _ term1 term2 -> prPrec i 0 (concatD [prt 1 term1, doc (showString "\8594"), prt 0 term2])
     Language.MLTT.Syntax.Abs.Product _ term1 term2 -> prPrec i 0 (concatD [prt 1 term1, doc (showString "\215"), prt 0 term2])

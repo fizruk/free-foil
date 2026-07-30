@@ -39,6 +39,7 @@ library
       Language.MLTT.FreeFoilConfig
       Language.MLTT.Impl
       Language.MLTT.Impl.Generated
+      Language.MLTT.Resolve
       Language.MLTT.Syntax.Abs
       Language.MLTT.Syntax.Layout
       Language.MLTT.Syntax.Lex
@@ -123,6 +124,7 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
       Language.MLTT.ImplSpec
+      Language.MLTT.ModulesSpec
       Paths_mltt
   hs-source-dirs:
       test

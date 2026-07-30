@@ -24,14 +24,25 @@ import qualified Data.Data    as C (Data, Typeable)
 import qualified GHC.Generics as C (Generic)
 
 type Program = Program' BNFC'Position
-data Program' a = AProgram a [Command' a]
+data Program' a = AProgram a [Module' a]
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
 
-type Command = Command' BNFC'Position
-data Command' a
-    = CommandCheck a (Term' a) (Term' a)
-    | CommandCompute a (Term' a)
-    | CommandDef a VarIdent (Term' a) (Term' a)
+type Module = Module' BNFC'Position
+data Module' a = AModule a VarIdent [Import' a] [Decl' a]
+  deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
+
+type Import = Import' BNFC'Position
+data Import' a = AnImport a VarIdent
+  deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
+
+type Decl = Decl' BNFC'Position
+data Decl' a
+    = DeclDef a VarIdent (Term' a) (Term' a)
+    | DeclPrivateDef a VarIdent (Term' a) (Term' a)
+    | DeclNamespace a VarIdent [Decl' a]
+    | DeclOpen a VarIdent
+    | DeclCheck a (Term' a) (Term' a)
+    | DeclCompute a (Term' a)
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
 
 type Term = Term' BNFC'Position
@@ -89,11 +100,22 @@ instance HasPosition Program where
   hasPosition = \case
     AProgram p _ -> p
 
-instance HasPosition Command where
+instance HasPosition Module where
   hasPosition = \case
-    CommandCheck p _ _ -> p
-    CommandCompute p _ -> p
-    CommandDef p _ _ _ -> p
+    AModule p _ _ _ -> p
+
+instance HasPosition Import where
+  hasPosition = \case
+    AnImport p _ -> p
+
+instance HasPosition Decl where
+  hasPosition = \case
+    DeclDef p _ _ _ -> p
+    DeclPrivateDef p _ _ _ -> p
+    DeclNamespace p _ _ -> p
+    DeclOpen p _ -> p
+    DeclCheck p _ _ -> p
+    DeclCompute p _ -> p
 
 instance HasPosition Term where
   hasPosition = \case

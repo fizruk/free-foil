@@ -1,6 +1,7 @@
 module Main where
 
-import qualified Language.MLTT.Impl as MLTT
+import Language.MLTT.Impl  (defaultMain)
+import System.Environment (getArgs)
 
 main :: IO ()
-main = MLTT.defaultMain
+main = defaultMain =<< getArgs

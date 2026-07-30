@@ -11,11 +11,11 @@
 -- variable, 'Foil.NameMap' holds the context, and 'instantiate' opens a binder.
 -- Nothing here manipulates a de Bruijn index or a name supply by hand.
 --
--- One rule is worth reading for the design: to check @λ p . e@ against
+-- One rule is worth reading for the design: to check @λ p ⇒ e@ against
 -- @Π (q : A) → B@, 'check' allocates /one/ fresh variable and opens both @p@
 -- and @q@ at it. The two patterns need not have the same shape, and neither
--- needs to bind anything, so @λ (x, y) . e@ against @Π (z : Σ …) → B@ and
--- @λ _ . e@ against @Π (z : A) → B@ are both handled by the same rule.
+-- needs to bind anything, so @λ (x, y) ⇒ e@ against @Π (z : Σ …) → B@ and
+-- @λ _ ⇒ e@ against @Π (z : A) → B@ are both handled by the same rule.
 --
 -- == What this checker deliberately does not do
 --
@@ -77,15 +77,17 @@ emptyCtx = Ctx Foil.emptyScope Foil.emptyNameMap emptyDefs
 -- \(\delta\)-reduction unfolds it and nothing else has to change. Note that this
 -- makes a top-level constant a 'Foil.Name' in a growing scope, which is one of
 -- the two possible designs for a global environment.
+-- The continuation receives the /binder/ rather than just its name, so that a
+-- caller can extend a 'Foil.NameMap' of its own alongside the context.
 withDefinition
   :: Foil.Distinct n
   => Ctx a n
   -> Term' a n            -- ^ The type of the definition.
   -> Term' a n            -- ^ Its value.
-  -> (forall l. Foil.DExt n l => Ctx a l -> Foil.Name l -> r)
+  -> (forall l. Foil.DExt n l => Ctx a l -> Foil.NameBinder n l -> r)
   -> r
 withDefinition ctx ty value cont = Foil.withFresh (ctxScope ctx) $ \binder ->
-  cont (extend ctx binder ty (Just value)) (Foil.nameOf binder)
+  cont (extend ctx binder ty (Just value)) binder
 
 -- | Extend a context with a fresh variable of a given type.
 withVar
@@ -120,7 +122,7 @@ type TypeError = String
 
 -- | Infer the type of a term.
 --
--- >>> infer emptyCtx (desugar ("(λ x . x : 𝟙 → 𝟙) tt" :: Term Foil.VoidS))
+-- >>> infer emptyCtx (desugar ("(λ x ⇒ x : 𝟙 → 𝟙) tt" :: Term Foil.VoidS))
 -- Right 𝟙
 --
 -- The second component of a pair is typed by substituting the first into the
@@ -225,12 +227,12 @@ motiveType scope loc tyA a = Foil.withFresh scope $ \binder ->
 
 -- | Check a term against a type.
 --
--- >>> check emptyCtx (desugar ("λ A . λ x . x" :: Term Foil.VoidS)) (desugar "Π (A : 𝕌) → Π (x : A) → A")
+-- >>> check emptyCtx (desugar ("λ A ⇒ λ x ⇒ x" :: Term Foil.VoidS)) (desugar "Π (A : 𝕌) → Π (x : A) → A")
 -- Right ()
 --
 -- Pattern binders are checked against the type of what they destructure:
 --
--- >>> check emptyCtx (desugar ("λ (A, x) . x" :: Term Foil.VoidS)) (desugar "Π (p : Σ (A : 𝕌) × A) → π₁ p")
+-- >>> check emptyCtx (desugar ("λ (A, x) ⇒ x" :: Term Foil.VoidS)) (desugar "Π (p : Σ (A : 𝕌) × A) → π₁ p")
 -- Right ()
 check
   :: forall a n. (Foil.Distinct n, ZipMatchK a)
