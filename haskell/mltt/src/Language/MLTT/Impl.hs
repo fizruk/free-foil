@@ -42,7 +42,6 @@ module Language.MLTT.Impl where
 
 import           Control.Monad                (foldM)
 import qualified Control.Monad.Foil           as Foil
-import           Data.Foldable                (toList)
 import           Data.Functor.Identity        (Identity (..))
 import           Data.List                    (intercalate)
 import           Data.Map                     (Map)
@@ -291,7 +290,7 @@ withDecls env path (decl : decls) cont = case decl of
     -- 'Either' either.
     withElaborated
       :: (Functor f, Foldable f) => f Raw.Term -> (f (Term n) -> r) -> r
-    withElaborated raws k = case concatMap (unresolved visible) (toList raws) of
+    withElaborated raws k = case foldMap (unresolved visible) raws of
       (x : _) -> continue (Failed (notInScope x))
       []      -> k (fmap (desugar . toTerm' (ctxScope ctx) visible) raws)
 
