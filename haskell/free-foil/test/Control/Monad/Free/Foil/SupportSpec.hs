@@ -2,6 +2,9 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE DeriveTraversable   #-}
 {-# LANGUAGE LambdaCase          #-}
+-- @Ext VoidS n@ is simplifiable against the @Ext@ instance; this is what GHC
+-- suggests instead of unfolding it by hand.
+{-# LANGUAGE MonoLocalBinds      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- | Supports and scope restriction.
@@ -14,8 +17,11 @@
 -- The case worth reading is the last one. Raw names are not unique across scope
 -- indices — 'Foil.sink' is a coercion and does not rename, so a term carried
 -- into a larger scope keeps its binder names, and one of them may coincide with
--- a name already there. A support computed by removing a binder's raw names has
--- to stay right in that situation, and this module builds it on purpose.
+-- a name already there. This is not a contrived configuration: it is what makes
+-- 'Foil.withRefreshedPattern' unable to take an all-binders-already-fresh fast
+-- path, and one \(\beta\)-step is enough to produce it. It is also why a support
+-- has to drop binder names one binder at a time: dropping /all/ of a term's
+-- binder names from /all/ of its variables at the end would be wrong.
 module Control.Monad.Free.Foil.SupportSpec (spec) where
 
 import           Data.Bifoldable
@@ -59,6 +65,13 @@ lam scope body = Foil.withFresh scope $ \binder ->
   Node (LamSig (ScopedAST binder
     (body (Foil.extendScope binder scope) (Foil.nameOf binder))))
 
+-- | One \(\beta\)-step at the head, via the library's own substitution.
+beta :: Foil.Distinct n => Foil.Scope n -> Lam n -> Lam n
+beta scope = \case
+  Node (AppSig (Node (LamSig (ScopedAST binder body))) arg) ->
+    substitute scope (Foil.addSubst Foil.identitySubst binder arg) body
+  term -> term
+
 -- | Work in a scope holding one name.
 withOne
   :: (forall n. Foil.DExt Foil.VoidS n => Foil.Scope n -> Foil.Name n -> r) -> r
@@ -81,6 +94,17 @@ withTwo k = Foil.withFresh Foil.emptyScope $ \b0 ->
 -- compare.
 support :: Foil.Distinct n => Lam n -> [Int]
 support = map Foil.nameId . freeVarsOf
+
+-- | The raw identifiers a term binds, so that the shadowing case below can
+-- assert that it really is one.
+binderIds :: Lam n -> [Int]
+binderIds = \case
+  Var _     -> []
+  Node node -> bifoldMap
+    (\(ScopedAST binder body) ->
+      Foil.nameId (Foil.nameOf binder) : binderIds body)
+    binderIds
+    node
 
 spec :: Spec
 spec = do
@@ -125,12 +149,19 @@ spec = do
 
   describe "a binder sharing a raw name with the enclosing scope" $
     it "does not remove the enclosing name from the support" $
-      -- `closed` is built in the empty scope, so its binder takes raw name 0.
-      -- `x` is raw name 0 too, and `Foil.sink` does not rename, so the two
-      -- coincide. The support of `x closed` must still be {0}: the binder
-      -- shadows nothing, because inside it raw 0 denotes the bound variable.
-      withOne (\_ x ->
-        let closed = lam Foil.emptyScope (\_ y -> var y)
-         in ( support (app (var x) (Foil.sink closed))
-            , support (Foil.sink closed `asTypeOf` var x) ))
-        `shouldBe` ([0], [])
+      -- Reducing `(λ g. g x) two`, where `two = λ s. λ z. s z` was built
+      -- elsewhere and so binds raw name 0, places that binder in a scope where
+      -- 0 is already the free variable `x`. The result, `two x`, must still
+      -- have support {0}: the binder shadows nothing, because inside it raw 0
+      -- denotes the bound variable. Removing every binder name from every
+      -- variable would wrongly give an empty support here. The second
+      -- component asserts that the reduct does bind raw 0, so that the case
+      -- cannot quietly stop being the one it claims to be.
+      withOne (\scope x ->
+        let two = lam Foil.emptyScope (\scope' s ->
+                    lam scope' (\_ z -> app (var (Foil.sink s)) (var z)))
+            redex = app (lam scope (\_ g -> app (var g) (var (Foil.sink x))))
+                        (Foil.sink two)
+            reduct = beta scope redex
+         in (support reduct, binderIds reduct))
+        `shouldBe` ([0], [0, 1])
