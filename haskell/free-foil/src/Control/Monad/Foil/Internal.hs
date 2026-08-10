@@ -458,7 +458,7 @@ nameSetSize (UnsafeNameSet names) = IntSet.size names
 
 -- | The names in the set, in ascending order of their identifiers.
 nameSetToList :: NameSet n -> [Name n]
-nameSetToList (UnsafeNameSet names) = Prelude.map UnsafeName (IntSet.toList names)
+nameSetToList (UnsafeNameSet names) = Prelude.map UnsafeName (IntSet.toAscList names)
 
 -- | A set of the given names.
 nameSetFromList :: [Name n] -> NameSet n
