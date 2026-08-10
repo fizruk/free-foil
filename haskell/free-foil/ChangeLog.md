@@ -6,6 +6,20 @@ Conversion between raw and scope-safe syntax. An additive release apart from one
 
 New:
 
+- Scope **restriction**. The foil accounted for scope extension only: `NameBinder` adds names, `Ext` is the erasable evidence, `sink` is a coercion. Restriction is the other direction, and its only trace was `unsinkName`, at one binder and one name.
+
+    - It needs no new constraint class. `Ext m n` read from the other end already *is* the statement that every name of `m` is a name of `n`, and the runtime witness of it is the smaller `Scope`.
+
+    - `NameSet n` is a set of names of scope `n` — as opposed to `Scope n`, which is all of them and carries the invariants freshness rests on. `<>` is union and `mempty` is empty, so supports can be accumulated with `foldMap`. `unsinkNameSet` drops a pattern's names from a set in one `IntSet` operation rather than a membership test per name.
+
+    - `withRestrictedScope` cuts a scope down to a subset of its names, handing the continuation `Ext m n` and `Distinct m`. Its haddock records what a restricted scope may *not* be used for: a name allocated from it is fresh with respect to `m` and not to `n`.
+
+    - `supportOf` is a term's support, the annotation co-de-Bruijn syntax carries intrinsically and the foil, having free weakening, does not. `withRelevantScope` cuts a term down to the scope of exactly the names it uses; that is restriction imposed a priori, so nothing is tested and nothing can fail. `unsinkAST` is the a-posteriori form and the one that has to be paid for, and it now compares two `IntSet`s instead of walking a list of names with a membership test each.
+
+    Verifying a declared dependency — a `uses` clause, a module's parameters — is `withRelevantScope` plus a comparison.
+
+- `Control.Monad.Free.Foil.freeVarsOf` and `freeVarsOfScopedAST` come from `supportOf`, so they no longer repeat a variable that occurs more than once, and return names in ascending order of their identifiers. Previously each occurrence was listed, and the order followed the term.
+
 - `tryConvertToAST` converts a raw term and reports the first identifier that does not resolve, instead of `error`-ing on it. `convertToAST` called `error "undefined variable"` on a name outside its map, which is the ordinary unbound-variable case in any front-end, so every client had either to pre-check names itself or to crash. The failure is an `UnresolvedName rawIdent`, carrying the identifier and what was in scope at that occurrence — including the binders passed on the way down, which is what a caller checking names beforehand cannot know. It is one pass, short-circuiting at the failure, so a term that resolves costs no more than `unsafeConvertToAST`; `unresolvedInScope` is built where it fails and is never computed on the way through. A caller wanting *every* unresolved identifier rather than the first pays a second pass for it, with `unresolvedNames`. That is the right way round: the successful path should be fast, and a failing one can afford to be walked again for a better message.
 
   Note what neither carries: a source position. These functions are generic in the raw term and see it only through `toSig`, so a location, if the syntax has one, is not theirs to read.

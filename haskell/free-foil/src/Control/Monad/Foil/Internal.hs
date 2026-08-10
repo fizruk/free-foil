@@ -404,6 +404,130 @@ compUnsinkName
 compUnsinkName (UnsinkName f) (UnsinkName g)
   = UnsinkName (\name -> g name >>= f)
 
+-- * Sets of names, and scope restriction
+--
+-- The foil accounts for scope /extension/: 'NameBinder' adds names, 'Ext' is the
+-- erasable evidence, and 'sink' is a coercion. Restriction is the other
+-- direction, and needs no new constraint class for it — @'Ext' m n@ read from
+-- the other end /is/ the statement that every name of @m@ is a name of @n@, and
+-- the runtime witness of it is just the smaller 'Scope'.
+--
+-- What restriction does need is a way to talk about a /subset/ of the names in
+-- scope, which is 'NameSet', and a way to cut a scope down to one, which is
+-- 'withRestrictedScope'. Unlike extension, restriction cannot be a pure
+-- coercion: 'sink' is sound because a term\'s support is contained in its scope,
+-- and the converse has no such invariant, so it has to be tested. The design
+-- question is therefore only /where/ the test is paid.
+
+-- | A set of names of scope @n@.
+--
+-- This is not a 'Scope': a 'Scope' is /all/ the names in scope, and the foil
+-- relies on that (it is what freshness is tested against, and what 'Distinct'
+-- speaks about). A 'NameSet' is any subset of them — the names a term uses, the
+-- assumptions a declaration depends on — and carries no such invariant.
+--
+-- '<>' is union and 'mempty' is empty, so a 'NameSet' can be accumulated with
+-- 'foldMap'.
+newtype NameSet (n :: S) = UnsafeNameSet RawScope
+  deriving newtype (NFData, Eq, Semigroup, Monoid)
+
+-- | An empty set of names.
+emptyNameSet :: NameSet n
+emptyNameSet = UnsafeNameSet IntSet.empty
+
+-- | \(O(1)\). A set of one name.
+nameSetSingleton :: Name n -> NameSet n
+nameSetSingleton (UnsafeName name) = UnsafeNameSet (IntSet.singleton name)
+
+-- | \(O(\min(n,W))\). Add a name to a set.
+nameSetInsert :: Name n -> NameSet n -> NameSet n
+nameSetInsert (UnsafeName name) (UnsafeNameSet names) =
+  UnsafeNameSet (IntSet.insert name names)
+
+-- | \(O(\min(n,W))\). Is this name in the set?
+nameSetMember :: Name n -> NameSet n -> Bool
+nameSetMember (UnsafeName name) (UnsafeNameSet names) = IntSet.member name names
+
+-- | Is the set empty?
+nameSetNull :: NameSet n -> Bool
+nameSetNull (UnsafeNameSet names) = IntSet.null names
+
+-- | How many names are in the set?
+nameSetSize :: NameSet n -> Int
+nameSetSize (UnsafeNameSet names) = IntSet.size names
+
+-- | The names in the set, in ascending order of their identifiers.
+nameSetToList :: NameSet n -> [Name n]
+nameSetToList (UnsafeNameSet names) = Prelude.map UnsafeName (IntSet.toAscList names)
+
+-- | A set of the given names.
+nameSetFromList :: [Name n] -> NameSet n
+nameSetFromList names = UnsafeNameSet (IntSet.fromList (Prelude.map nameId names))
+
+-- | All the names in a scope.
+scopeToNameSet :: Scope n -> NameSet n
+scopeToNameSet (UnsafeScope names) = UnsafeNameSet names
+
+-- | The names a pattern binds.
+nameSetOfPattern :: CoSinkable binder => binder n l -> NameSet l
+nameSetOfPattern binder = UnsafeNameSet bound
+  where
+    UnsafeNameBinders bound = fromNameBindersList (nameBinderListOf binder)
+
+-- | \(O(\min(n,W))\). Does the scope contain every name in the set?
+--
+-- This is the test that restriction of a term comes down to, so it is the one
+-- place a restriction is paid for: compare a term\'s support against the scope
+-- it is to be restricted to.
+nameSetSubsetOfScope :: NameSet l -> Scope n -> Bool
+nameSetSubsetOfScope (UnsafeNameSet names) (UnsafeScope scope) =
+  names `IntSet.isSubsetOf` scope
+
+-- | Drop the names a pattern binds, taking a set of names of the inner scope to
+-- a set of names of the outer one.
+--
+-- This is 'unsinkNamePattern' for a whole set at once, and \(O(\min(n,W))\)
+-- rather than one membership test per name. Removing the pattern\'s names is
+-- right even when one of them shares a raw name with the enclosing scope: inside
+-- the pattern that raw name denotes the binder, so no occurrence of it there is
+-- an occurrence of the outer name.
+unsinkNameSet :: CoSinkable binder => binder n l -> NameSet l -> NameSet n
+unsinkNameSet binder (UnsafeNameSet names) = UnsafeNameSet (names IntSet.\\ bound)
+  where
+    UnsafeNameBinders bound = fromNameBindersList (nameBinderListOf binder)
+
+-- | Cut a scope down to a subset of its names.
+--
+-- The names must be names of @n@; nothing checks it, which is why this is the
+-- only entry point and takes a 'NameSet' rather than a bare 'IntSet'. The
+-- continuation gets @'Ext' m n@, so anything living in the smaller scope can be
+-- 'sink'ed back into the larger one for free, and @'Distinct' m@, since a subset
+-- of distinct names is distinct.
+--
+-- __Note on allocation.__ A name allocated from the restricted scope is fresh
+-- with respect to @m@ and /not/ to @n@, so it may collide with a name of
+-- @n@ that the restriction dropped. That is sound — @'Ext' m n@ gives no way to
+-- move a term of @n@ into a scope extending @m@ — but it means a restricted
+-- scope is for inspecting and restricting terms, not a base to build new
+-- binders on and then mix with the original scope.
+withRestrictedScope
+  :: forall n r. Distinct n
+  => NameSet n
+  -- ^ Names to keep. Must be names of @n@.
+  -> (forall m. (Ext m n, Distinct m) => Scope m -> r)
+  -> r
+withRestrictedScope (UnsafeNameSet names) cont =
+  unsafeAssertRestricted @n (UnsafeScope names) cont
+
+-- | Unsafely declare that a scope is a restriction of scope @n@.
+-- Used in 'withRestrictedScope'.
+unsafeAssertRestricted
+  :: forall n m r. Scope m -> ((Ext m n, Distinct m) => Scope m -> r) -> r
+unsafeAssertRestricted scope cont =
+  case unsafeDistinct @m of
+    Distinct -> case unsafeExt @m @n of
+      Ext -> cont scope
+
 -- * Unification of binders
 
 -- | Unification result for two binders,

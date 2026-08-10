@@ -36,7 +36,6 @@ import Generics.Kind (GenericK(..), Field, Exists, Var0, Var1, (:$:), Atom((:@:)
 import           Data.Coerce                 (coerce)
 import           Data.Map                    (Map)
 import qualified Data.Map                    as Map
-import           Data.Maybe                  (mapMaybe)
 import           GHC.Generics                (Generic)
 import           Unsafe.Coerce               (unsafeCoerce)
 
@@ -627,20 +626,70 @@ convertFromASTWith fromSig fromVar makePattern makeScoped freeName boundName =
 
 -- ** Unsinking AST
 
+-- | The support of a term: exactly the names that occur free in it.
+--
+-- This is the annotation that co-de-Bruijn syntax carries intrinsically and
+-- that the foil, having global names and therefore free weakening, does not.
+-- Computing it is \(O(size)\); a client that restricts often should cache it.
+supportOf
+  :: (Foil.Distinct n, Foil.CoSinkable binder, Bifoldable sig)
+  => AST binder sig n -> Foil.NameSet n
+supportOf = \case
+  Var name  -> Foil.nameSetSingleton name
+  Node node -> bifoldMap supportOfScopedAST supportOf node
+
+-- | The support of a scoped term, in the scope /outside/ its binder.
+supportOfScopedAST
+  :: (Foil.Distinct n, Foil.CoSinkable binder, Bifoldable sig)
+  => ScopedAST binder sig n -> Foil.NameSet n
+supportOfScopedAST (ScopedAST binder body) =
+  case Foil.assertDistinct binder of
+    Foil.Distinct -> Foil.unsinkNameSet binder (supportOf body)
+
+-- | Cut a term down to the scope of exactly the names it uses.
+--
+-- This is the a-priori form of restriction, and the cheap one: the term
+-- inhabits the smaller scope /by construction/, so nothing is tested and
+-- nothing can fail. @'Foil.Ext' m n@ comes back with it, so the term can be
+-- 'Foil.sink'ed to where it came from for free.
+--
+-- Verifying a declared dependency — a @uses@ clause, a module's parameters —
+-- is this plus a comparison: compute the scope a term really inhabits, and
+-- check the declared one against it.
+withRelevantScope
+  :: (Foil.Distinct n, Foil.CoSinkable binder, Bifoldable sig)
+  => AST binder sig n
+  -> (forall m. (Foil.Ext m n, Foil.Distinct m)
+      => Foil.Scope m -> AST binder sig m -> r)
+  -> r
+withRelevantScope term cont =
+  Foil.withRestrictedScope (supportOf term) $ \scope ->
+    cont scope (unsafeCoerce term)
+
 -- | Unsink an AST from a larger scope to a smaller scope.
-unsinkAST :: (Foil.Distinct l, Foil.CoSinkable binder, Bifoldable sig) => Foil.Scope n -> AST binder sig l -> Maybe (AST binder sig n)
+--
+-- This is the a-posteriori form, and the one that has to be paid for: the
+-- term's support is computed and compared against the scope. It succeeds or
+-- fails; when it succeeds the term itself is untouched, since restriction of a
+-- term that does inhabit the smaller scope is a coercion.
+unsinkAST
+  :: (Foil.Distinct l, Foil.CoSinkable binder, Bifoldable sig)
+  => Foil.Scope n -> AST binder sig l -> Maybe (AST binder sig n)
 unsinkAST scope term
-  | all (`Foil.member` scope) (freeVarsOf term) = Just (unsafeCoerce term)
+  | Foil.nameSetSubsetOfScope (supportOf term) scope = Just (unsafeCoerce term)
   | otherwise = Nothing
 
 -- | Get the free variables of an AST.
-freeVarsOf :: (Foil.Distinct n, Foil.CoSinkable binder, Bifoldable sig) => AST binder sig n -> [Foil.Name n]
-freeVarsOf = \case
-  Var name -> [name]
-  Node node -> bifoldMap freeVarsOfScopedAST freeVarsOf node
+--
+-- These come from 'supportOf', so they are distinct and in ascending order of
+-- their identifiers.
+freeVarsOf
+  :: (Foil.Distinct n, Foil.CoSinkable binder, Bifoldable sig)
+  => AST binder sig n -> [Foil.Name n]
+freeVarsOf = Foil.nameSetToList . supportOf
 
--- | Get the free variables of a scoped AST.
-freeVarsOfScopedAST :: (Foil.Distinct n, Foil.CoSinkable binder, Bifoldable sig) => ScopedAST binder sig n -> [Foil.Name n]
-freeVarsOfScopedAST (ScopedAST binder body) =
-  case Foil.assertDistinct binder of
-    Foil.Distinct -> mapMaybe (Foil.unsinkNamePattern binder) (freeVarsOf body)
+-- | Get the free variables of a scoped AST, in the scope outside its binder.
+freeVarsOfScopedAST
+  :: (Foil.Distinct n, Foil.CoSinkable binder, Bifoldable sig)
+  => ScopedAST binder sig n -> [Foil.Name n]
+freeVarsOfScopedAST = Foil.nameSetToList . supportOfScopedAST

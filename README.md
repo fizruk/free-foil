@@ -33,6 +33,34 @@ Additionally, we implement:
 In addition to this repository, we have benchmarks for the foil and the free foil against each other and other implementation of λ-calculus.
 See [KarinaTyulebaeva/lambda-n-ways](https://github.com/KarinaTyulebaeva/lambda-n-ways), a fork of Stephanie Weirich's benchmark suite ([sweirich/lambda-n-ways](https://github.com/sweirich/lambda-n-ways)).
 
+## Names, shadowing, and what the foil guarantees
+
+It is tempting to read the chain «free foil ⟶ foil ⟶ type-safe rapier ⟶ Barendregt's variable convention» and conclude that terms in the foil never shadow. They do shadow, and it is worth recording where that reasoning breaks, since the answer explains several decisions in this library.
+
+The rapier of Peyton Jones and Marlow[^4] is an alternative to the variable convention[^5], and not an implementation of it. It threads an in-scope set through a traversal and renames a binder only when that binder clashes with the set. The invariant is local: the binder being rebuilt is fresh with respect to the in-scope set at the point the traversal reaches it. Barendregt's convention, in contrast, is a global property of a whole term. Where GHC does come close to the global property, that is because its uniques are drawn from a single global supply, and not because of the rapier. Indeed, the rapier's short cut for an empty substitution hands back a subterm untouched, and that subterm was built against a different in-scope set.
+
+The foil gives up global uniqueness of names deliberately. Fresh names are allocated per scope,
+
+```haskell
+rawFreshName scope | IntSet.null scope = 0
+                   | otherwise         = IntSet.findMax scope + 1
+```
+
+so raw names are reused across scopes, and every closed term starts at 0. Moreover, `sink` is a coercion and does not rename, since being free is the whole point of it. What replaces distinctness of names is the type index: names of different scopes are not comparable at all, and the soundness of `sink` rests on every name of `n` being a name of `l`, so that the identity is a valid injection (see Section 3.5 of the foil paper[^1]).
+
+What is guaranteed is more modest:
+
+1. `Distinct n` is a statement about the scope `n`, and not about the binders occurring in a term of type `AST binder sig n`.
+2. `withFresh scope` produces a binder that is not in `scope`, at the moment of allocation.
+
+Together these do give no shadowing for a term built by threading the scope downwards, such as a term produced by `convertToAST` or by `refreshAST`. This is why α-normal forms print with increasing indices, as in `λ x0 . λ x1 . x1`.
+
+The property fails as soon as terms are assembled from parts. `substitute` refreshes the binders that it rebuilds, which is the rapier, but the range of the substitution is placed by `sink` and keeps its own binders. For example, `(λs.λz.s(s z))(λs.λz.s(s z))` evaluates to a term with `λ x1` nested inside another `λ x1` (see the `whnf` examples in `Language.LambdaPi.Impl.FreeFoilTH`). Note that `refreshAST`, the sledgehammer, is provided precisely to restore the convention on demand. If terms satisfied it already, α-normalization would be the identity.
+
+Importantly, capture-avoidance never relies on the convention. When going under a binder, `addRename` deletes the bound name from the substitution and `unsinkName` routes it to `injectName`, so a shadowing binder is harmless. This is also why `withRefreshedPattern` deliberately has no fast path for the case when every binder of a pattern is already fresh in the ambient scope.
+
+In practice, this means that names must not be identified across scopes by their raw identifiers. To move a name back into a smaller scope, we provide `unsinkName` and `unsinkNamePattern`, and to name free and bound variables differently when converting a term back into a raw representation, `convertFromASTWith` takes a typed naming function for the free ones.
+
 ## Project structure
 
 ### Haskell
@@ -94,3 +122,5 @@ In Haskell:
 [^1]: Dougal Maclaurin, Alexey Radul, and Adam Paszke. 2023. _The Foil: Capture-Avoiding Substitution With No Sharp Edges._ In Proceedings of the 34th Symposium on Implementation and Application of Functional Languages (IFL '22). Association for Computing Machinery, New York, NY, USA, Article 8, 1–10. <https://doi.org/10.1145/3587216.3587224>
 [^2]: Nikolai Kudasov, Renata Shakirova, Egor Shalagin, Karina Tyulebaeva. 2024. _Free Foil: Generating Efficient and Scope-Safe Abstract Syntax._ 4th International Conference on Code Quality (ICCQ), Innopolis, Russian Federation, 2024, pp. 1-16 <http://doi.org/10.1109/ICCQ60895.2024.10576867> (arXiv version at <https://arxiv.org/abs/2405.16384>)
 [^3]: Nikolai Kudasov. _Free Monads, Intrinsic Scoping, and Higher-Order Preunification._ To appear in TFP 2024. <https://arxiv.org/abs/2204.05653>
+[^4]: Simon Peyton Jones and Simon Marlow. 2002. _Secrets of the Glasgow Haskell Compiler inliner._ Journal of Functional Programming 12, 4–5 (July 2002), 393–434. <https://doi.org/10.1017/S0956796802004331> — see the discussion of the sledgehammer, the rapier, and the shotgun.
+[^5]: Henk Barendregt. 1984. _The Lambda Calculus: Its Syntax and Semantics._ Studies in Logic and the Foundations of Mathematics, Vol. 103. North-Holland — the variable convention is 2.1.13.
