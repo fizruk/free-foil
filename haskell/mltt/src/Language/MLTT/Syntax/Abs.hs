@@ -28,7 +28,12 @@ data Program' a = AProgram a [Module' a]
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
 
 type Module = Module' BNFC'Position
-data Module' a = AModule a VarIdent [Import' a] [Decl' a]
+data Module' a
+    = AModule a VarIdent [Param' a] [Import' a] [Decl' a]
+  deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
+
+type Param = Param' BNFC'Position
+data Param' a = AParam a VarIdent (Term' a)
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
 
 type Import = Import' BNFC'Position
@@ -37,12 +42,16 @@ data Import' a = AnImport a VarIdent
 
 type Decl = Decl' BNFC'Position
 data Decl' a
-    = DeclDef a VarIdent (Term' a) (Term' a)
-    | DeclPrivateDef a VarIdent (Term' a) (Term' a)
+    = DeclDef a VarIdent (Discharge' a) (Term' a) (Term' a)
+    | DeclPrivateDef a VarIdent (Discharge' a) (Term' a) (Term' a)
     | DeclNamespace a VarIdent [Decl' a]
     | DeclOpen a VarIdent
     | DeclCheck a (Term' a) (Term' a)
     | DeclCompute a (Term' a)
+  deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
+
+type Discharge = Discharge' BNFC'Position
+data Discharge' a = NoDischarge a | DischargeOver a [VarIdent]
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
 
 type Term = Term' BNFC'Position
@@ -102,7 +111,11 @@ instance HasPosition Program where
 
 instance HasPosition Module where
   hasPosition = \case
-    AModule p _ _ _ -> p
+    AModule p _ _ _ _ -> p
+
+instance HasPosition Param where
+  hasPosition = \case
+    AParam p _ _ -> p
 
 instance HasPosition Import where
   hasPosition = \case
@@ -110,12 +123,17 @@ instance HasPosition Import where
 
 instance HasPosition Decl where
   hasPosition = \case
-    DeclDef p _ _ _ -> p
-    DeclPrivateDef p _ _ _ -> p
+    DeclDef p _ _ _ _ -> p
+    DeclPrivateDef p _ _ _ _ -> p
     DeclNamespace p _ _ -> p
     DeclOpen p _ -> p
     DeclCheck p _ _ -> p
     DeclCompute p _ -> p
+
+instance HasPosition Discharge where
+  hasPosition = \case
+    NoDischarge p -> p
+    DischargeOver p _ -> p
 
 instance HasPosition Term where
   hasPosition = \case

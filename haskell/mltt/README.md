@@ -67,10 +67,9 @@ waiting to be filled here.
   never printed; `let` substitutes rather than sharing; `conv` normalises both
   sides in full. Nothing here has been measured.
 
-Telescopes, module parameters with a verified `uses` clause, interned
-qualified names, separate checking with linking, and serialisation are not in
-this list. They are not out of scope — they are what comes next, and what is
-here was built to carry them.
+Named telescopes, interned qualified names, separate checking with linking, and
+serialisation are not in this list. They are not out of scope — they are what
+comes next, and what is here was built to carry them.
 
 ## The module layer
 
@@ -131,6 +130,54 @@ That distinction is the reason narrowing belongs above free foil rather than
 inside it, and `Language.MLTT.Resolve` is where it lives: nothing in that
 module mentions a scope, a `Foil.Name`, or the kind `S`.
 
+## Module parameters, and the `over` clause
+
+A module may take parameters. Every declaration is checked with them in scope,
+and leaves the module *discharged* over exactly the ones it turns out to use.
+
+```
+module Monoid (A : 𝕌) (unit : A) (mul : A → A → A)
+
+def square over (A, mul) : A → A := λ x ⇒ mul x x
+def neutral over (A, unit) : A := unit
+def flip : 𝟙 → 𝟙 := λ x ⇒ x
+```
+
+```
+module Monoid
+  ✓ defined square over (A, mul)
+  ✓ defined neutral over (A, unit)
+  ✓ defined flip
+```
+
+`flip` uses no parameter, so it is discharged over nothing and stays an
+ordinary constant. `neutral` is discharged over `A` even though its body
+mentions only `unit`: keeping `unit` puts `unit`'s type into the discharged
+type, and that type is `A`. Relevance is upward closed in the telescope.
+
+The `over` clause is optional and it never changes what is discharged. The
+computed set is authoritative, and the clause is *checked against it*:
+
+```
+✗ declared: over (mul)
+    actual: over (A, mul)
+```
+
+It is spelled `over` and not `uses` on purpose. rzk has a `uses` clause, and it
+is a different thing: mandatory, and listing the implicit assumptions of a
+definition rather than the parameters of its module.
+
+**Discharge is where the demo needs scope restriction rather than extension.**
+Checking happens in the scope the parameters extend the module's scope to, and
+the result has to come back, because the module's scope is where its exports
+live and where the next module starts. `Language.MLTT.Telescope` walks the
+parameters from the inside out and, at each one, asks free-foil's `unsinkAST`
+whether the term can do without it: if it can, the parameter is dropped; if it
+cannot, it is abstracted over with `Π` for the type and `λ` for the value. So
+the used set is not declared and believed, and not computed by a separate
+analysis either — it is whatever restriction turns out to reject, and the
+upward closure follows from asking about one parameter at a time.
+
 ## Running it
 
 ```sh
@@ -158,6 +205,7 @@ compute id 𝟙 tt
 | `Language.MLTT.Eval` | Reduction: pattern matching as a substitution, `whnf`, `nf`, `conv`, and the desugaring of `→` and `×`. |
 | `Language.MLTT.Typecheck` | A bidirectional type checker. |
 | `Language.MLTT.Resolve` | Name resolution: paths, name tables, `open`, and the free identifiers of a raw term. Deliberately free of any dependency on the foil. |
+| `Language.MLTT.Telescope` | Module parameters: the telescope they form, discharge over the ones a declaration uses, and the check of an `over` clause against that set. |
 | `Language.MLTT.Impl` | The interpreter: build order, modules, declarations, the growing top-level scope, and printing. |
 
 Two things are worth reading for the design rather than for the type theory.

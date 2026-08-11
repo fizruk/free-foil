@@ -1,0 +1,33 @@
+-- Module parameters, and discharge over the ones each declaration uses.
+--
+-- Everything in a parametrised module is checked with the parameters in scope,
+-- and leaves the module abstracted over exactly the parameters it turns out to
+-- need. An `over` clause states that set in the source; it is checked against
+-- the computed one rather than believed, so it can only reject a program.
+
+module Monoid (A : 𝕌) (unit : A) (mul : A → A → A) ;
+
+-- Uses `A` and `mul`, and not `unit`.
+def square over (A, mul) : A → A := λ x ⇒ mul x x
+
+-- Uses `A` and `unit`. Note that `A` is used even though it appears nowhere in
+-- the body: keeping `unit` puts its type into the discharged type, and that
+-- type mentions `A`. Relevance is upward closed in the telescope, and discharge
+-- gets that for free by asking about one parameter at a time, from the inside.
+def neutral over (A, unit) : A := unit
+
+-- Uses no parameter at all, so it is discharged over nothing and stays an
+-- ordinary constant. A client applies it to no arguments.
+def flip : 𝟙 → 𝟙 := λ x ⇒ x
+
+module Client ;
+import Monoid
+
+-- What left the module is closed, so a client instantiates it by application.
+compute neutral 𝟙 tt
+compute square 𝟙 (λ x ⇒ λ y ⇒ x) tt
+compute flip tt
+
+-- And the discharged types say which parameters each one took.
+check neutral : Π (A : 𝕌) → Π (unit : A) → A
+check flip : 𝟙 → 𝟙

@@ -66,6 +66,13 @@ segments (Raw.VarIdent x) = split x
       (seg, [])       -> [seg]
       (seg, _ : rest) -> seg : split rest
 
+-- | Show a raw identifier as it was written.
+--
+-- >>> prettyVarIdent (Raw.VarIdent "Data.Nat.zero")
+-- "Data.Nat.zero"
+prettyVarIdent :: Raw.VarIdent -> String
+prettyVarIdent (Raw.VarIdent x) = x
+
 -- | Join segments back into an identifier.
 --
 -- >>> joinSegments ["Data","Nat","zero"]

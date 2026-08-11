@@ -16,7 +16,7 @@ New:
 
     - `supportOf` is a term's support, the annotation co-de-Bruijn syntax carries intrinsically and the foil, having free weakening, does not. `withRelevantScope` cuts a term down to the scope of exactly the names it uses; that is restriction imposed a priori, so nothing is tested and nothing can fail. `unsinkAST` is the a-posteriori form and the one that has to be paid for, and it now compares two `IntSet`s instead of walking a list of names with a membership test each.
 
-    Verifying a declared dependency — a `uses` clause, a module's parameters — is `withRelevantScope` plus a comparison.
+    Verifying a declared dependency — a `uses` clause, a module's parameters — is `withRelevantScope` plus a comparison. When the dependencies are a telescope to be abstracted over one at a time, `unsinkAST` per binder answers it directly instead, and computes the dependency set rather than checking one; that is what `mltt` discharges module parameters with.
 
 - `Control.Monad.Free.Foil.freeVarsOf` and `freeVarsOfScopedAST` come from `supportOf`, so they no longer repeat a variable that occurs more than once, and return names in ascending order of their identifiers. Previously each occurrence was listed, and the order followed the term.
 

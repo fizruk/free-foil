@@ -65,7 +65,7 @@ spec = do
   describe "namespaces and qualified names" $ do
     it "qualifies a declaration by its namespace, not by its module" $
       run (withClient "check Nat.quadruple : Π (A : 𝕌) → (A → A) → A → A")
-        `shouldSatisfy` (Defined "Nat.quadruple" `elem`)
+        `shouldSatisfy` (Defined "Nat.quadruple" [] `elem`)
 
     it "does not make a namespaced name available unqualified" $
       failures (run (withClient "compute quadruple 𝟙 (λ x ⇒ x) tt"))
@@ -131,7 +131,7 @@ spec = do
         `shouldBe` ["λ x0 ⇒ x0"]
 
   describe "the example programs" $
-    forM_ ["examples/core.mltt", "examples/modules.mltt"] $ \path ->
+    forM_ ["examples/core.mltt", "examples/modules.mltt", "examples/parameters.mltt"] $ \path ->
       it (path <> " is accepted in full") $ do
         input <- readFile path
         let results = run input

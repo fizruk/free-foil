@@ -31,20 +31,39 @@ token VarIdent letter (letter | digit | '_' | '\'' | '.')* ;
 AProgram. Program ::= [Module] ;
 terminator Module "" ;
 
-AModule.  Module ::= "module" VarIdent ";" [Import] [Decl] ;
+-- A module may take parameters. Every declaration inside it is checked with
+-- the parameters in scope, and is then discharged over exactly the ones it
+-- turns out to use, so a client applies it to those and to no others. See
+-- "Language.MLTT.Telescope".
+AModule.  Module ::= "module" VarIdent [Param] ";" [Import] [Decl] ;
+
+AParam.   Param ::= "(" VarIdent ":" Term ")" ;
+terminator Param "" ;
 
 AnImport. Import ::= "import" VarIdent ;
 terminator Import ";" ;
 
 -- * Declarations
 
-DeclDef.        Decl ::= "def" VarIdent ":" Term ":=" Term ;
-DeclPrivateDef. Decl ::= "private" "def" VarIdent ":" Term ":=" Term ;
+-- An `over` clause names the module parameters a declaration is discharged
+-- over. It is optional, and it is checked against the set computed during
+-- discharge rather than believed, so writing one can only reject a program,
+-- never change it.
+--
+-- It is deliberately not spelled `uses`, which in rzk is a mandatory clause
+-- listing the implicit assumptions of a definition. That is a different thing
+-- from a module parameter, and the two should not read alike.
+DeclDef.        Decl ::= "def" VarIdent Discharge ":" Term ":=" Term ;
+DeclPrivateDef. Decl ::= "private" "def" VarIdent Discharge ":" Term ":=" Term ;
 DeclNamespace.  Decl ::= "namespace" VarIdent "where" "{" [Decl] "}" ;
 DeclOpen.       Decl ::= "open" VarIdent ;
 DeclCheck.      Decl ::= "check" Term ":" Term ;
 DeclCompute.    Decl ::= "compute" Term ;
 separator Decl ";" ;
+
+NoDischarge.   Discharge ::= ;
+DischargeOver. Discharge ::= "over" "(" [VarIdent] ")" ;
+separator VarIdent "," ;
 
 -- * Terms
 --

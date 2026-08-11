@@ -45,6 +45,7 @@ library
       Language.MLTT.Syntax.Lex
       Language.MLTT.Syntax.Par
       Language.MLTT.Syntax.Print
+      Language.MLTT.Telescope
       Language.MLTT.Typecheck
   other-modules:
       Paths_mltt
@@ -125,6 +126,7 @@ test-suite spec
   other-modules:
       Language.MLTT.ImplSpec
       Language.MLTT.ModulesSpec
+      Language.MLTT.ParametersSpec
       Paths_mltt
   hs-source-dirs:
       test
