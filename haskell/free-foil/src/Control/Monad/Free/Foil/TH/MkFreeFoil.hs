@@ -968,6 +968,7 @@ mkFreeFoilConversions config@FreeFoilConfig{..} = concat <$> sequence
           rawTermType = PeelConT rawTermName (map (VarT . tvarName) tvars)
           termType =  toFreeFoilType SortTerm config (VarT outerScope) (VarT innerScope) rawTermType
           tryFunName = mkName ("try" ++ capitalizeFirst (nameBase funName))
+          tryWithFunName = mkName (nameBase tryFunName ++ "With")
           unresolvedType = ConT ''Foil.UnresolvedName `AppT` rawIdentType
           tryTermType = ConT ''Either `AppT` unresolvedType `AppT` termType
           convertArgs f = VarE f
@@ -978,6 +979,8 @@ mkFreeFoilConversions config@FreeFoilConfig{..} = concat <$> sequence
         ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. Convert from raw to scope-safe representation, calling 'error' on an identifier that does not resolve. See '" ++ nameBase tryFunName ++ "'.")
       addModFinalizer $ putDoc (DeclDoc tryFunName)
         ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. Convert from raw to scope-safe representation, reporting the first identifier that does not resolve.")
+      addModFinalizer $ putDoc (DeclDoc tryWithFunName)
+        ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. Same as '" ++ nameBase tryFunName ++ "', except that some identifiers may resolve to a whole term rather than to a variable.")
       return
         [ SigD funName $
             ForallT
@@ -999,6 +1002,17 @@ mkFreeFoilConversions config@FreeFoilConfig{..} = concat <$> sequence
                 --> rawTermType
                 --> tryTermType
         , FunD tryFunName [ Clause [] (NormalB (convertArgs 'Foil.tryConvertToAST)) [] ]
+        , SigD tryWithFunName $
+            ForallT
+              (PlainTV outerScope SpecifiedSpec : map (SpecifiedSpec <$) tvars)
+              [ ConT ''Foil.Distinct `AppT` VarT outerScope
+              , ConT ''Ord `AppT` rawIdentType ] $
+                (ConT ''Foil.Scope `AppT` VarT outerScope)
+                --> (ConT ''Map `AppT` rawIdentType `AppT` (ConT ''Foil.Name `AppT` VarT outerScope))
+                --> (ConT ''Map `AppT` rawIdentType `AppT` termType)
+                --> rawTermType
+                --> tryTermType
+        , FunD tryWithFunName [ Clause [] (NormalB (convertArgs 'Foil.tryConvertToASTWith)) [] ]
         ]
 
     mkConvertToSig sort termConfig@FreeFoilTermConfig{..} rawName = do

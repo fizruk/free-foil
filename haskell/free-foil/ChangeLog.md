@@ -20,6 +20,10 @@ New:
 
     - `NameSet` is `Sinkable`, so a support computed under a binder can be used outside it without rebuilding the set.
 
+- `tryConvertToASTWith` resolves some identifiers to a whole term rather than to a variable, which is what a language with constants, primitives or abbreviations needs: such an identifier stands for something that is not a variable, and conversion is the only place where the binders are known. The table of names is consulted first, so a binder still shadows an entry; the extra table is sunk when going under a binder, exactly as the names are, so its entries need not be closed. `mkFreeFoilConversions` emits a `tryToXWith` beside each `tryToX`. Note that `tryConvertToAST` now also requires `SinkableK` on the binder, which every client in this repository already derives.
+
+- `sinkClosed` uses a closed expression at any scope. It is `sink` for the one case the constraint cannot express, since `Ext VoidS n` does not follow from the `Ext` instance, and it needs no evidence because `Name VoidS` is uninhabited.
+
 - `mapWithName` is the keyed version of `NameMap`'s `Functor` instance. It cannot change which names the map is defined on, so a total map stays total, which makes it a safe way to build a `Substitution` out of one with `nameMapToSubstitution` — an elaborator that has to expand a reference into something larger than a variable can do it that way rather than by inserting into a substitution by name.
 
     Verifying a declared dependency — a `uses` clause, a module's parameters — is `withRelevantScope` plus a comparison. Computing one is `supportOf` and then `withThinnedNameBinderList`; that is how `mltt` closes a declaration over the module parameters it uses.

@@ -46,8 +46,8 @@ module Language.MLTT.Impl where
 import           Control.Monad                (foldM)
 import qualified Control.Monad.Foil           as Foil
 import           Data.Functor.Identity        (Identity (..))
-import           Control.Monad.Free.Foil      (UnresolvedName (..))
-import           Data.List                    (intercalate)
+import           Control.Monad.Free.Foil      (AST (Var), UnresolvedName (..))
+import           Data.List                    (foldl', intercalate)
 import           Data.Map                     (Map)
 import qualified Data.Map                     as Map
 import qualified Data.Set                     as Set
@@ -295,11 +295,13 @@ withParams env params0 onErr cont = go emptyParams params0
 validateParams :: Env -> [Raw.Param] -> Maybe String
 validateParams env params = withParams env params Just (\_ -> Nothing)
 
--- | Elaborate a raw term: resolve its constants, then convert it.
+-- | Elaborate a raw term.
 --
--- Resolution happens on the raw syntax, since a constant is a node and the
--- generated conversion can only map an identifier to a name. A parameter is a
--- name, so it is withheld from the constant table and left for the conversion.
+-- A module parameter resolves to a name and a top-level declaration to a
+-- constant, so the conversion is given both tables. It consults the names
+-- first, which is what makes a parameter shadow a declaration of the same
+-- spelling, and it puts the module parameters back at every use: the entry for
+-- a declaration is its constant already applied to them.
 elaborate
   :: Foil.Distinct p
   => Env
@@ -309,12 +311,16 @@ elaborate
   -> Raw.Term
   -> Either String (Term p)
 elaborate env ctx paramTable path raw =
-  case tryToTerm' (ctxScope ctx) paramTable (internTerm constants raw) of
-    Left err -> Left (notInScope (Map.keys constants) err)
+  case tryToTerm'With (ctxScope ctx) paramTable constants raw of
+    Left err -> Left (notInScope err)
     Right t  -> Right (desugar t)
   where
-    constants =
-      foldr Map.delete (visibleAt path (envDeclared env)) (Map.keys paramTable)
+    constants = Map.fromList
+      [ (spelling, foldl' apply (Const Raw.BNFC'NoPosition i) args)
+      | (spelling, (i, ps)) <- Map.toList (visibleAt path (envDeclared env))
+      , Just args <- [traverse (`Map.lookup` paramTable) ps]
+      ]
+    apply f x = App Raw.BNFC'NoPosition f (Var x)
 
 -- | Check a block of declarations at a namespace path.
 --
@@ -423,14 +429,9 @@ needsParameters names =
     <> intercalate ", " (map prettyVarIdent names)
 
 -- | Report an identifier that did not resolve, with any near spellings.
---
--- The spellings the library reports as in scope are only the module parameters,
--- since a constant is resolved before conversion and the conversion never sees
--- one. So the constants in scope have to be handed to the suggestion machinery
--- separately.
-notInScope :: [Raw.VarIdent] -> UnresolvedName Raw.VarIdent -> String
-notInScope constants (UnresolvedName x inScope) =
-  case suggestions x (constants <> inScope) of
+notInScope :: UnresolvedName Raw.VarIdent -> String
+notInScope (UnresolvedName x inScope) =
+  case suggestions x inScope of
     []    -> "not in scope: " <> prettyVarIdent x
     hints -> "not in scope: " <> prettyVarIdent x
                <> "; did you mean " <> intercalate ", " (map prettyVarIdent hints) <> "?"
