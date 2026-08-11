@@ -20,6 +20,13 @@ def neutral over (A, unit) : A := unit
 -- ordinary constant. A client applies it to no arguments.
 def flip : 𝟙 → 𝟙 := λ x ⇒ x
 
+-- A declaration is closed at the point it is defined, and not when the module
+-- ends. So a later declaration in the same module sees an earlier one already
+-- closed, and applies it to the parameters it was closed over. The telescope is
+-- not put back automatically, and `square` and `neutral` take different
+-- prefixes of it.
+def squareNeutral over (A, unit, mul) : A := square A mul (neutral A unit)
+
 module Client ;
 import Monoid
 
@@ -27,6 +34,8 @@ import Monoid
 compute neutral 𝟙 tt
 compute square 𝟙 (λ x ⇒ λ y ⇒ x) tt
 compute flip tt
+
+compute squareNeutral 𝟙 tt (λ x ⇒ λ y ⇒ x)
 
 -- And the discharged types say which parameters each one took.
 check neutral : Π (A : 𝕌) → Π (unit : A) → A

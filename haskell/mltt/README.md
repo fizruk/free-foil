@@ -155,6 +155,19 @@ ordinary constant. `neutral` is discharged over `A` even though its body
 mentions only `unit`: keeping `unit` puts `unit`'s type into the discharged
 type, and that type is `A`. Relevance is upward closed in the telescope.
 
+A declaration is closed at the point it is defined, and not when the module
+ends. So a later declaration in the same module sees an earlier one already
+closed, and applies it to the parameters that one was closed over:
+
+```
+def squareNeutral over (A, unit, mul) : A := square A mul (neutral A unit)
+```
+
+The telescope is not put back automatically, and two declarations need not have
+taken the same prefix of it. This is Lean's `variable` rather than Coq's
+`Section`, which re-abstracts when the section closes and has to rewrite the
+references made inside it.
+
 The `over` clause is optional and it never changes what is discharged. The
 computed set is authoritative, and the clause is *checked against it*:
 
