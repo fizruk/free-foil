@@ -272,13 +272,22 @@ withParams env (Raw.AParam _loc name rawTy : rest) onErr cont =
       let ty = desugar raw
        in withVarBinder ctx ty $ \ctx' binder ->
             withParams (extendEnv ctx' binder name Private env) rest onErr $
-              \tele envP -> cont (TelescopeCons name ty (ctxScope ctx) binder tele) envP
+              \tele envP -> cont (TelescopeCons name ty binder tele) envP
   where
     ctx = envCtx env
 
 -- | Elaborate a module's parameter types, reporting the first that fails.
 validateParams :: Foil.Distinct n => Env n -> [Raw.Param] -> Maybe String
 validateParams env params = withParams env params Just (\_tele _envP -> Nothing)
+
+-- | Report parameters a declaration needs that it is not being closed over.
+--
+-- With the computed set this cannot arise, since that set is closed. It is the
+-- answer for a caller that supplies a set of its own.
+needsParameters :: [Raw.VarIdent] -> String
+needsParameters names =
+  "declaration needs module parameters it is not closed over: "
+    <> intercalate ", " (map prettyVarIdent names)
 
 -- | Report an identifier that did not resolve, with any near spellings.
 notInScope :: UnresolvedName Raw.VarIdent -> String
@@ -365,8 +374,10 @@ withDecls env params path (decl : decls) cont = case decl of
               -- The discharged pair is well-typed by construction: abstracting a
               -- checked term over a variable of a checked type is Π- and
               -- λ-introduction, so it is not checked again here.
-              let Discharged ty' value' over' = discharge loc tele ty value
-               in case checkDischarge over over' of
+              case discharge loc (ctxScope (envCtx env)) tele Nothing ty value of
+                Left missing -> continue (Failed (needsParameters missing))
+                Right (Discharged ty' value' over') ->
+                  case checkDischarge over over' of
                     Left err -> continue (Failed err)
                     Right () ->
                       withDefinition (envCtx env) ty' value' $ \ctx' binder ->

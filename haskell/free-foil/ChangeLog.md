@@ -16,7 +16,11 @@ New:
 
     - `supportOf` is a term's support, the annotation co-de-Bruijn syntax carries intrinsically and the foil, having free weakening, does not. `withRelevantScope` cuts a term down to the scope of exactly the names it uses; that is restriction imposed a priori, so nothing is tested and nothing can fail. `unsinkAST` is the a-posteriori form and the one that has to be paid for, and it now compares two `IntSet`s instead of walking a list of names with a membership test each.
 
-    Verifying a declared dependency — a `uses` clause, a module's parameters — is `withRelevantScope` plus a comparison. When the dependencies are a telescope to be abstracted over one at a time, `unsinkAST` per binder answers it directly instead, and computes the dependency set rather than checking one; that is what `mltt` discharges module parameters with.
+    - `withThinnedNameBinderList` cuts a chain of binders down to those whose names are in a given set, handing the continuation `Ext n m` and `Ext m l` to place the thinned scope between the two. This is what turns a support into a smaller chain in one step: the alternative, asking `unsinkAST` at every binder whether the term can do without it, walks the term once per binder. The thinned scope is produced rather than given, since a term's relevant scope is a subset of `l` and generally not an extension of `n`.
+
+    - `NameSet` is `Sinkable`, so a support computed under a binder can be used outside it without rebuilding the set.
+
+    Verifying a declared dependency — a `uses` clause, a module's parameters — is `withRelevantScope` plus a comparison. Computing one is `supportOf` and then `withThinnedNameBinderList`; that is how `mltt` closes a declaration over the module parameters it uses.
 
 - `Control.Monad.Free.Foil.freeVarsOf` and `freeVarsOfScopedAST` come from `supportOf`, so they no longer repeat a variable that occurs more than once, and return names in ascending order of their identifiers. Previously each occurrence was listed, and the order followed the term.
 

@@ -90,6 +90,34 @@ withTwo k = Foil.withFresh Foil.emptyScope $ \b0 ->
           (Foil.sink (Foil.nameOf b0))
           (Foil.nameOf b1)
 
+-- | Work with a chain of three binders, and the set of all their names.
+withThree
+  :: (forall l. Foil.NameBinderList Foil.VoidS l -> Foil.NameSet l -> r) -> r
+withThree k =
+  Foil.withFresh Foil.emptyScope $ \b0 ->
+    let scope0 = Foil.extendScope b0 Foil.emptyScope
+     in Foil.withFresh scope0 $ \b1 ->
+          let scope1 = Foil.extendScope b1 scope0
+           in Foil.withFresh scope1 $ \b2 ->
+                let chain = Foil.NameBinderListCons b0
+                          ( Foil.NameBinderListCons b1
+                          ( Foil.NameBinderListCons b2 Foil.NameBinderListEmpty ))
+                 in k chain (Foil.nameSetOfPattern chain)
+
+-- | The raw identifiers a chain of binders binds, outermost first.
+binderNames :: Foil.NameBinderList n l -> [Int]
+binderNames Foil.NameBinderListEmpty = []
+binderNames (Foil.NameBinderListCons binder binders) =
+  Foil.nameId (Foil.nameOf binder) : binderNames binders
+
+-- | Thin a chain down to the binders whose identifiers pass a test.
+thinnedBy
+  :: (Int -> Bool) -> Foil.NameBinderList Foil.VoidS l -> Foil.NameSet l -> [Int]
+thinnedBy p chain names = Foil.withThinnedNameBinderList keep chain binderNames
+  where
+    keep = Foil.nameSetFromList
+      [x | x <- Foil.nameSetToList names, p (Foil.nameId x)]
+
 -- | The raw identifiers of a term's support, which is what the assertions
 -- compare.
 support :: Foil.Distinct n => Lam n -> [Int]
@@ -146,6 +174,16 @@ spec = do
               , support term'
               , Foil.member x relevant ))
         `shouldBe` (1, [1], False)
+
+  describe "withThinnedNameBinderList" $ do
+    it "keeps exactly the binders in the set, in order" $
+      withThree (thinnedBy (/= 1)) `shouldBe` [0, 2]
+
+    it "keeps all of them when the set has all of them" $
+      withThree (thinnedBy (const True)) `shouldBe` [0, 1, 2]
+
+    it "keeps none when the set has none" $
+      withThree (thinnedBy (const False)) `shouldBe` []
 
   describe "a binder sharing a raw name with the enclosing scope" $
     it "does not remove the enclosing name from the support" $

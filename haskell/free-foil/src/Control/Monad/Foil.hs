@@ -99,6 +99,7 @@ module Control.Monad.Foil (
   fromNameBindersList,
   snocNameBinderList,
   concatNameBinderLists,
+  withThinnedNameBinderList,
   -- * Constraints
   Ext,
   ExtEvidence(..),
