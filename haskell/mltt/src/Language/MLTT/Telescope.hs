@@ -89,9 +89,6 @@ telescopeBinders (TelescopeCons _ _ binder rest) =
 -- Keeping a parameter puts its type into the result, so whatever that type
 -- mentions has to be kept too. A parameter's type mentions only the parameters
 -- before it, so working from the inside out settles it in one pass.
--- Note that this is a right fold, which is what "from the inside out" means
--- here: the innermost parameter is settled first, and each one further out sees
--- the set the ones after it produced.
 closeOverTelescope :: Foil.Distinct l => [Param a l] -> Foil.NameSet l -> Foil.NameSet l
 closeOverTelescope params wanted = foldr close wanted params
   where
