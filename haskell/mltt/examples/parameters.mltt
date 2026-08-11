@@ -5,7 +5,7 @@
 -- need. An `over` clause states that set in the source; it is checked against
 -- the computed one rather than believed, so it can only reject a program.
 
-module Monoid (A : 𝕌) (unit : A) (mul : A → A → A) ;
+module Monoid (A : 𝕌) (unit : A) (mul : A → A → A)
 
 -- Uses `A` and `mul`, and not `unit`.
 def square over (A, mul) : A → A := λ x ⇒ mul x x
@@ -21,13 +21,21 @@ def neutral over (A, unit) : A := unit
 def flip : 𝟙 → 𝟙 := λ x ⇒ x
 
 -- A declaration is closed at the point it is defined, and not when the module
--- ends. So a later declaration in the same module sees an earlier one already
--- closed, and applies it to the parameters it was closed over. The telescope is
--- not put back automatically, and `square` and `neutral` take different
--- prefixes of it.
-def squareNeutral over (A, unit, mul) : A := square A mul (neutral A unit)
+-- ends. Inside the module the parameters are put back on use, so this reads as
+-- if nothing had been closed over, and elaborates to
+-- `square A mul (neutral A unit)`. Note that `square` and `neutral` were closed
+-- over different parameters, so there is no one telescope to reinstate.
+--
+-- Because the arguments are really there afterwards, they count as uses, and
+-- this is closed over all three parameters without saying so.
+def squareNeutral over (A, unit, mul) : A := square neutral
 
-module Client ;
+-- Putting the parameters back is elaboration, not textual replacement: a local
+-- binder of the same name shadows the declaration, so this is the identity and
+-- is closed over nothing.
+def shadowing : 𝟙 → 𝟙 := λ square ⇒ square
+
+module Client
 import Monoid
 
 -- What left the module is closed, so a client instantiates it by application.
@@ -35,7 +43,10 @@ compute neutral 𝟙 tt
 compute square 𝟙 (λ x ⇒ λ y ⇒ x) tt
 compute flip tt
 
+-- A client gets no such help, and none is wanted: it is applying the constant
+-- to a monoid of its choosing.
 compute squareNeutral 𝟙 tt (λ x ⇒ λ y ⇒ x)
+compute shadowing tt
 
 -- And the discharged types say which parameters each one took.
 check neutral : Π (A : 𝕌) → Π (unit : A) → A

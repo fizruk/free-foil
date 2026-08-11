@@ -44,8 +44,9 @@ module Language.MLTT.Impl where
 import           Control.Monad                (foldM)
 import qualified Control.Monad.Foil           as Foil
 import           Data.Functor.Identity        (Identity (..))
-import           Control.Monad.Free.Foil      (UnresolvedName (..))
-import           Data.List                    (intercalate)
+import           Control.Monad.Free.Foil      (AST (Var), UnresolvedName (..),
+                                               substitute)
+import           Data.List                    (foldl', intercalate)
 import           Data.Map                     (Map)
 import qualified Data.Map                     as Map
 import qualified Data.Set                     as Set
@@ -89,11 +90,20 @@ data Env n = Env
     -- ^ What each module checked so far exports.
   , envDisplay  :: Display n Raw.VarIdent
     -- ^ What each top-level name is called.
+  , envClosedOver :: Table (Foil.Name n, [Raw.VarIdent])
+    -- ^ For each declaration of the module being checked, its name and the
+    -- parameters it was closed over. A reference to one of them from inside the
+    -- same module is put back together with those parameters; see 'reinstate'.
+    -- It is emptied at a module boundary, since a client sees the closed
+    -- constant and applies it itself.
+    --
+    -- The declaration's own 'Foil.Name' is recorded here, rather than looked up
+    -- by spelling later, because a module parameter may shadow the spelling.
   }
 
 -- | An empty environment, before any module is checked.
 emptyEnv :: Env Foil.VoidS
-emptyEnv = Env emptyCtx Map.empty Map.empty Map.empty Foil.emptyNameMap
+emptyEnv = Env emptyCtx Map.empty Map.empty Map.empty Foil.emptyNameMap Map.empty
 
 -- | Extend an environment with one top-level definition.
 --
@@ -113,6 +123,7 @@ extendEnv ctx binder full visibility env = Env
   , envExports  = export visibility full name (Foil.sinkContainer (envExports env))
   , envModules  = fmap Foil.sinkContainer (envModules env)
   , envDisplay  = Foil.addNameBinder binder full (envDisplay env)
+  , envClosedOver = Map.map (\(x, ps) -> (Foil.sink x, ps)) (envClosedOver env)
   }
   where
     name = Foil.nameOf binder
@@ -230,6 +241,7 @@ goModules env (m : ms) = EnteredModule (prettyVarIdent (moduleName m)) :
           [ Map.findWithDefault Map.empty x (envModules env)
           | Raw.AnImport _ x <- moduleImports m ]
       , envExports = Map.empty
+      , envClosedOver = Map.empty
       }
 
 -- | Record what a module exported, once it is checked.
@@ -279,6 +291,42 @@ withParams env (Raw.AParam _loc name rawTy : rest) onErr cont =
 -- | Elaborate a module's parameter types, reporting the first that fails.
 validateParams :: Foil.Distinct n => Env n -> [Raw.Param] -> Maybe String
 validateParams env params = withParams env params Just (\_tele _envP -> Nothing)
+
+-- | Put the module's parameters back into references to its own declarations.
+--
+-- A declaration is closed at the point it is defined, so a later one in the
+-- same module refers to a constant that expects the parameters it was closed
+-- over. Rather than making the source apply them, elaboration expands each such
+-- reference into that application.
+--
+-- It is a substitution, so the library sees to it that a local binder shadowing
+-- a declaration is left alone, and that nothing is captured. Outside the
+-- declaring module the table is empty and this is the identity, which is right:
+-- a client is handed a closed constant and instantiates it as it likes.
+--
+-- The substitution is built by mapping over 'envDisplay', which is total on the
+-- scope because every binder that extends the scope enters it. Nothing is ever
+-- inserted into a substitution by name, which would be a way to undo the
+-- shadowing that 'Foil.addRename' performs under a binder.
+reinstate
+  :: Foil.Distinct p
+  => Env p
+  -> Term p
+  -> Term p
+reinstate envP term
+  | Map.null closedOver = term
+  | otherwise = substitute (ctxScope (envCtx envP)) subst term
+  where
+    closedOver = envClosedOver envP
+    subst = Foil.nameMapToSubstitution (Foil.mapWithName expand (envDisplay envP))
+
+    expand name _spelling
+      | Just ps <- lookup name (Map.elems closedOver)
+      , Just args <- traverse (`Map.lookup` envDeclared envP) ps
+      = foldl' apply (Var name) args
+      | otherwise = Var name
+
+    apply f x = App Raw.BNFC'NoPosition f (Var x)
 
 -- | Report parameters a declaration needs that it is not being closed over.
 --
@@ -363,7 +411,7 @@ withDecls env params path (decl : decls) cont = case decl of
     withElaborated envP raws k =
       case traverse (tryToTerm' (ctxScope (envCtx envP)) (visibleAt path (envDeclared envP))) raws of
         Left err -> continue (Failed (notInScope err))
-        Right ts -> k (fmap desugar ts)
+        Right ts -> k (fmap (reinstate envP . desugar) ts)
 
     define loc visibility name over rawType rawValue =
       withParams env params (continue . Failed) $ \tele envP ->
@@ -382,7 +430,11 @@ withDecls env params path (decl : decls) cont = case decl of
                     Right () ->
                       withDefinition (envCtx env) ty' value' $ \ctx' binder ->
                         let full = qualify path name
-                            env' = extendEnv ctx' binder full visibility env
+                            env' = (extendEnv ctx' binder full visibility env)
+                              { envClosedOver = Map.insert full
+                                  (Foil.nameOf binder, over')
+                                  (Map.map (\(x, ps) -> (Foil.sink x, ps))
+                                           (envClosedOver env)) }
                          in withDecls env' params path decls $ \env'' rest ->
                               cont env''
                                 (Defined (prettyVarIdent full) (map prettyVarIdent over') : rest)

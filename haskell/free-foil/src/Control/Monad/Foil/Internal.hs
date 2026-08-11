@@ -1177,6 +1177,15 @@ newtype NameMap (n :: S) a = NameMap { getNameMap :: IntMap a } deriving (Functo
 emptyNameMap :: NameMap VoidS a
 emptyNameMap = NameMap IntMap.empty
 
+-- | Map over a 'NameMap', with the name each value belongs to.
+--
+-- This is the keyed version of the derived 'Functor' instance. It cannot change
+-- which names the map is defined on, so a map that was total stays total, which
+-- is what makes it a safe way to build a 'Substitution' out of one: see
+-- 'nameMapToSubstitution'.
+mapWithName :: (Name n -> a -> b) -> NameMap n a -> NameMap n b
+mapWithName f (NameMap m) = NameMap (IntMap.mapWithKey (f . UnsafeName) m)
+
 -- | Convert a 'NameMap' of expressions into a 'Substitution'.
 nameMapToSubstitution :: NameMap i (e o) -> Substitution e i o
 nameMapToSubstitution (NameMap m) = (UnsafeSubstitution m)

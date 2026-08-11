@@ -156,17 +156,29 @@ mentions only `unit`: keeping `unit` puts `unit`'s type into the discharged
 type, and that type is `A`. Relevance is upward closed in the telescope.
 
 A declaration is closed at the point it is defined, and not when the module
-ends. So a later declaration in the same module sees an earlier one already
-closed, and applies it to the parameters that one was closed over:
+ends, so nothing has to be rewritten when the module ends. Inside the module
+the parameters are *put back on use*, so a later declaration reads as if none
+of that had happened:
 
 ```
-def squareNeutral over (A, unit, mul) : A := square A mul (neutral A unit)
+def squareNeutral over (A, unit, mul) : A := square neutral
 ```
 
-The telescope is not put back automatically, and two declarations need not have
-taken the same prefix of it. This is Lean's `variable` rather than Coq's
-`Section`, which re-abstracts when the section closes and has to rewrite the
-references made inside it.
+This elaborates to `square A mul (neutral A unit)`. Note that `square` and
+`neutral` were closed over different parameters, so there is no single
+telescope being reinstated: each reference gets back what that declaration
+took. Because the arguments really are there afterwards, they count as uses,
+which is why `squareNeutral` comes out closed over all three without saying so.
+
+Putting them back is elaboration and not textual replacement, so a local binder
+of the same name shadows the declaration:
+
+```
+def shadowing : 𝟙 → 𝟙 := λ square ⇒ square
+```
+
+is the identity and is closed over nothing. A client gets no such help, and
+wants none: it is applying a closed constant to a monoid of its choosing.
 
 The `over` clause is optional and it never changes what is discharged. The
 computed set is authoritative, and the clause is *checked against it*:

@@ -97,10 +97,41 @@ spec = do
       failures (run (inMonoid ["check unit : A"]))
         `shouldBe` []
 
-    it "lets a later declaration use an earlier one, once applied" $
+  describe "putting the parameters back on use" $ do
+    it "lets a later declaration name an earlier one without applying it" $
       failures (run (inMonoid
         [ "def neutral : A := unit"
-        , "def alsoNeutral : A := neutral A unit" ]))
+        , "def alsoNeutral : A := neutral" ]))
+        `shouldBe` []
+
+    it "counts the arguments it puts back as uses" $
+      -- `square` takes `A` and `mul`, `neutral` takes `A` and `unit`, so a
+      -- declaration naming both is closed over all three.
+      run (inMonoid
+        [ "def square : A → A := λ x ⇒ mul x x"
+        , "def neutral : A := unit"
+        , "def squareNeutral : A := square neutral" ])
+        `shouldSatisfy` (Defined "squareNeutral" ["A", "unit", "mul"] `elem`)
+
+    it "leaves a local binder of the same name alone" $
+      run (inMonoid ["def shadowing : 𝟙 → 𝟙 := λ square ⇒ square"])
+        `shouldSatisfy` (Defined "shadowing" [] `elem`)
+
+    it "leaves a parameter alone when it shadows a declaration of the same name" $
+      -- `dup` is both a parameter and a declaration. The spelling denotes the
+      -- parameter, so putting anything back for it would be wrong.
+      run (unlines
+        [ "module M (A : 𝕌) (dup : A)"
+        , "def dup : A := dup"
+        , "def use : A := dup" ])
+        `shouldSatisfy` (Defined "use" ["A", "dup"] `elem`)
+
+    it "does not do it for a client, which applies the constant itself" $
+      failures (run (unlines
+        [ inMonoid ["def neutral : A := unit"]
+        , "module Client"
+        , "import Monoid"
+        , "check neutral : Π (A : 𝕌) → Π (unit : A) → A" ]))
         `shouldBe` []
 
     it "reports an unresolvable parameter type once, not once per declaration" $

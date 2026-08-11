@@ -85,6 +85,7 @@ module Control.Monad.Foil (
   -- * Name maps
   NameMap,
   emptyNameMap,
+  mapWithName,
   lookupName,
   addNameBinder,
   popNameBinder,

@@ -20,6 +20,8 @@ New:
 
     - `NameSet` is `Sinkable`, so a support computed under a binder can be used outside it without rebuilding the set.
 
+- `mapWithName` is the keyed version of `NameMap`'s `Functor` instance. It cannot change which names the map is defined on, so a total map stays total, which makes it a safe way to build a `Substitution` out of one with `nameMapToSubstitution` — an elaborator that has to expand a reference into something larger than a variable can do it that way rather than by inserting into a substitution by name.
+
     Verifying a declared dependency — a `uses` clause, a module's parameters — is `withRelevantScope` plus a comparison. Computing one is `supportOf` and then `withThinnedNameBinderList`; that is how `mltt` closes a declaration over the module parameters it uses.
 
 - `Control.Monad.Free.Foil.freeVarsOf` and `freeVarsOfScopedAST` come from `supportOf`, so they no longer repeat a variable that occurs more than once, and return names in ascending order of their identifiers. Previously each occurrence was listed, and the order followed the term.
