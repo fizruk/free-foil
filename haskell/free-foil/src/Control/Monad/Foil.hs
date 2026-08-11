@@ -55,6 +55,7 @@ module Control.Monad.Foil (
   CoSinkable(..),
   HasNameBinders(getNameBinders),
   sink,
+  sinkClosed,
   sinkContainer,
   extendRenaming,
   extendNameBinderRenaming,

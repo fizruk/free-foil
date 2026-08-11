@@ -16,6 +16,8 @@ module Language.MLTT.Eval where
 import qualified Control.Monad.Foil           as Foil
 import           Control.Monad.Free.Foil
 import           Data.Bifunctor              (bimap)
+import           Data.Map                    (Map)
+import qualified Data.Map                    as Map
 import           Data.ZipMatchK              (ZipMatchK)
 import           Language.MLTT.Impl.Generated
 
@@ -82,56 +84,42 @@ instantiate
   -> Term' a o
 instantiate scope pat term body = substitute scope (matchPattern pat term) body
 
--- * Definitions
+-- * Top-level constants
 
--- | What a name in scope may unfold to: 'Nothing' for a local variable,
--- 'Just' for a top-level definition that \(\delta\)-reduction unfolds.
+-- | What each interned top-level constant unfolds to.
 --
--- This is a @newtype@ rather than a bare 'Maybe' so that it is 'Foil.Sinkable',
--- which is what lets 'extendDefs' enter a binder in \(O(1)\).
-newtype Def a n = Def { getDef :: Maybe (Term' a n) }
+-- A constant is a 'Const' node carrying an identifier, and not a name in a
+-- scope, so this map is not indexed by a scope and does not have to be entered
+-- into a binder. Its entries are closed, which is what lets \(\delta\) put one
+-- anywhere with 'Foil.sinkClosed'.
+type Consts a = Map Integer (Term' a Foil.VoidS)
 
-instance Foil.Sinkable (Def a) where
-  sinkabilityProof rename (Def value) =
-    Def (fmap (Foil.sinkabilityProof rename) value)
-
--- | A /total/ map from the names in scope to what they unfold to.
-type Defs a n = Foil.NameMap n (Def a n)
-
--- | No definitions in the empty scope.
-emptyDefs :: Defs a Foil.VoidS
-emptyDefs = Foil.emptyNameMap
-
--- | Enter a pattern: every name it binds is a local variable, so unfolds to
--- nothing.
-extendDefs
-  :: (Foil.CoSinkable binder, Foil.DExt n l)
-  => binder n l -> Defs a n -> Defs a l
-extendDefs binder defs =
-  Foil.addNameBinders binder (repeat (Def Nothing)) (Foil.sinkContainer defs)
+-- | No constants at all.
+noConsts :: Consts a
+noConsts = Map.empty
 
 -- * Reduction
 
 -- | Compute the weak head normal form of a term.
 --
 -- >>> let scope = Foil.emptyScope
--- >>> whnf scope emptyDefs (desugar ("(λ (x, y) ⇒ y) (tt, λ z ⇒ z)" :: Term Foil.VoidS))
+-- >>> whnf scope noConsts (desugar ("(λ (x, y) ⇒ y) (tt, λ z ⇒ z)" :: Term Foil.VoidS))
 -- λ x0 ⇒ x0
 --
 -- Projections reduce on an explicit pair, and @J@ on @refl@:
 --
--- >>> whnf scope emptyDefs (desugar ("π₁ (tt, 𝕌)" :: Term Foil.VoidS))
+-- >>> whnf scope noConsts (desugar ("π₁ (tt, 𝕌)" :: Term Foil.VoidS))
 -- tt
--- >>> whnf scope emptyDefs (desugar ("J (λ x ⇒ λ p ⇒ 𝟙, tt, refl (tt))" :: Term Foil.VoidS))
+-- >>> whnf scope noConsts (desugar ("J (λ x ⇒ λ p ⇒ 𝟙, tt, refl (tt))" :: Term Foil.VoidS))
 -- tt
-whnf :: forall a n. Foil.Distinct n => Foil.Scope n -> Defs a n -> Term' a n -> Term' a n
-whnf scope defs = go
+whnf :: forall a n. Foil.Distinct n => Foil.Scope n -> Consts a -> Term' a n -> Term' a n
+whnf scope consts = go
   where
     go :: Term' a n -> Term' a n
     go = \case
-      Var x -> case getDef (Foil.lookupName x defs) of
-        Just value -> go value
-        Nothing    -> Var x
+      Const loc i -> case Map.lookup i consts of
+        Just value -> go (Foil.sinkClosed value)
+        Nothing    -> Const loc i
       App loc f x -> case go f of
         Lam _loc binder body -> go (instantiate scope binder x body)
         f'                   -> App loc f' x
@@ -150,31 +138,34 @@ whnf scope defs = go
 
 -- | Compute the full normal form of a term, reducing under binders.
 --
+-- Note that the constants need no adjustment when going under a binder: they
+-- are not names, so there is no map over the scope to enter.
+--
 -- Note that MLTT here has type-in-type, so this can diverge on a well-typed
 -- term. That is a deliberate simplification: the demo is about scoping, not
 -- about consistency.
 --
--- >>> nf Foil.emptyScope emptyDefs (desugar ("λ f ⇒ λ x ⇒ (λ y ⇒ f y) x" :: Term Foil.VoidS))
+-- >>> nf Foil.emptyScope noConsts (desugar ("λ f ⇒ λ x ⇒ (λ y ⇒ f y) x" :: Term Foil.VoidS))
 -- λ x0 ⇒ λ x1 ⇒ x0 x1
-nf :: forall a n. Foil.Distinct n => Foil.Scope n -> Defs a n -> Term' a n -> Term' a n
-nf scope defs term = case whnf scope defs term of
+nf :: forall a n. Foil.Distinct n => Foil.Scope n -> Consts a -> Term' a n -> Term' a n
+nf scope consts term = case whnf scope consts term of
     Var x     -> Var x
-    Node node -> Node (bimap nfScoped (nf scope defs) node)
+    Node node -> Node (bimap nfScoped (nf scope consts) node)
   where
     nfScoped :: ScopedTerm' a n -> ScopedTerm' a n
     nfScoped (ScopedAST binder body) =
       case (Foil.assertExt binder, Foil.assertDistinct binder) of
         (Foil.Ext, Foil.Distinct) -> ScopedAST binder
-          (nf (Foil.extendScopePattern binder scope) (extendDefs binder defs) body)
+          (nf (Foil.extendScopePattern binder scope) consts body)
 
 -- | Conversion: are two terms equal up to reduction and renaming of bound
 -- variables?
 --
--- >>> conv Foil.emptyScope emptyDefs (desugar ("(λ x ⇒ x) tt" :: Term Foil.VoidS)) (desugar "tt")
+-- >>> conv Foil.emptyScope noConsts (desugar ("(λ x ⇒ x) tt" :: Term Foil.VoidS)) (desugar "tt")
 -- True
--- >>> conv Foil.emptyScope emptyDefs (desugar ("λ x ⇒ x" :: Term Foil.VoidS)) (desugar "λ y ⇒ tt")
+-- >>> conv Foil.emptyScope noConsts (desugar ("λ x ⇒ x" :: Term Foil.VoidS)) (desugar "λ y ⇒ tt")
 -- False
 conv
   :: (Foil.Distinct n, ZipMatchK a)
-  => Foil.Scope n -> Defs a n -> Term' a n -> Term' a n -> Bool
-conv scope defs l r = alphaEquiv scope (nf scope defs l) (nf scope defs r)
+  => Foil.Scope n -> Consts a -> Term' a n -> Term' a n -> Bool
+conv scope consts l r = alphaEquiv scope (nf scope consts l) (nf scope consts r)

@@ -927,6 +927,16 @@ instance (Functor f, Sinkable e) => Sinkable (Compose f e) where
 sink :: (Sinkable e, DExt n l) => e n -> e l
 sink = unsafeCoerce
 
+-- | Use a closed expression at any scope.
+--
+-- This is 'sink' for the one case its constraint cannot express: @Ext VoidS n@
+-- does not follow from the 'Ext' instance, since @ExtEndo VoidS => ExtEndo n@
+-- is not derivable for an arbitrary @n@. It needs no evidence to be sound,
+-- because 'Name' 'VoidS' is uninhabited, so a closed expression has no names
+-- for a renaming to act on.
+sinkClosed :: Sinkable e => e VoidS -> e n
+sinkClosed = unsafeCoerce
+
 -- | Sink an entire container of sinkable expressions, in \(O(1)\).
 --
 -- The soundness argument for 'sink' extends to a container of sinkables — an

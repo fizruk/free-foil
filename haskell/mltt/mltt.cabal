@@ -39,6 +39,7 @@ library
       Language.MLTT.FreeFoilConfig
       Language.MLTT.Impl
       Language.MLTT.Impl.Generated
+      Language.MLTT.Interner
       Language.MLTT.Resolve
       Language.MLTT.Syntax.Abs
       Language.MLTT.Syntax.Layout

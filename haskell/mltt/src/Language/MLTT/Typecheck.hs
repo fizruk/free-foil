@@ -46,6 +46,7 @@ module Language.MLTT.Typecheck where
 import qualified Control.Monad.Foil           as Foil
 import           Control.Monad.Free.Foil
 import           Data.ZipMatchK               (ZipMatchK)
+import qualified Data.Map                     as Map
 import           Language.MLTT.Eval
 import           Language.MLTT.Impl.Generated
 
@@ -62,32 +63,27 @@ import           Language.MLTT.Impl.Generated
 -- itself, a /total/ map giving each name its type, and a /total/ map saying
 -- what each name unfolds to.
 data Ctx a n = Ctx
-  { ctxScope :: Foil.Scope n
-  , ctxTypes :: Foil.NameMap n (Term' a n)
-  , ctxDefs  :: Defs a n
+  { ctxScope      :: Foil.Scope n
+  , ctxTypes      :: Foil.NameMap n (Term' a n)
+  , ctxConstTypes :: Consts a
+    -- ^ The type of each interned top-level constant.
+  , ctxConsts     :: Consts a
+    -- ^ What each of them unfolds to.
   }
 
 -- | The empty context.
 emptyCtx :: Ctx a Foil.VoidS
-emptyCtx = Ctx Foil.emptyScope Foil.emptyNameMap emptyDefs
+emptyCtx = Ctx Foil.emptyScope Foil.emptyNameMap noConsts noConsts
 
--- | Extend a context with a top-level definition of a given type and value.
+-- | Add an interned top-level constant, of a given type and value.
 --
--- A definition is an ordinary name in scope whose 'Def' is not 'Nothing', so
--- \(\delta\)-reduction unfolds it and nothing else has to change. Note that this
--- makes a top-level constant a 'Foil.Name' in a growing scope, which is one of
--- the two possible designs for a global environment.
--- The continuation receives the /binder/ rather than just its name, so that a
--- caller can extend a 'Foil.NameMap' of its own alongside the context.
-withDefinition
-  :: Foil.Distinct n
-  => Ctx a n
-  -> Term' a n            -- ^ The type of the definition.
-  -> Term' a n            -- ^ Its value.
-  -> (forall l. Foil.DExt n l => Ctx a l -> Foil.NameBinder n l -> r)
-  -> r
-withDefinition ctx ty value cont = Foil.withFresh (ctxScope ctx) $ \binder ->
-  cont (extend ctx binder ty (Just value)) binder
+-- A constant is not a name and does not extend the scope, so this is an
+-- ordinary map insertion and the context keeps its index.
+withConst :: Integer -> Term' a Foil.VoidS -> Term' a Foil.VoidS -> Ctx a n -> Ctx a n
+withConst i ty value ctx = ctx
+  { ctxConstTypes = Map.insert i ty (ctxConstTypes ctx)
+  , ctxConsts     = Map.insert i value (ctxConsts ctx)
+  }
 
 -- | Extend a context with a fresh variable of a given type.
 withVar
@@ -111,22 +107,23 @@ withVarBinder
   -> (forall l. Foil.DExt n l => Ctx a l -> Foil.NameBinder n l -> r)
   -> r
 withVarBinder ctx ty cont = Foil.withFresh (ctxScope ctx) $ \binder ->
-  cont (extend ctx binder ty Nothing) binder
+  cont (extend ctx binder ty) binder
 
 -- | Add one binder to a context. Sinking the two maps is \(O(1)\); only the
 -- new entry is inserted.
 extend
   :: Foil.DExt n l
-  => Ctx a n -> Foil.NameBinder n l -> Term' a n -> Maybe (Term' a n) -> Ctx a l
-extend ctx binder ty value = Ctx
-  { ctxScope = Foil.extendScope binder (ctxScope ctx)
-  , ctxTypes = Foil.addNameBinder binder (Foil.sink ty) (Foil.sinkContainer (ctxTypes ctx))
-  , ctxDefs  = Foil.addNameBinder binder (Def (fmap Foil.sink value)) (Foil.sinkContainer (ctxDefs ctx))
+  => Ctx a n -> Foil.NameBinder n l -> Term' a n -> Ctx a l
+extend ctx binder ty = Ctx
+  { ctxScope      = Foil.extendScope binder (ctxScope ctx)
+  , ctxTypes      = Foil.addNameBinder binder (Foil.sink ty) (Foil.sinkContainer (ctxTypes ctx))
+  , ctxConstTypes = ctxConstTypes ctx
+  , ctxConsts     = ctxConsts ctx
   }
 
 -- | Reduce a term to weak head normal form in a context.
 whnfIn :: Foil.Distinct n => Ctx a n -> Term' a n -> Term' a n
-whnfIn ctx = whnf (ctxScope ctx) (ctxDefs ctx)
+whnfIn ctx = whnf (ctxScope ctx) (ctxConsts ctx)
 
 -- * Type checking
 
@@ -149,6 +146,11 @@ infer
   => Ctx a n -> Term' a n -> Either TypeError (Term' a n)
 infer ctx = \case
   Var x -> return (Foil.lookupName x (ctxTypes ctx))
+
+  -- A constant's type is closed, so it is used here at any scope.
+  Const _loc i -> case Map.lookup i (ctxConstTypes ctx) of
+    Just ty -> return (Foil.sinkClosed ty)
+    Nothing -> Left ("unknown constant #" <> show i)
 
   Universe loc -> return (Universe loc)   -- type-in-type, deliberately
   UnitType loc -> return (Universe loc)
@@ -267,7 +269,7 @@ check ctx term ty = case (term, whnfIn ctx ty) of
 
   _ -> do
     ty' <- infer ctx term
-    if conv (ctxScope ctx) (ctxDefs ctx) ty ty'
+    if conv (ctxScope ctx) (ctxConsts ctx) ty ty'
       then return ()
       else Left (unlines
         [ "expected type: " <> show ty

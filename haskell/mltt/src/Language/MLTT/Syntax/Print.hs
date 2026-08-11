@@ -202,6 +202,7 @@ instance Print (Language.MLTT.Syntax.Abs.Term' a) where
     Language.MLTT.Syntax.Abs.App _ term1 term2 -> prPrec i 1 (concatD [prt 1 term1, prt 2 term2])
     Language.MLTT.Syntax.Abs.First _ term -> prPrec i 2 (concatD [doc (showString "\960\8321"), prt 2 term])
     Language.MLTT.Syntax.Abs.Second _ term -> prPrec i 2 (concatD [doc (showString "\960\8322"), prt 2 term])
+    Language.MLTT.Syntax.Abs.Const _ n -> prPrec i 2 (concatD [doc (showString "#const"), prt 0 n])
     Language.MLTT.Syntax.Abs.Universe _ -> prPrec i 2 (concatD [doc (showString "\120140")])
     Language.MLTT.Syntax.Abs.UnitType _ -> prPrec i 2 (concatD [doc (showString "\120793")])
     Language.MLTT.Syntax.Abs.UnitVal _ -> prPrec i 2 (concatD [doc (showString "tt")])

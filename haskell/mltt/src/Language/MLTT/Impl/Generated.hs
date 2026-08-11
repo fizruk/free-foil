@@ -66,6 +66,9 @@ mkFreeFoilConversions mlttConfig
 -- | Ignore 'Raw.BNFC'Position' when matching terms.
 instance ZipMatchK Raw.BNFC'Position where zipMatchWithK = zipMatchViaChooseLeft
 
+-- | Two constants are the same when their interned identifiers are.
+instance ZipMatchK Integer where zipMatchWithK = zipMatchViaEq
+
 -- | Match the signature with the derived (rather than the generic) instance:
 -- matching terms is most of what a type checker does, and the generic instance
 -- reflects a node into its "Generics.Kind" representation on every comparison.

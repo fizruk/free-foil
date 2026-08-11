@@ -12,7 +12,7 @@
 
 module Language.MLTT.Syntax.Abs where
 
-import Prelude (String)
+import Prelude (Integer, String)
 import qualified Prelude as C
   ( Eq, Ord, Show, Read
   , Functor, Foldable, Traversable
@@ -65,6 +65,7 @@ data Term' a
     | App a (Term' a) (Term' a)
     | First a (Term' a)
     | Second a (Term' a)
+    | Const a Integer
     | Universe a
     | UnitType a
     | UnitVal a
@@ -146,6 +147,7 @@ instance HasPosition Term where
     App p _ _ -> p
     First p _ -> p
     Second p _ -> p
+    Const p _ -> p
     Universe p -> p
     UnitType p -> p
     UnitVal p -> p

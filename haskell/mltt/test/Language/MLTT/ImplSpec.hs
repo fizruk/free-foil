@@ -47,14 +47,14 @@ spec = do
 
   describe "conversion" $ do
     it "sees through β-reduction" $
-      conv Foil.emptyScope emptyDefs (term "(λ x ⇒ x) tt") (term "tt")
+      conv Foil.emptyScope noConsts (term "(λ x ⇒ x) tt") (term "tt")
         `shouldBe` True
 
     it "is up to renaming of bound variables" $
-      conv Foil.emptyScope emptyDefs (term "λ x ⇒ x") (term "λ y ⇒ y")
+      conv Foil.emptyScope noConsts (term "λ x ⇒ x") (term "λ y ⇒ y")
         `shouldBe` True
 
     it "distinguishes different normal forms" $
-      conv Foil.emptyScope emptyDefs (term "λ x ⇒ x") (term "λ x ⇒ tt")
+      conv Foil.emptyScope noConsts (term "λ x ⇒ x") (term "λ x ⇒ tt")
         `shouldBe` False
 

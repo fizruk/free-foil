@@ -82,6 +82,15 @@ App.      Term1 ::= Term1 Term2 ;
 First.    Term2 ::= "π₁" Term2 ;
 Second.   Term2 ::= "π₂" Term2 ;
 
+-- A top-level constant, by its interned identifier. This is @internal@: it is
+-- part of the syntax tree and is printed, but never parsed. Elaboration puts it
+-- there, replacing the identifier that resolved to a top-level declaration.
+--
+-- The node carries no scope index of its own, so a term built only from these
+-- and from closed constructors is closed /by type/. That is the point of the
+-- experiment; see "Language.MLTT.Interner".
+internal Const. Term2 ::= "#const" Integer ;
+
 Universe. Term2 ::= "𝕌" ;
 UnitType. Term2 ::= "𝟙" ;
 UnitVal.  Term2 ::= "tt" ;

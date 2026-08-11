@@ -1,4 +1,6 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE MonoLocalBinds      #-}
 {-# LANGUAGE DeriveFoldable      #-}
 {-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE DeriveTraversable   #-}
@@ -44,17 +46,18 @@ module Language.MLTT.Impl where
 import           Control.Monad                (foldM)
 import qualified Control.Monad.Foil           as Foil
 import           Data.Functor.Identity        (Identity (..))
-import           Control.Monad.Free.Foil      (AST (Var), UnresolvedName (..),
-                                               substitute)
-import           Data.List                    (foldl', intercalate)
+import           Control.Monad.Free.Foil      (UnresolvedName (..))
+import           Data.List                    (intercalate)
 import           Data.Map                     (Map)
 import qualified Data.Map                     as Map
 import qualified Data.Set                     as Set
 import           Language.MLTT.Eval
 import           Language.MLTT.FreeFoilConfig (intToVarIdent)
 import           Language.MLTT.Impl.Generated
+import           Language.MLTT.Interner
 import           Language.MLTT.Resolve
 import qualified Language.MLTT.Syntax.Abs     as Raw
+import qualified Language.MLTT.Syntax.Print   as Raw
 import           Language.MLTT.Telescope
 import           Language.MLTT.Typecheck
 import           System.Exit                  (exitFailure)
@@ -65,73 +68,65 @@ import           System.Exit                  (exitFailure)
 
 -- * The elaboration environment
 
--- | What each name in scope is called: the read-back direction of a 'Table'.
---
--- This is a 'Foil.NameMap', and it is /total/ on the top-level scope, because
--- the only thing that extends that scope is a definition and every definition
--- is entered here. Bound variables never reach it: 'showTermWith' sends a name
--- back through the binders it passed and only consults the map for what is
--- free in the whole term.
---
--- It is also the seed of the interner a serialisation layer would need, since
--- a 'Foil.Name' is an allocation artefact and cannot be written to disk.
-type Display = Foil.NameMap
-
 -- | Everything carried from one declaration to the next.
-data Env n = Env
-  { envCtx      :: Ctx Raw.BNFC'Position n
-    -- ^ Scope, types and definitions: the foil half.
-  , envDeclared :: Table (Foil.Name n)
-    -- ^ Fully qualified names reachable in the module being checked, including
-    -- what its imports brought in.
-  , envExports  :: Table (Foil.Name n)
-    -- ^ Those declarations of the current module that are public.
-  , envModules  :: Map Raw.VarIdent (Table (Foil.Name n))
+--
+-- Note that this is /not/ indexed by a scope. A top-level declaration is an
+-- interned constant and not a name, so nothing here grows a scope, nothing has
+-- to be sunk, and the interpreter needs no continuation-passing to thread one.
+-- The foil index appears below only where there are local variables: inside a
+-- declaration, and for a module's parameters.
+data Env = Env
+  { envCtx      :: Ctx Raw.BNFC'Position Foil.VoidS
+    -- ^ The type and the value of each constant. Both are closed.
+  , envDeclared :: Table (ConstId, [Raw.VarIdent])
+    -- ^ Fully qualified names reachable in the module being checked, each with
+    -- the module parameters that declaration was closed over. Those are put
+    -- back at every use; see 'Language.MLTT.Interner.internTerm'.
+  , envExports  :: Table (ConstId, [Raw.VarIdent])
+    -- ^ Those declarations of the current module that are public. They are
+    -- exported with an empty parameter list: a client sees a closed constant
+    -- and applies it itself.
+  , envModules  :: Map Raw.VarIdent (Table (ConstId, [Raw.VarIdent]))
     -- ^ What each module checked so far exports.
-  , envDisplay  :: Display n Raw.VarIdent
-    -- ^ What each top-level name is called.
-  , envClosedOver :: Table (Foil.Name n, [Raw.VarIdent])
-    -- ^ For each declaration of the module being checked, its name and the
-    -- parameters it was closed over. A reference to one of them from inside the
-    -- same module is put back together with those parameters; see 'reinstate'.
-    -- It is emptied at a module boundary, since a client sees the closed
-    -- constant and applies it itself.
-    --
-    -- The declaration's own 'Foil.Name' is recorded here, rather than looked up
-    -- by spelling later, because a module parameter may shadow the spelling.
+  , envNames    :: Map ConstId Raw.VarIdent
+    -- ^ What each constant is called, for printing.
+  , envNext     :: ConstId
+    -- ^ The next identifier to hand out.
   }
 
 -- | An empty environment, before any module is checked.
-emptyEnv :: Env Foil.VoidS
-emptyEnv = Env emptyCtx Map.empty Map.empty Map.empty Foil.emptyNameMap Map.empty
+emptyEnv :: Env
+emptyEnv = Env emptyCtx Map.empty Map.empty Map.empty Map.empty 0
 
--- | Extend an environment with one top-level definition.
---
--- Every map is a container of sinkables, so widening them is \(O(1)\); only the
--- new entry is inserted, and only the map of modules has its spine walked.
-extendEnv
-  :: Foil.DExt n l
-  => Ctx Raw.BNFC'Position l
-  -> Foil.NameBinder n l
-  -> Raw.VarIdent           -- ^ The fully qualified name of the definition.
+-- | Intern a checked declaration as a new constant.
+internDefinition
+  :: Raw.VarIdent           -- ^ Its fully qualified name.
   -> Visibility             -- ^ Does it leave the module?
-  -> Env n
-  -> Env l
-extendEnv ctx binder full visibility env = Env
-  { envCtx      = ctx
-  , envDeclared = Map.insert full name (Foil.sinkContainer (envDeclared env))
-  , envExports  = export visibility full name (Foil.sinkContainer (envExports env))
-  , envModules  = fmap Foil.sinkContainer (envModules env)
-  , envDisplay  = Foil.addNameBinder binder full (envDisplay env)
-  , envClosedOver = Map.map (\(x, ps) -> (Foil.sink x, ps)) (envClosedOver env)
+  -> [Raw.VarIdent]         -- ^ The module parameters it was closed over.
+  -> Term Foil.VoidS        -- ^ Its type, closed.
+  -> Term Foil.VoidS        -- ^ Its value, closed.
+  -> Env
+  -> Env
+internDefinition full visibility over ty value env = env
+  { envCtx      = withConst i ty value (envCtx env)
+  , envDeclared = Map.insert full (i, over) (envDeclared env)
+  , envExports  = export visibility full (i, []) (envExports env)
+  , envNames    = Map.insert i full (envNames env)
+  , envNext     = i + 1
   }
   where
-    name = Foil.nameOf binder
+    i = envNext env
 
--- | Print a term, showing top-level definitions by name and bound variables by
--- their index.
-display :: Foil.Distinct n => Env n -> Term n -> String
-display env = showTermWith intToVarIdent (envDisplay env)
+-- | Print a term, showing constants by name and bound variables by their index.
+--
+-- The 'Foil.NameMap' names what is free in the term, which for a checked
+-- declaration is nothing at all: it is closed. Only a term being checked under
+-- module parameters has free names, and 'display' is given their names then.
+display
+  :: Foil.Distinct n
+  => Env -> Foil.NameMap n Raw.VarIdent -> Term n -> String
+display env free =
+  Raw.printTree . nameConsts (envNames env) . fromTermWith intToVarIdent free
 
 -- * Results
 
@@ -220,19 +215,19 @@ interpretModules modules = case buildOrder modules of
   Left err      -> [Failed err]
   Right ordered -> goModules emptyEnv ordered
 
--- | Check each module in turn, in the growing top-level scope.
+-- | Check each module in turn.
 --
 -- A module's parameters are elaborated once here, before its declarations, so
 -- that a parameter block that does not resolve is reported once rather than
 -- against every declaration that would have been checked under it.
-goModules :: Foil.Distinct n => Env n -> [Raw.Module] -> [CommandResult]
+goModules :: Env -> [Raw.Module] -> [CommandResult]
 goModules _env [] = []
 goModules env (m : ms) = EnteredModule (prettyVarIdent (moduleName m)) :
     case validateParams env' (moduleParams m) of
       Just err -> Failed err : goModules env ms
       Nothing ->
-        withDecls env' (moduleParams m) [] (moduleDecls m) $ \env'' results ->
-          results <> goModules (finishModule (moduleName m) env'') ms
+        let (env'', results) = goDecls env' (moduleParams m) [] (moduleDecls m)
+         in results <> goModules (finishModule (moduleName m) env'') ms
   where
     -- An import contributes the exporting module's public names, under the
     -- spellings it exported them with. Nothing else crosses a module boundary.
@@ -241,11 +236,10 @@ goModules env (m : ms) = EnteredModule (prettyVarIdent (moduleName m)) :
           [ Map.findWithDefault Map.empty x (envModules env)
           | Raw.AnImport _ x <- moduleImports m ]
       , envExports = Map.empty
-      , envClosedOver = Map.empty
       }
 
 -- | Record what a module exported, once it is checked.
-finishModule :: Raw.VarIdent -> Env l -> Env l
+finishModule :: Raw.VarIdent -> Env -> Env
 finishModule name env =
   env { envModules = Map.insert name (envExports env) (envModules env) }
 
@@ -258,75 +252,166 @@ finishModule name env =
 data Two a = Two a a
   deriving (Functor, Foldable, Traversable)
 
--- | Allocate a module's parameters, extending the environment with them.
+-- | What a module's parameters give a declaration being checked under them.
+data Params p = Params
+  { paramsTelescope :: Telescope Raw.BNFC'Position Foil.VoidS p
+  , paramsCtx       :: Ctx Raw.BNFC'Position p
+  , paramsTable     :: Table (Foil.Name p)  -- ^ For elaboration.
+  , paramsNames     :: Foil.NameMap p Raw.VarIdent  -- ^ For printing.
+  }
+
+-- | Allocate a module's parameters.
 --
--- Parameters are allocated afresh for each declaration rather than once for the
--- module, because a declaration is added to the module's own scope after being
--- discharged, and a name allocated there would otherwise collide with a
--- parameter allocated before it. Re-elaborating a parameter block costs a few
--- small terms and buys a scope that grows only by definitions.
---
--- A parameter is nameable by its bare spelling and is not exported, which is
--- exactly what 'extendEnv' does for a private declaration.
+-- These are the only names the interpreter allocates: everything at the top
+-- level is a constant. They are allocated afresh for each declaration, which
+-- costs a few small terms and keeps each declaration's scope to its own
+-- parameters.
 withParams
-  :: forall n r. Foil.Distinct n
-  => Env n
+  :: forall r. Env
   -> [Raw.Param]
   -> (String -> r)        -- ^ A parameter's type did not resolve.
-  -> (forall p. Foil.DExt n p
-        => Telescope Raw.BNFC'Position n p -> Env p -> r)
+  -> (forall p. Foil.DExt Foil.VoidS p => Params p -> r)
   -> r
-withParams env [] _onErr cont = cont TelescopeEmpty env
-withParams env (Raw.AParam _loc name rawTy : rest) onErr cont =
-  case tryToTerm' (ctxScope ctx) (visibleAt [] (envDeclared env)) rawTy of
-    Left err -> onErr (notInScope err)
-    Right raw ->
-      let ty = desugar raw
-       in withVarBinder ctx ty $ \ctx' binder ->
-            withParams (extendEnv ctx' binder name Private env) rest onErr $
-              \tele envP -> cont (TelescopeCons name ty binder tele) envP
+withParams env params0 onErr cont = go emptyParams params0
   where
-    ctx = envCtx env
+    emptyParams = Params TelescopeEmpty (envCtx env) Map.empty Foil.emptyNameMap
+
+    go :: forall p. Foil.DExt Foil.VoidS p => Params p -> [Raw.Param] -> r
+    go acc [] = cont acc
+    go acc (Raw.AParam _loc name rawTy : rest) =
+      case elaborate env (paramsCtx acc) (paramsTable acc) [] rawTy of
+        Left err -> onErr err
+        Right ty ->
+          withVarBinder (paramsCtx acc) ty $ \ctx' binder ->
+            go Params
+              { paramsTelescope = appendParam (paramsTelescope acc) name ty binder
+              , paramsCtx       = ctx'
+              , paramsTable     = Map.insert name (Foil.nameOf binder)
+                                    (Foil.sinkContainer (paramsTable acc))
+              , paramsNames     = Foil.addNameBinder binder name (paramsNames acc)
+              } rest
 
 -- | Elaborate a module's parameter types, reporting the first that fails.
-validateParams :: Foil.Distinct n => Env n -> [Raw.Param] -> Maybe String
-validateParams env params = withParams env params Just (\_tele _envP -> Nothing)
+validateParams :: Env -> [Raw.Param] -> Maybe String
+validateParams env params = withParams env params Just (\_ -> Nothing)
 
--- | Put the module's parameters back into references to its own declarations.
+-- | Elaborate a raw term: resolve its constants, then convert it.
 --
--- A declaration is closed at the point it is defined, so a later one in the
--- same module refers to a constant that expects the parameters it was closed
--- over. Rather than making the source apply them, elaboration expands each such
--- reference into that application.
---
--- It is a substitution, so the library sees to it that a local binder shadowing
--- a declaration is left alone, and that nothing is captured. Outside the
--- declaring module the table is empty and this is the identity, which is right:
--- a client is handed a closed constant and instantiates it as it likes.
---
--- The substitution is built by mapping over 'envDisplay', which is total on the
--- scope because every binder that extends the scope enters it. Nothing is ever
--- inserted into a substitution by name, which would be a way to undo the
--- shadowing that 'Foil.addRename' performs under a binder.
-reinstate
+-- Resolution happens on the raw syntax, since a constant is a node and the
+-- generated conversion can only map an identifier to a name. A parameter is a
+-- name, so it is withheld from the constant table and left for the conversion.
+elaborate
   :: Foil.Distinct p
-  => Env p
-  -> Term p
-  -> Term p
-reinstate envP term
-  | Map.null closedOver = term
-  | otherwise = substitute (ctxScope (envCtx envP)) subst term
+  => Env
+  -> Ctx Raw.BNFC'Position p
+  -> Table (Foil.Name p)        -- ^ The module parameters in scope.
+  -> Path
+  -> Raw.Term
+  -> Either String (Term p)
+elaborate env ctx paramTable path raw =
+  case tryToTerm' (ctxScope ctx) paramTable (internTerm constants raw) of
+    Left err -> Left (notInScope (Map.keys constants) err)
+    Right t  -> Right (desugar t)
   where
-    closedOver = envClosedOver envP
-    subst = Foil.nameMapToSubstitution (Foil.mapWithName expand (envDisplay envP))
+    constants =
+      foldr Map.delete (visibleAt path (envDeclared env)) (Map.keys paramTable)
 
-    expand name _spelling
-      | Just ps <- lookup name (Map.elems closedOver)
-      , Just args <- traverse (`Map.lookup` envDeclared envP) ps
-      = foldl' apply (Var name) args
-      | otherwise = Var name
+-- | Check a block of declarations at a namespace path.
+--
+-- The path is lexical, so a nested @namespace@ is just a recursive call with a
+-- longer path, and leaving it needs no bookkeeping: the qualified names stay in
+-- 'envDeclared' and the bare spellings were never stored, only computed by
+-- 'visibleAt'.
+goDecls
+  :: Env
+  -> [Raw.Param]          -- ^ The parameters of the enclosing module.
+  -> Path                 -- ^ The namespace path these declarations sit at.
+  -> [Raw.Decl]
+  -> (Env, [CommandResult])
+goDecls env _params _path [] = (env, [])
+goDecls env params path (decl : decls) = case decl of
 
-    apply f x = App Raw.BNFC'NoPosition f (Var x)
+  Raw.DeclDef loc name over ty value        -> define loc Public name over ty value
+  Raw.DeclPrivateDef loc name over ty value -> define loc Private name over ty value
+
+  Raw.DeclNamespace _loc name inner ->
+    let (envInner, innerResults) = goDecls env params (path <> segments name) inner
+        (envAfter, rest)         = goDecls envInner params path decls
+     in (envAfter, innerResults <> rest)
+
+  Raw.DeclOpen _loc name ->
+    goDecls (env { envDeclared = openNamespace (qualify path name) (envDeclared env) })
+            params path decls
+
+  Raw.DeclCheck _loc rawTerm rawType ->
+    withParams env params (continue . Failed) $ \ps ->
+      withElaborated ps (Two rawTerm rawType) $ \(Two term ty) ->
+        case check (paramsCtx ps) ty universe >> check (paramsCtx ps) term ty of
+          Left err -> continue (Failed err)
+          Right () -> continue
+            (Checked (display env (paramsNames ps) term)
+                     (display env (paramsNames ps) ty))
+
+  Raw.DeclCompute _loc rawTerm ->
+    withParams env params (continue . Failed) $ \ps ->
+      withElaborated ps (Identity rawTerm) $ \(Identity term) ->
+        let ctxP = paramsCtx ps
+         in case infer ctxP term of
+              Left err  -> continue (Failed err)
+              Right _ty -> continue (Computed (display env (paramsNames ps)
+                (nf (ctxScope ctxP) (ctxConsts ctxP) term)))
+
+  where
+    universe = Universe Raw.BNFC'NoPosition
+
+    -- Continue with the remaining declarations, with one result in front.
+    continue result =
+      let (env', rest) = goDecls env params path decls in (env', result : rest)
+
+    continueWith env0 result =
+      let (env', rest) = goDecls env0 params path decls in (env', result : rest)
+
+    withElaborated
+      :: forall p f. (Foil.Distinct p, Traversable f)
+      => Params p -> f Raw.Term -> (f (Term p) -> (Env, [CommandResult]))
+      -> (Env, [CommandResult])
+    withElaborated ps raws k =
+      case traverse (elaborate env (paramsCtx ps) (paramsTable ps) path) raws of
+        Left err -> continue (Failed err)
+        Right ts -> k ts
+
+    define loc visibility name over rawType rawValue =
+      withParams env params (continue . Failed) $ \ps ->
+        withElaborated ps (Two rawType rawValue) $ \(Two ty value) ->
+          case check (paramsCtx ps) ty universe >> check (paramsCtx ps) value ty of
+            Left err -> continue (Failed err)
+            Right () ->
+              -- Closing over the parameters leaves a term with no free names at
+              -- all, so what is interned is closed by type and not by
+              -- discipline. That is the whole point of this variant.
+              case discharge loc Foil.emptyScope (paramsTelescope ps) Nothing ty value of
+                Left missing -> continue (Failed (needsParameters missing))
+                Right (Discharged ty' value' over') ->
+                  case checkDischarge over over' of
+                    Left err -> continue (Failed err)
+                    Right () -> continueWith
+                      (internDefinition full visibility over' ty' value' env)
+                      (Defined (prettyVarIdent full) (map prettyVarIdent over'))
+      where
+        full = qualify path name
+
+-- | Add a parameter to the end of a telescope.
+appendParam
+  :: (Foil.Distinct i, Foil.DExt i l)
+  => Telescope Raw.BNFC'Position n i
+  -> Raw.VarIdent
+  -> Term i
+  -> Foil.NameBinder i l
+  -> Telescope Raw.BNFC'Position n l
+appendParam TelescopeEmpty name ty binder =
+  TelescopeCons name ty binder TelescopeEmpty
+appendParam (TelescopeCons name' ty' binder' rest) name ty binder =
+  TelescopeCons name' ty' binder' (appendParam rest name ty binder)
 
 -- | Report parameters a declaration needs that it is not being closed over.
 --
@@ -338,106 +423,17 @@ needsParameters names =
     <> intercalate ", " (map prettyVarIdent names)
 
 -- | Report an identifier that did not resolve, with any near spellings.
-notInScope :: UnresolvedName Raw.VarIdent -> String
-notInScope (UnresolvedName x inScope) =
-  case suggestions x inScope of
+--
+-- The spellings the library reports as in scope are only the module parameters,
+-- since a constant is resolved before conversion and the conversion never sees
+-- one. So the constants in scope have to be handed to the suggestion machinery
+-- separately.
+notInScope :: [Raw.VarIdent] -> UnresolvedName Raw.VarIdent -> String
+notInScope constants (UnresolvedName x inScope) =
+  case suggestions x (constants <> inScope) of
     []    -> "not in scope: " <> prettyVarIdent x
     hints -> "not in scope: " <> prettyVarIdent x
                <> "; did you mean " <> intercalate ", " (map prettyVarIdent hints) <> "?"
-
--- | Check a block of declarations at a namespace path.
---
--- The path is lexical, so a nested @namespace@ is just a recursive call with a
--- longer path, and leaving it needs no bookkeeping: the qualified names stay in
--- 'envDeclared' and the bare spellings were never stored, only computed by
--- 'visibleAt'.
---
--- Every declaration is checked with the module's parameters in scope, and a
--- @def@ is then discharged over the ones it uses, so that what is added to the
--- environment lives in the parameter-free scope the module started in.
-withDecls
-  :: forall n r. Foil.Distinct n
-  => Env n
-  -> [Raw.Param]          -- ^ The parameters of the enclosing module.
-  -> Path                 -- ^ The namespace path these declarations sit at.
-  -> [Raw.Decl]
-  -> (forall l. Foil.DExt n l => Env l -> [CommandResult] -> r)
-  -> r
-withDecls env _params _path [] cont = cont env []
-withDecls env params path (decl : decls) cont = case decl of
-
-  Raw.DeclDef loc name over ty value        -> define loc Public name over ty value
-  Raw.DeclPrivateDef loc name over ty value -> define loc Private name over ty value
-
-  Raw.DeclNamespace _loc name inner ->
-    withDecls env params (path <> segments name) inner $ \envInner innerResults ->
-      withDecls envInner params path decls $ \envAfter rest ->
-        cont envAfter (innerResults <> rest)
-
-  Raw.DeclOpen _loc name ->
-    withDecls (env { envDeclared = openNamespace (qualify path name) (envDeclared env) })
-              params path decls cont
-
-  Raw.DeclCheck _loc rawTerm rawType ->
-    withParams env params (continue . Failed) $ \_tele envP ->
-      withElaborated envP (Two rawTerm rawType) $ \(Two term ty) ->
-        case check (envCtx envP) ty universe >> check (envCtx envP) term ty of
-          Left err -> continue (Failed err)
-          Right () -> continue (Checked (display envP term) (display envP ty))
-
-  Raw.DeclCompute _loc rawTerm ->
-    withParams env params (continue . Failed) $ \_tele envP ->
-      withElaborated envP (Identity rawTerm) $ \(Identity term) ->
-        let ctxP = envCtx envP
-         in case infer ctxP term of
-              Left err  -> continue (Failed err)
-              Right _ty -> continue
-                (Computed (display envP (nf (ctxScope ctxP) (ctxDefs ctxP) term)))
-
-  where
-    universe = Universe Raw.BNFC'NoPosition
-
-    -- Continue with the remaining declarations, with one result in front.
-    continue result = withDecls env params path decls $ \env' rest -> cont env' (result : rest)
-
-    -- Convert some raw terms, or report the identifiers that do not resolve.
-    --
-    -- The terms come and go in a container of the caller's choosing, so a
-    -- declaration that needs two of them asks with 'Two' and is handed back a
-    -- 'Two'.
-    withElaborated
-      :: forall p f. (Foil.Distinct p, Traversable f)
-      => Env p -> f Raw.Term -> (f (Term p) -> r) -> r
-    withElaborated envP raws k =
-      case traverse (tryToTerm' (ctxScope (envCtx envP)) (visibleAt path (envDeclared envP))) raws of
-        Left err -> continue (Failed (notInScope err))
-        Right ts -> k (fmap (reinstate envP . desugar) ts)
-
-    define loc visibility name over rawType rawValue =
-      withParams env params (continue . Failed) $ \tele envP ->
-        withElaborated envP (Two rawType rawValue) $ \(Two ty value) ->
-          case check (envCtx envP) ty universe >> check (envCtx envP) value ty of
-            Left err -> continue (Failed err)
-            Right () ->
-              -- The discharged pair is well-typed by construction: abstracting a
-              -- checked term over a variable of a checked type is Π- and
-              -- λ-introduction, so it is not checked again here.
-              case discharge loc (ctxScope (envCtx env)) tele Nothing ty value of
-                Left missing -> continue (Failed (needsParameters missing))
-                Right (Discharged ty' value' over') ->
-                  case checkDischarge over over' of
-                    Left err -> continue (Failed err)
-                    Right () ->
-                      withDefinition (envCtx env) ty' value' $ \ctx' binder ->
-                        let full = qualify path name
-                            env' = (extendEnv ctx' binder full visibility env)
-                              { envClosedOver = Map.insert full
-                                  (Foil.nameOf binder, over')
-                                  (Map.map (\(x, ps) -> (Foil.sink x, ps))
-                                           (envClosedOver env)) }
-                         in withDecls env' params path decls $ \env'' rest ->
-                              cont env''
-                                (Defined (prettyVarIdent full) (map prettyVarIdent over') : rest)
 
 -- | Parse and interpret one source.
 --
