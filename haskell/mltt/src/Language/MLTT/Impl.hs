@@ -230,6 +230,12 @@ firstStripeBase = stripeSize
 paramRegion :: Foil.NameRange
 paramRegion = Foil.NameRange 0 (firstStripeBase - 1)
 
+-- | A stripe's position in the registry: which run of 'stripeSize' names a
+-- module draws from. Its own type, so that a stripe index cannot be confused
+-- with a name, a count, or an offset.
+newtype StripeIndex = StripeIndex Int
+  deriving (Eq, Ord, Show, Read)
+
 -- | Which stripe each module's declarations live in.
 --
 -- The assignment is what makes raw names deterministic: a module's
@@ -239,7 +245,7 @@ paramRegion = Foil.NameRange 0 (firstStripeBase - 1)
 -- artefacts survive changes elsewhere in the module graph exactly when the
 -- assignment does not move. Here it is threaded through one run, and a test
 -- (or a driver) can seed it.
-type Registry = Map Raw.VarIdent Int
+type Registry = Map Raw.VarIdent StripeIndex
 
 -- | The registry before any module has ever been checked.
 emptyRegistry :: Registry
@@ -250,12 +256,12 @@ emptyRegistry = Map.empty
 registerModule :: Raw.VarIdent -> Registry -> (Registry, Foil.NameRange)
 registerModule name registry = case Map.lookup name registry of
   Just i  -> (registry, stripeRange i)
-  Nothing -> let i = Map.size registry
+  Nothing -> let i = StripeIndex (Map.size registry)
               in (Map.insert name i registry, stripeRange i)
 
 -- | Stripe @i@ is the @i@-th run of 'stripeSize' names above 'firstStripeBase'.
-stripeRange :: Int -> Foil.NameRange
-stripeRange i = Foil.NameRange lo (lo + stripeSize - 1)
+stripeRange :: StripeIndex -> Foil.NameRange
+stripeRange (StripeIndex i) = Foil.NameRange lo (lo + stripeSize - 1)
   where
     lo = firstStripeBase + i * stripeSize
 

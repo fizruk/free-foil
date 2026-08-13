@@ -69,7 +69,8 @@ mU = oneModule srcU
 -- run and 'interpretModules' hand out the same stripes.
 registry :: Registry
 registry = Map.fromList
-  [ (moduleName mI, 0), (moduleName mA, 1), (moduleName mB, 2) ]
+  [ (moduleName mI, StripeIndex 0), (moduleName mA, StripeIndex 1)
+  , (moduleName mB, StripeIndex 2) ]
 
 -- | The results a checked module reported.
 resultsOf :: CheckedModule c -> [CommandResult]
@@ -84,9 +85,9 @@ declaredIds cm = withCheckedModule cm $ \_ env _ ->
 -- @C@ in the linked environment. The flag swaps the link order.
 linkedRun :: Bool -> Either String [CommandResult]
 linkedRun swapped =
-  withCheckedModule (checkModule (stripeRange 0) emptyEnv mI) $ \_ envI resultsI ->
-    let ca = checkModule (stripeRange 1) envI mA
-        cb = checkModule (stripeRange 2) envI mB
+  withCheckedModule (checkModule (stripeRange (StripeIndex 0)) emptyEnv mI) $ \_ envI resultsI ->
+    let ca = checkModule (stripeRange (StripeIndex 1)) envI mA
+        cb = checkModule (stripeRange (StripeIndex 2)) envI mB
         runC envK = goModules registry envK [mC]
         linked
           | swapped   = linkModules cb ca runC
@@ -107,17 +108,17 @@ spec = do
 
   describe "determinism of declaration names" $ do
     it "numbers a stripe's declarations from its base, in order" $
-      withCheckedModule (checkModule (stripeRange 0) emptyEnv mI) $ \_ envI _ ->
-        declaredIds (checkModule (stripeRange 1) envI mA) `shouldBe`
+      withCheckedModule (checkModule (stripeRange (StripeIndex 0)) emptyEnv mI) $ \_ envI _ ->
+        declaredIds (checkModule (stripeRange (StripeIndex 1)) envI mA) `shouldBe`
           [ (Raw.VarIdent "a", firstStripeBase + stripeSize)
           , (Raw.VarIdent "base", firstStripeBase)
           ]
 
     it "gives a module the same names whatever else was checked before" $
-      withCheckedModule (checkModule (stripeRange 0) emptyEnv mI) $ \_ envI _ ->
-        withCheckedModule (checkModule (stripeRange 3) envI mX) $ \_ envX _ ->
-          declaredIds (checkModule (stripeRange 1) envX mA)
-            `shouldBe` declaredIds (checkModule (stripeRange 1) envI mA)
+      withCheckedModule (checkModule (stripeRange (StripeIndex 0)) emptyEnv mI) $ \_ envI _ ->
+        withCheckedModule (checkModule (stripeRange (StripeIndex 3)) envI mX) $ \_ envX _ ->
+          declaredIds (checkModule (stripeRange (StripeIndex 1)) envX mA)
+            `shouldBe` declaredIds (checkModule (stripeRange (StripeIndex 1)) envI mA)
 
 
   describe "linking chains" $
@@ -125,29 +126,30 @@ spec = do
       -- The chains get interleaved stripes (Q = 1, S = 2, R = 3, T = 4), so
       -- the convex hulls of the two chains overlap while their reservations
       -- do not: the case that forces evidence over a set of ranges.
-      withCheckedModule (checkModule (stripeRange 0) emptyEnv mP) $ \_ envP resultsP ->
-        let chainQR = checkModuleAfter (stripeRange 3) (checkModule (stripeRange 1) envP mQ) mR
-            chainST = checkModuleAfter (stripeRange 4) (checkModule (stripeRange 2) envP mS) mT
+      withCheckedModule (checkModule (stripeRange (StripeIndex 0)) emptyEnv mP) $ \_ envP resultsP ->
+        let chainQR = checkModuleAfter (stripeRange (StripeIndex 3)) (checkModule (stripeRange (StripeIndex 1)) envP mQ) mR
+            chainST = checkModuleAfter (stripeRange (StripeIndex 4)) (checkModule (stripeRange (StripeIndex 2)) envP mS) mT
             chainRegistry = Map.fromList
-              [ (moduleName mP, 0), (moduleName mQ, 1), (moduleName mS, 2)
-              , (moduleName mR, 3), (moduleName mT, 4) ]
+              [ (moduleName mP, StripeIndex 0), (moduleName mQ, StripeIndex 1)
+              , (moduleName mS, StripeIndex 2), (moduleName mR, StripeIndex 3)
+              , (moduleName mT, StripeIndex 4) ]
             linked = linkModules chainQR chainST (\envU -> goModules chainRegistry envU [mU])
          in fmap (\resultsU -> resultsP <> resultsOf chainQR <> resultsOf chainST <> resultsU) linked
               `shouldBe` Right (interpretModules [mP, mQ, mR, mS, mT, mU])
 
   describe "linking failures" $
     it "refuses two modules whose stripes overlap" $
-      withCheckedModule (checkModule (stripeRange 0) emptyEnv mI) $ \_ envI _ ->
-        let ca  = checkModule (stripeRange 1) envI mA
-            cb' = checkModule (stripeRange 1) envI mB  -- a registry gone wrong
+      withCheckedModule (checkModule (stripeRange (StripeIndex 0)) emptyEnv mI) $ \_ envI _ ->
+        let ca  = checkModule (stripeRange (StripeIndex 1)) envI mA
+            cb' = checkModule (stripeRange (StripeIndex 1)) envI mB  -- a registry gone wrong
          in linkModules ca cb' (\_ -> ())
               `shouldSatisfy` isLeft
 
   describe "re-attachment by inclusion (checkExtScope)" $
     it "accepts each side against the union, and not the other way around" $
-      withCheckedModule (checkModule (stripeRange 0) emptyEnv mI) $ \_ envI _ ->
-        let ca = checkModule (stripeRange 1) envI mA
-            cb = checkModule (stripeRange 2) envI mB
+      withCheckedModule (checkModule (stripeRange (StripeIndex 0)) emptyEnv mI) $ \_ envI _ ->
+        let ca = checkModule (stripeRange (StripeIndex 1)) envI mA
+            cb = checkModule (stripeRange (StripeIndex 2)) envI mB
          in withCheckedModule ca $ \_ envA _ ->
               linkModules ca cb (\envK ->
                 ( isJust (Blocks.checkExtScope (ctxScope (envCtx envA)) (ctxScope (envCtx envK)))
