@@ -58,6 +58,10 @@ New:
 
 - `withDisjointUnion` hands its continuation two more things. The union's own `ExtWithin`: the linked scope extends the common base only within the union of the two range sets, which is exact, so a linked unit is itself linkable and a whole build folds through the one function. And the `Ext c k` constraint, which a caller cannot derive on the spot: obtaining it from `Ext c n` and `Ext n k` is exactly the chain the solver refuses when both sides' paths are in scope, since either given offers a candidate and it commits to neither.
 
+- A family of \(O(1)\) sinks, named after `Data.Functor.Classes`: `sink1` sinks through one `Functor` layer (the function previously called `sinkContainer`, which stays as a deprecated alias), and `sink2` through a `Bifunctor` with the two scopes moving independently — the shape of `liftEq2`, justified by the new `sinkabilityProof2` exactly as `sink` is by `sinkabilityProof`. Nested shapes compose: `f (g (e n))` is a `Compose`, a container of pairs is a `Tannen`, both again instances, so one family member covers them.
+
+  Rewrite rules turn `map sink`, `fmap sink`, `IntMap.map sink` and `bimap sink sink` into the corresponding family member, so an elementwise sink costs \(O(1)\) in optimised builds even when written the slow way. The rules are best-effort (they need `-O`), so `sink`'s haddock warns against the elementwise forms, and hlint hints (`Use sink1`/`Use sink2` in `.hlint.yaml`, checked in CI) flag them at the source.
+
 - `Control.Monad.Foil` exports the `Id` and `RawName` synonyms, so a client can type its raw-name arithmetic (stripe bases, interned identifiers) the way `nameId`'s result already means.
 
 Changed:
