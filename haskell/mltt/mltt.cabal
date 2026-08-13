@@ -35,6 +35,7 @@ custom-setup
 
 library
   exposed-modules:
+      Language.MLTT.Artifact
       Language.MLTT.Eval
       Language.MLTT.FreeFoilConfig
       Language.MLTT.Impl
@@ -124,6 +125,7 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      Language.MLTT.ArtifactSpec
       Language.MLTT.ImplSpec
       Language.MLTT.LinkSpec
       Language.MLTT.ModulesSpec
