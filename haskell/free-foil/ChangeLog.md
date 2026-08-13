@@ -52,6 +52,10 @@ New:
 
   `containers >= 0.6.8` is now required, for `Data.IntSet.fromRange`.
 
+- The generated conversions gain range- and naming-parametric siblings. `toXIn`, `tryToXIn` and `tryToXWithIn` allocate the binders the conversion introduces within a given `NameRange`, so the same source elaborates to the same term whatever else the ambient scope holds — which is what a deterministic artifact hash, and eventually a shareable normal-form cache, rest on. The existing names are now the instances at `fullNameRange`, which behaves as before on every scope without negative names.
+
+  On the way out, the binding converter gains a naming-parametric sibling (`fromPatternWith` beside `fromPattern`, for a binding type named `Pattern`), taking the binder-naming function instead of baking `intToRawIdentName` in. The same function must name the bound-variable references, or a reference comes out free of its own binder; that mismatch is exactly the bug a serialiser hits with the baked naming, and `mltt` hit it.
+
 Changed:
 
 - `convertToAST` and `convertToScopedAST` are deprecated in favour of `unsafeConvertToAST` and `unsafeConvertToScopedAST`, which are the same functions under names that admit they call `error`. The old names still work.
