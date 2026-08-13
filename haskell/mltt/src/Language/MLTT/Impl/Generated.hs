@@ -44,6 +44,8 @@ import qualified Language.MLTT.Syntax.Print            as Raw
 -- >>> :set -XOverloadedStrings
 -- >>> :set -XDataKinds
 -- >>> import qualified Control.Monad.Foil as Foil
+-- >>> import qualified Data.Map as Map
+-- >>> import qualified Language.MLTT.Syntax.Par as Par
 -- >>> import qualified Language.MLTT.Syntax.Abs as Raw
 
 -- * Generated code
@@ -107,6 +109,13 @@ parseProgram input = Raw.pProgram (Raw.resolveLayout True (Raw.tokens input))
 --
 -- >>> "λ (x, y) ⇒ y" :: Term' Raw.BNFC'Position Foil.VoidS
 -- λ (x0, x1) ⇒ x1
+--
+-- The range-parametric conversion allocates the binders it introduces inside
+-- the given range, so the same source elaborates to the same term whatever
+-- else the ambient scope holds:
+--
+-- >>> toTerm'In (Foil.NameRange 50 59) Foil.emptyScope Map.empty (unsafeParse Par.pTerm "λ x ⇒ λ y ⇒ x")
+-- λ x50 ⇒ λ x51 ⇒ x50
 instance IsString (Term' Raw.BNFC'Position Foil.VoidS) where
   fromString = toTerm' Foil.emptyScope Map.empty . unsafeParse Raw.pTerm
 
