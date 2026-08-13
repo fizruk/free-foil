@@ -204,6 +204,53 @@ moduleImports (Raw.AModule _ _ _ imports _) = imports
 moduleDecls :: Raw.Module -> [Raw.Decl]
 moduleDecls (Raw.AModule _ _ _ _ decls) = decls
 
+-- * Name layout
+
+-- | How many top-level names a module may declare.
+stripeSize :: Int
+stripeSize = 0x100000
+
+-- | Where the first stripe starts. Below it lies 'paramRegion'.
+firstStripeBase :: Int
+firstStripeBase = stripeSize
+
+-- | The region module parameters are allocated in.
+--
+-- It lies below every stripe, so a parameter can never collide with a
+-- declaration's name, and parameter indices stay small — a discharged type
+-- prints as @Π (x0 : 𝕌) → …@ however many declarations precede it.
+paramRegion :: Foil.NameRange
+paramRegion = Foil.NameRange 0 (firstStripeBase - 1)
+
+-- | Which stripe each module's declarations live in.
+--
+-- The assignment is what makes raw names deterministic: a module's
+-- declarations are numbered @base@, @base + 1@, … in declaration order,
+-- whatever else is checked around it. In a real build this map is persistent
+-- — written beside the build products and loaded at start — because cached
+-- artefacts survive changes elsewhere in the module graph exactly when the
+-- assignment does not move. Here it is threaded through one run, and a test
+-- (or a driver) can seed it.
+type Registry = Map Raw.VarIdent Int
+
+-- | The registry before any module has ever been checked.
+emptyRegistry :: Registry
+emptyRegistry = Map.empty
+
+-- | The stripe of a module, assigning the next one on first use.
+-- The registry is append-only, so the next stripe index is its size.
+registerModule :: Raw.VarIdent -> Registry -> (Registry, Foil.NameRange)
+registerModule name registry = case Map.lookup name registry of
+  Just i  -> (registry, stripeRange i)
+  Nothing -> let i = Map.size registry
+              in (Map.insert name i registry, stripeRange i)
+
+-- | Stripe @i@ is the @i@-th run of 'stripeSize' names above 'firstStripeBase'.
+stripeRange :: Int -> Foil.NameRange
+stripeRange i = Foil.NameRange lo (lo + stripeSize - 1)
+  where
+    lo = firstStripeBase + i * stripeSize
+
 -- * Interpreting a program
 
 -- | Interpret a program: order its modules by their imports, then check each.
@@ -217,22 +264,23 @@ interpretProgram (Raw.AProgram _loc modules) = interpretModules modules
 interpretModules :: [Raw.Module] -> [CommandResult]
 interpretModules modules = case buildOrder modules of
   Left err      -> [Failed err]
-  Right ordered -> goModules emptyEnv ordered
+  Right ordered -> goModules emptyRegistry emptyEnv ordered
 
 -- | Check each module in turn, in the growing top-level scope.
 --
 -- A module's parameters are elaborated once here, before its declarations, so
 -- that a parameter block that does not resolve is reported once rather than
 -- against every declaration that would have been checked under it.
-goModules :: Foil.Distinct n => Env n -> [Raw.Module] -> [CommandResult]
-goModules _env [] = []
-goModules env (m : ms) = EnteredModule (prettyVarIdent (moduleName m)) :
+goModules :: Foil.Distinct n => Registry -> Env n -> [Raw.Module] -> [CommandResult]
+goModules _registry _env [] = []
+goModules registry env (m : ms) = EnteredModule (prettyVarIdent (moduleName m)) :
     case validateParams env' (moduleParams m) of
-      Just err -> Failed err : goModules env ms
+      Just err -> Failed err : goModules registry' env ms
       Nothing ->
-        withDecls env' (moduleParams m) [] (moduleDecls m) $ \env'' results ->
-          results <> goModules (finishModule (moduleName m) env'') ms
+        withDecls env' range (moduleParams m) [] (moduleDecls m) $ \env'' results ->
+          results <> goModules registry' (finishModule (moduleName m) env'') ms
   where
+    (registry', range) = registerModule (moduleName m) registry
     -- An import contributes the exporting module's public names, under the
     -- spellings it exported them with. Nothing else crosses a module boundary.
     env' = env
@@ -259,11 +307,11 @@ data Two a = Two a a
 
 -- | Allocate a module's parameters, extending the environment with them.
 --
--- Parameters are allocated afresh for each declaration rather than once for the
--- module, because a declaration is added to the module's own scope after being
--- discharged, and a name allocated there would otherwise collide with a
--- parameter allocated before it. Re-elaborating a parameter block costs a few
--- small terms and buys a scope that grows only by definitions.
+-- Parameters are allocated in 'paramRegion', below every stripe, so they can
+-- never collide with a declaration's name — which is what used to force them
+-- to be re-allocated per declaration. They are still elaborated afresh for
+-- each declaration, but now only for simplicity: a parameter block is a few
+-- small terms, and re-elaborating it keeps 'withDecls' a plain fold.
 --
 -- A parameter is nameable by its bare spelling and is not exported, which is
 -- exactly what 'extendEnv' does for a private declaration.
@@ -281,7 +329,7 @@ withParams env (Raw.AParam _loc name rawTy : rest) onErr cont =
     Left err -> onErr (notInScope err)
     Right raw ->
       let ty = desugar raw
-       in withVarBinder ctx ty $ \ctx' binder ->
+       in withVarBinder paramRegion ctx ty $ \ctx' binder ->
             withParams (extendEnv ctx' binder name Private env) rest onErr $
               \tele envP -> cont (TelescopeCons name ty binder tele) envP
   where
@@ -355,25 +403,26 @@ notInScope (UnresolvedName x inScope) =
 withDecls
   :: forall n r. Foil.Distinct n
   => Env n
+  -> Foil.NameRange       -- ^ The stripe of the enclosing module.
   -> [Raw.Param]          -- ^ The parameters of the enclosing module.
   -> Path                 -- ^ The namespace path these declarations sit at.
   -> [Raw.Decl]
   -> (forall l. Foil.DExt n l => Env l -> [CommandResult] -> r)
   -> r
-withDecls env _params _path [] cont = cont env []
-withDecls env params path (decl : decls) cont = case decl of
+withDecls env _range _params _path [] cont = cont env []
+withDecls env range params path (decl : decls) cont = case decl of
 
   Raw.DeclDef loc name over ty value        -> define loc Public name over ty value
   Raw.DeclPrivateDef loc name over ty value -> define loc Private name over ty value
 
   Raw.DeclNamespace _loc name inner ->
-    withDecls env params (path <> segments name) inner $ \envInner innerResults ->
-      withDecls envInner params path decls $ \envAfter rest ->
+    withDecls env range params (path <> segments name) inner $ \envInner innerResults ->
+      withDecls envInner range params path decls $ \envAfter rest ->
         cont envAfter (innerResults <> rest)
 
   Raw.DeclOpen _loc name ->
     withDecls (env { envDeclared = openNamespace (qualify path name) (envDeclared env) })
-              params path decls cont
+              range params path decls cont
 
   Raw.DeclCheck _loc rawTerm rawType ->
     withParams env params (continue . Failed) $ \_tele envP ->
@@ -395,7 +444,7 @@ withDecls env params path (decl : decls) cont = case decl of
     universe = Universe Raw.BNFC'NoPosition
 
     -- Continue with the remaining declarations, with one result in front.
-    continue result = withDecls env params path decls $ \env' rest -> cont env' (result : rest)
+    continue result = withDecls env range params path decls $ \env' rest -> cont env' (result : rest)
 
     -- Convert some raw terms, or report the identifiers that do not resolve.
     --
@@ -426,14 +475,14 @@ withDecls env params path (decl : decls) cont = case decl of
                   case checkDischarge over over' of
                     Left err -> continue (Failed err)
                     Right () ->
-                      withDefinition (envCtx env) ty' value' $ \ctx' binder ->
+                      withDefinition range (envCtx env) ty' value' $ \ctx' binder ->
                         let full = qualify path name
                             env' = (extendEnv ctx' binder full visibility env)
                               { envClosedOver = Map.insert full
                                   (Foil.nameOf binder, over')
                                   (Map.map (\(x, ps) -> (Foil.sink x, ps))
                                            (envClosedOver env)) }
-                         in withDecls env' params path decls $ \env'' rest ->
+                         in withDecls env' range params path decls $ \env'' rest ->
                               cont env''
                                 (Defined (prettyVarIdent full) (map prettyVarIdent over') : rest)
 

@@ -81,13 +81,16 @@ emptyCtx = Ctx Foil.emptyScope Foil.emptyNameMap emptyDefs
 -- caller can extend a 'Foil.NameMap' of its own alongside the context.
 withDefinition
   :: Foil.Distinct n
-  => Ctx a n
+  => Foil.NameRange       -- ^ The reservation to allocate the name from:
+                          -- the enclosing module's stripe.
+  -> Ctx a n
   -> Term' a n            -- ^ The type of the definition.
   -> Term' a n            -- ^ Its value.
   -> (forall l. Foil.DExt n l => Ctx a l -> Foil.NameBinder n l -> r)
   -> r
-withDefinition ctx ty value cont = Foil.withFresh (ctxScope ctx) $ \binder ->
-  cont (extend ctx binder ty (Just value)) binder
+withDefinition range ctx ty value cont =
+  Foil.withFreshIn range (ctxScope ctx) $ \binder ->
+    cont (extend ctx binder ty (Just value)) binder
 
 -- | Extend a context with a fresh variable of a given type.
 withVar
@@ -96,7 +99,11 @@ withVar
   -> Term' a n            -- ^ The type of the new variable.
   -> (forall l. Foil.DExt n l => Ctx a l -> Foil.Name l -> r)
   -> r
-withVar ctx ty cont = withVarBinder ctx ty $ \ctx' binder ->
+-- The variable is ephemeral — it exists only while the checker is under the
+-- binder — so it is allocated with no reservation. Its raw name may land
+-- inside some module's stripe; that is harmless, because it never enters a
+-- module's scope and nothing about linking rests on term-internal names.
+withVar ctx ty cont = withVarBinder Foil.fullNameRange ctx ty $ \ctx' binder ->
   cont ctx' (Foil.nameOf binder)
 
 -- | Extend a context with a fresh variable, handing back its /binder/.
@@ -106,11 +113,12 @@ withVar ctx ty cont = withVarBinder ctx ty $ \ctx' binder ->
 -- from. See "Language.MLTT.Telescope".
 withVarBinder
   :: Foil.Distinct n
-  => Ctx a n
+  => Foil.NameRange       -- ^ The reservation to allocate the name from.
+  -> Ctx a n
   -> Term' a n            -- ^ The type of the new variable.
   -> (forall l. Foil.DExt n l => Ctx a l -> Foil.NameBinder n l -> r)
   -> r
-withVarBinder ctx ty cont = Foil.withFresh (ctxScope ctx) $ \binder ->
+withVarBinder range ctx ty cont = Foil.withFreshIn range (ctxScope ctx) $ \binder ->
   cont (extend ctx binder ty Nothing) binder
 
 -- | Add one binder to a context. Sinking the two maps is \(O(1)\); only the
