@@ -120,7 +120,7 @@ emptyEnv = Env emptyCtx Map.empty Map.empty Map.empty Foil.emptyNameMap Map.empt
 -- Every map is a container of sinkables, so widening them is a coercion, and
 -- only the new entry is inserted. The nested containers (the tables of the
 -- module map, the pairs of 'envClosedOver') are sunk through 'Compose', the
--- same idiom 'Foil.sinkContainer' itself uses one level down, so no spine is
+-- same idiom 'Foil.sink1' itself uses one level down, so no spine is
 -- walked anywhere.
 extendEnv
   :: Foil.DExt n l
@@ -132,11 +132,11 @@ extendEnv
   -> Env l
 extendEnv ctx binder full visibility env = Env
   { envCtx      = ctx
-  , envDeclared = Map.insert full name (Foil.sinkContainer (envDeclared env))
-  , envExports  = export visibility full name (Foil.sinkContainer (envExports env))
-  , envModules  = getCompose (Foil.sinkContainer (Compose (envModules env)))
+  , envDeclared = Map.insert full name (Foil.sink1 (envDeclared env))
+  , envExports  = export visibility full name (Foil.sink1 (envExports env))
+  , envModules  = getCompose (Foil.sink1 (Compose (envModules env)))
   , envDisplay  = Foil.addNameBinder binder full (envDisplay env)
-  , envClosedOver = getCompose (Foil.sinkContainer (Compose (envClosedOver env)))
+  , envClosedOver = getCompose (Foil.sink1 (Compose (envClosedOver env)))
   }
   where
     name = Foil.nameOf binder
@@ -486,13 +486,13 @@ mergeEnvs union scope envA envB = Env
   , envClosedOver = Map.empty
   }
 
--- | 'Foil.sinkContainer', with the target index determined by a scope the
+-- | 'Foil.sink1', with the target index determined by a scope the
 -- caller already holds, so that the wanted constraints match the givens of a
 -- linking continuation.
 sunkTo
   :: (Functor f, Foil.Sinkable e, Foil.DExt n l)
   => Foil.Scope l -> f (e n) -> f (e l)
-sunkTo _scope = Foil.sinkContainer
+sunkTo _scope = Foil.sink1
 
 -- | Record what a module exported, once it is checked.
 finishModule :: Raw.VarIdent -> Env l -> Env l

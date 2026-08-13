@@ -76,6 +76,22 @@ jobs:
             haskell/lambda-pi/src/Language/LambdaPi/Syntax/Lex.hs
             haskell/lambda-pi/src/Language/LambdaPi/Syntax/Par.hs
 
+  hlint:
+    name: HLint (project hints only)
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🧰 Setup HLint
+        uses: haskell-actions/hlint-setup@v2
+
+      # Only the project's own hints (.hlint.yaml) are enforced, not the
+      # default hlint hint set. Generated parsers are excluded via git
+      # ls-files plus the /Syntax/ filter.
+      - name: Check for elementwise sinks
+        run: git ls-files 'haskell/*.hs' | grep -v '/Syntax/' | xargs hlint --only "Use sink1" --only "Use sink2"
+
   docs:
     needs: [tests]
     if: ${{ github.ref_name == 'main' }}

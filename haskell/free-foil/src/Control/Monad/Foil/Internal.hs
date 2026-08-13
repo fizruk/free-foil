@@ -49,8 +49,10 @@ import           Control.DeepSeq    (NFData (..))
 import           Data.Bifunctor
 import           Data.Coerce        (coerce)
 import           Data.Functor.Compose (Compose (..))
+import           Data.Bifunctor.Tannen (Tannen (..))
 import           Data.IntMap
 import qualified Data.IntMap        as IntMap
+import qualified Data.Map
 import           Data.IntSet
 import qualified Data.IntSet        as IntSet
 import           Data.Kind          (Type)
@@ -66,6 +68,7 @@ import Control.Monad.Foil.Internal.ValidNameBinders
 -- >>> :set -Wno-simplifiable-class-constraints
 -- >>> import qualified Data.Map as Map
 -- >>> import qualified Data.IntSet as IntSet
+-- >>> import Data.Bifunctor.Tannen
 
 -- * Safe types and operations
 
@@ -966,10 +969,57 @@ instance (Functor f, Sinkable e) => Sinkable (Compose f e) where
 -- In fact, once 'sinkabilityProof' typechecks,
 -- it is safe to 'sink' by coercion.
 -- See Section 3.5 in [«The Foil: Capture-Avoiding Substitution With No Sharp Edges»](https://doi.org/10.1145/3587216.3587224) for the details.
+--
+-- 'sink' is the base of a family of \(O(1)\) coercions, named after
+-- "Data.Functor.Classes": 'sink1' sinks through one 'Functor' layer and
+-- 'sink2' through a 'Bifunctor', each justified by a lifted sinkability
+-- proof of its own.
+--
+-- Tuples and records need no private @unsafeCoerce@ helpers either. A pair
+-- of sinkables is a 'sink2' ('Data.Bifunctor.Tannen.Tannen' for a whole
+-- container of them), a pair whose first component is scope-free is a
+-- 'sink1' through @'Compose' f ((,) a)@, and a record of sinkable fields
+-- derives 'Sinkable' — 'Generics.Kind.TH.deriveGenericK' plus empty
+-- 'SinkableK' and 'Sinkable' instances — after which the whole record sinks
+-- in one coercion. A record holding the 'Scope' itself is rightly refused
+-- (there is no @SinkableK Scope@): the scope must grow when a binder is
+-- entered, so keep it beside the sinkable part, not inside it.
+--
+-- __Do not map 'sink' over a container.__ @'fmap' 'sink'@ walks the whole
+-- spine to apply a per-element coercion, where 'sink1' is one coercion.
+-- Rewrite rules turn the elementwise forms into the corresponding family
+-- member where they fire, but they are best-effort (they need optimisation
+-- on, and 'fmap' at a known functor is often resolved to the instance
+-- method first), so write the family member directly.
 sink :: (Sinkable e, DExt n l) => e n -> e l
 sink = unsafeCoerce
+{-# INLINE [0] sink #-}
 
--- | Sink an entire container of sinkable expressions, in \(O(1)\).
+-- The phase gates on 'sink' and 'sink2' keep them from inlining before
+-- these can match. The map rules activate at phase 1, once list fusion has
+-- backed out and rewritten unfused pipelines back to 'map' (the same trick
+-- as base's @map/coerce@). The sink2 rules finish what "bimap/sink" starts:
+-- @map (bimap sink sink)@ first becomes @map sink2@, and a functor around a
+-- 'Bifunctor' is a 'Bifunctor' again ('Tannen'), so that map is one
+-- coercion too.
+--
+-- These rules mirror the hlint hints in @.hlint.yaml@; keep the two lists
+-- in step. The one deliberate difference: @sink '<$>'@ has a hint but no
+-- rule, since the operator inlines to 'fmap' before rules run and
+-- "fmap/sink" covers it, while hlint matches surface syntax.
+{-# RULES
+"map/sink" [1]    Prelude.map sink      = sink1
+"fmap/sink"       fmap sink             = sink1
+"IntMap.map/sink" Data.IntMap.map sink  = sink1
+"Map.map/sink"    Data.Map.map sink     = sink1
+"bimap/sink"      bimap sink sink       = sink2
+"map/sink2" [1]   Prelude.map sink2     = \xs -> runTannen (sink2 (Tannen xs))
+"fmap/sink2"      fmap sink2            = \xs -> runTannen (sink2 (Tannen xs))
+  #-}
+
+-- | Sink an entire container of sinkable expressions, in \(O(1)\): 'sink'
+-- lifted through one 'Functor' layer, justified by the 'Sinkable' instance
+-- of 'Compose'.
 --
 -- The soundness argument for 'sink' extends to a container of sinkables — an
 -- 'Data.IntMap.IntMap' of terms, a 'Data.Map.Map' keyed by something else, a
@@ -978,8 +1028,12 @@ sink = unsafeCoerce
 --
 -- >>> :{
 -- sinkEnv :: DExt n l => Map.Map String (Name n) -> Map.Map String (Name l)
--- sinkEnv = sinkContainer
+-- sinkEnv = sink1
 -- :}
+--
+-- A nested container is one 'Compose' away: @f (g (e n))@ is
+-- @'Compose' f g (e n)@, and the composition is again a 'Functor', so
+-- 'sink1' covers it too.
 --
 -- Two things this does /not/ cover:
 --
@@ -988,8 +1042,48 @@ sink = unsafeCoerce
 -- * A 'NameMap' must stay __total__ on the names in scope ('lookupName' errors
 --   otherwise), so sinking one has to be paired with adding the new binder's
 --   entry (see 'addNameBinder').
+sink1 :: (Functor f, Sinkable e, DExt n l) => f (e n) -> f (e l)
+sink1 = getCompose . sink . Compose
+
+-- | The name 'sink1' had before the family existed.
 sinkContainer :: (Functor f, Sinkable e, DExt n l) => f (e n) -> f (e l)
-sinkContainer = getCompose . sink . Compose
+sinkContainer = sink1
+{-# DEPRECATED sinkContainer "Use sink1, its name in the sink family" #-}
+
+-- | The sinkability proof lifted through a 'Bifunctor', with one renaming
+-- per slot. Once this typechecks, sinking both slots at once is a coercion;
+-- 'sink2' is to this proof exactly what 'sink' is to 'sinkabilityProof'.
+sinkabilityProof2
+  :: (Bifunctor p, Sinkable e1, Sinkable e2)
+  => (Name n -> Name n')    -- ^ Map names of scope @n@ into scope @n'@.
+  -> (Name m -> Name m')    -- ^ Map names of scope @m@ into scope @m'@.
+  -> p (e1 n) (e2 m)
+  -> p (e1 n') (e2 m')
+sinkabilityProof2 rename1 rename2 =
+  bimap (sinkabilityProof rename1) (sinkabilityProof rename2)
+
+-- | Sink both slots of a 'Bifunctor' of sinkables, in \(O(1)\), the two
+-- scopes moving independently: the shape of 'Data.Functor.Classes.liftEq2',
+-- with a coercion in place of each of the two functions.
+--
+-- >>> :{
+-- sinkBoth :: (DExt n n', DExt m m') => (Name n, Name m) -> (Name n', Name m')
+-- sinkBoth = sink2
+-- :}
+--
+-- A container of such pairs is a 'Bifunctor' again, via
+-- 'Data.Bifunctor.Tannen.Tannen', so a list of pairs of names — the shape an
+-- α-equivalence test threads — also sinks in one coercion:
+--
+-- >>> :{
+-- sinkPairs :: (DExt n n', DExt m m') => [(Name n, Name m)] -> [(Name n', Name m')]
+-- sinkPairs = runTannen . sink2 . Tannen
+-- :}
+sink2
+  :: (Bifunctor p, Sinkable e1, Sinkable e2, DExt n n', DExt m m')
+  => p (e1 n) (e2 m) -> p (e1 n') (e2 m')
+sink2 = unsafeCoerce
+{-# INLINE [0] sink2 #-}
 
 -- | Extend renaming when going under a 'CoSinkable' pattern (generalized binder).
 -- Note that the scope under pattern is independent of the codomain of the renaming.

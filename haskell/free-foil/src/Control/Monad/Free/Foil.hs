@@ -463,7 +463,7 @@ tryConvertToASTWith toSig fromRawPattern getScopedTerm = go
       fromRawPattern scope names pat $ \binder' names' ->
         ScopedAST binder'
           <$> go (Foil.extendScopePattern binder' scope) names'
-                 (Foil.sinkContainer terms) (getScopedTerm scopedTerm)
+                 (Foil.sink1 terms) (getScopedTerm scopedTerm)
 
 -- | Convert a raw term into a scope-safe term, calling 'error' on an
 -- identifier that does not resolve.
