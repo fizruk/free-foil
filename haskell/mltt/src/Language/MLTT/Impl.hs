@@ -1,12 +1,14 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveFoldable      #-}
-{-# LANGUAGE DeriveFunctor       #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE DeriveTraversable   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveFoldable             #-}
+{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DeriveTraversable          #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 -- | The MLTT interpreter: the generated syntax, the evaluator, the type checker
 -- and the resolver glued into a program that reads modules.
 --
@@ -51,6 +53,7 @@ import           Data.Functor.Identity        (Identity (..))
 import           Control.Monad.Free.Foil      (AST (Var), UnresolvedName (..))
 import           Data.List                    (foldl', intercalate)
 import           Data.Map                     (Map)
+import           Data.String                  (IsString)
 import           Data.Maybe                   (listToMaybe)
 import qualified Data.Map                     as Map
 import qualified Data.Set                     as Set
@@ -66,6 +69,7 @@ import           Language.MLTT.Typecheck
 -- $setup
 -- >>> :set -XOverloadedStrings
 -- >>> :set -XDataKinds
+-- >>> import Language.MLTT.Impl.Generated (sourceLines)
 
 -- * The elaboration environment
 
@@ -139,22 +143,46 @@ extendEnv ctx binder full visibility env = Env
 
 -- | Print a term, showing top-level definitions by name and bound variables by
 -- their index.
-display :: Foil.Distinct n => Env n -> Term n -> String
-display env = showTermWith intToVarIdent (envDisplay env)
+display :: Foil.Distinct n => Env n -> Term n -> RenderedTerm
+display env = RenderedTerm . showTermWith intToVarIdent (envDisplay env)
 
 -- * Results
 
+-- | A name as shown to the user: a fully qualified spelling, not a
+-- 'Foil.Name'. Distinct from 'RenderedTerm' so that the two cannot be mixed
+-- up in a 'CommandResult'.
+newtype RenderedName = RenderedName { renderedName :: String }
+  deriving newtype (Eq, Show, IsString, NFData)
+
+-- | A term as shown to the user, printed by 'display'. Distinct from
+-- 'StoredTerm' in "Language.MLTT.Artifact", which is printed for reading
+-- back rather than for the user.
+newtype RenderedTerm = RenderedTerm { renderedTerm :: String }
+  deriving newtype (Eq, Show, IsString, NFData)
+
+-- | The prose of a failure, whatever layer it came from: a 'ParseError', a
+-- 'TypeError', a 'LinkError' — by the time it reaches a result, it is only
+-- shown.
+type ErrorMessage = String
+
+-- | Render a fully qualified name the way results show it.
+renderVarIdent :: Raw.VarIdent -> RenderedName
+renderVarIdent = RenderedName . prettyVarIdent
+
 -- | What interpreting one declaration produced.
 data CommandResult
-  = EnteredModule String      -- ^ A module was reached in build order.
-  | LoadedModule String       -- ^ A module was loaded from its cached
-                              -- artifact; its @check@ and @compute@ commands
-                              -- are not re-run.
-  | Defined String [String]   -- ^ @def@ succeeded, for the fully qualified name
-                              -- and the module parameters it was discharged over.
-  | Checked String String     -- ^ @check@ succeeded, for a term and its type.
-  | Computed String           -- ^ @compute@ succeeded, with the normal form.
-  | Failed String             -- ^ The declaration was rejected.
+  = EnteredModule RenderedName  -- ^ A module was reached in build order.
+  | LoadedModule RenderedName   -- ^ A module was loaded from its cached
+                                -- artifact; its @check@ and @compute@
+                                -- commands are not re-run.
+  | Defined RenderedName [RenderedName]
+                                -- ^ @def@ succeeded, for the fully qualified
+                                -- name and the module parameters it was
+                                -- discharged over.
+  | Checked RenderedTerm RenderedTerm
+                                -- ^ @check@ succeeded, for a term and its type.
+  | Computed RenderedTerm       -- ^ @compute@ succeeded, with the normal form.
+  | Failed ErrorMessage         -- ^ The declaration was rejected.
   deriving (Eq, Generic, Show)
 
 -- | Forcing a result forces the checking that produced it; the parallel
@@ -170,22 +198,26 @@ succeeded = all $ \case
 -- | Render a result the way the executable prints it.
 renderResult :: CommandResult -> String
 renderResult = \case
-  EnteredModule name -> "module " <> name
-  LoadedModule name  -> "module " <> name <> " (cached)"
-  Defined name []    -> "  ✓ defined " <> name
-  Defined name used  -> "  ✓ defined " <> name
-                          <> " over (" <> intercalate ", " used <> ")"
-  Checked term ty    -> "  ✓ " <> term <> " : " <> ty
-  Computed term      -> "  ↦ " <> term
+  EnteredModule name -> "module " <> renderedName name
+  LoadedModule name  -> "module " <> renderedName name <> " (cached)"
+  Defined name []    -> "  ✓ defined " <> renderedName name
+  Defined name used  -> "  ✓ defined " <> renderedName name
+                          <> " over (" <> intercalate ", " (map renderedName used) <> ")"
+  Checked term ty    -> "  ✓ " <> renderedTerm term <> " : " <> renderedTerm ty
+  Computed term      -> "  ↦ " <> renderedTerm term
   Failed err         -> "  ✗ " <> err
 
 -- * Build order
+
+-- | What ordering or linking a set of modules can report: a missing or
+-- cyclic import, or overlapping reservations.
+type BuildError = String
 
 -- | Order the modules so that every module comes after the ones it imports.
 --
 -- Reports an import of a module that is not present, and an import cycle,
 -- rather than looping or crashing.
-buildOrder :: [Raw.Module] -> Either String [Raw.Module]
+buildOrder :: [Raw.Module] -> Either BuildError [Raw.Module]
 buildOrder modules
   | not (null missing) = Left ("imported module not found: " <> intercalate ", " missing)
   | otherwise = reverse <$> foldM (visit Set.empty) [] (map moduleName modules)
@@ -229,7 +261,7 @@ stripeSize :: Int
 stripeSize = 0x100000
 
 -- | Where the first stripe starts. Below it lies 'localRegion'.
-firstStripeBase :: Int
+firstStripeBase :: Foil.RawName
 firstStripeBase = stripeSize
 
 -- | The region module parameters and elaboration-time binders live in.
@@ -370,7 +402,7 @@ checkModule range env m =
                         (finishModule (moduleName m) (moduleEnv me))
                         (entered : results)
   where
-    entered = EnteredModule (prettyVarIdent (moduleName m))
+    entered = EnteredModule (renderVarIdent (moduleName m))
     -- An import contributes the exporting module's public names, under the
     -- spellings it exported them with. Nothing else crosses a module boundary.
     env' = env
@@ -417,14 +449,14 @@ linkModules
    . CheckedModule c    -- ^ The first unit.
   -> CheckedModule c    -- ^ The second unit.
   -> (forall k. Foil.Distinct k => Env k -> r)
-  -> Either String r
+  -> Either BuildError r
 linkModules a b cont = do
   linked <- linkChecked a b
   withCheckedModule linked (\_ env _ -> Right (cont env))
 
 -- | Link two units into one, keeping the evidence, so the result links
 -- further: a whole build folds through this, wave by wave.
-linkChecked :: CheckedModule c -> CheckedModule c -> Either String (CheckedModule c)
+linkChecked :: CheckedModule c -> CheckedModule c -> Either BuildError (CheckedModule c)
 linkChecked (CheckedModule extA envA rsA) (CheckedModule extB envB rsB) =
   case Blocks.withDisjointUnion extA extB (ctxScope (envCtx envA)) (ctxScope (envCtx envB))
          (\scope union extK ->
@@ -507,7 +539,7 @@ withParams env (Raw.AParam _loc name rawTy : rest) onErr cont =
     ctx = envCtx env
 
 -- | Elaborate a module's parameter types, reporting the first that fails.
-validateParams :: Foil.Distinct n => Env n -> [Raw.Param] -> Maybe String
+validateParams :: Foil.Distinct n => Env n -> [Raw.Param] -> Maybe TypeError
 validateParams env params = withParams env params Just (\_tele _envP -> Nothing)
 
 -- | Split the visible spellings into a table of names and a table of terms,
@@ -548,13 +580,13 @@ splitVisible envP visible =
 --
 -- With the computed set this cannot arise, since that set is closed. It is the
 -- answer for a caller that supplies a set of its own.
-needsParameters :: [Raw.VarIdent] -> String
+needsParameters :: [Raw.VarIdent] -> TypeError
 needsParameters names =
   "declaration needs module parameters it is not closed over: "
     <> intercalate ", " (map prettyVarIdent names)
 
 -- | Report an identifier that did not resolve, with any near spellings.
-notInScope :: UnresolvedName Raw.VarIdent -> String
+notInScope :: UnresolvedName Raw.VarIdent -> TypeError
 notInScope (UnresolvedName x inScope) =
   case suggestions x inScope of
     []    -> "not in scope: " <> prettyVarIdent x
@@ -670,7 +702,7 @@ withDecls me params path (decl : decls) cont = case decl of
                                   (envClosedOver extended) }
                          in withDecls (ModuleEnv block' env') params path decls $ \me'' rest ->
                               cont me''
-                                (Defined (prettyVarIdent full) (map prettyVarIdent over') : rest)
+                                (Defined (renderVarIdent full) (map renderVarIdent over') : rest)
 
 -- * An interactive session
 
@@ -691,7 +723,7 @@ beginRepl range env = Repl (ModuleEnv (Blocks.beginBlock range) env)
 -- A redefinition allocates a new name and rebinds the spelling, GHCi-style:
 -- a term that already refers to the old binding keeps it, since withholding
 -- a spelling touches no term.
-replStep :: String -> Repl c -> (Repl c, [CommandResult])
+replStep :: SourceText -> Repl c -> (Repl c, [CommandResult])
 replStep input (Repl me) = case parseDecls input of
   Left err -> (Repl me, [Failed ("parse error: " <> err)])
   Right decls ->
@@ -700,14 +732,14 @@ replStep input (Repl me) = case parseDecls input of
 -- | Parse and interpret one source.
 --
 -- >>> let report = mapM_ (putStrLn . renderResult) . either error id . interpret
--- >>> report (unlines ["module M (A : 𝕌) (x : A)", "def k : A → A := λ y ⇒ y", "def one : A := x"])
+-- >>> report (sourceLines ["module M (A : 𝕌) (x : A)", "def k : A → A := λ y ⇒ y", "def one : A := x"])
 -- module M
 --   ✓ defined k over (A)
 --   ✓ defined one over (A, x)
 --
 -- Each declaration is discharged over the parameters it uses and no others, so
 -- what a client sees is a closed definition it applies for itself.
-interpret :: String -> Either String [CommandResult]
+interpret :: SourceText -> Either ParseError [CommandResult]
 interpret input = interpretProgram <$> parseProgram input
 
 -- | Parse and interpret several named sources.
@@ -716,7 +748,7 @@ interpret input = interpretProgram <$> parseProgram input
 -- line of the file it is in rather than against a concatenation of them all.
 -- The modules are pooled afterwards, which is what lets one file import
 -- another.
-interpretSources :: [(FilePath, String)] -> Either String [CommandResult]
+interpretSources :: [(FilePath, SourceText)] -> Either ParseError [CommandResult]
 interpretSources sources = interpretModules . concat <$> traverse parseSource sources
   where
     parseSource (path, input) = case parseProgram input of

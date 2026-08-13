@@ -6,12 +6,13 @@ module Language.MLTT.ModulesSpec (spec) where
 import           Control.Monad     (forM_)
 import           Data.List         (isInfixOf)
 import           Language.MLTT.Impl
+import           Language.MLTT.Impl.Generated (SourceText (..))
 import           Test.Hspec
 
 -- | Interpret a program, reporting a parse error as a failed command so that
 -- every assertion below can be made about the same list.
 run :: String -> [CommandResult]
-run input = case interpret input of
+run input = case interpret (SourceText input) of
   Left err      -> [Failed ("parse error: " <> err)]
   Right results -> results
 
@@ -20,7 +21,7 @@ failures :: [CommandResult] -> [String]
 failures results = [err | Failed err <- results]
 
 -- | The normal forms every @compute@ produced.
-computed :: [CommandResult] -> [String]
+computed :: [CommandResult] -> [RenderedTerm]
 computed results = [term | Computed term <- results]
 
 -- | Two modules: a Prelude with a private helper used by a public definition,

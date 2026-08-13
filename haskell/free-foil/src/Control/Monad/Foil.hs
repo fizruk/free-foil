@@ -26,6 +26,8 @@ module Control.Monad.Foil (
   nameOf,
   namesOfPattern,
   nameId,
+  Id,
+  RawName,
   withFreshBinder,
   withFresh,
   NameRange(..),

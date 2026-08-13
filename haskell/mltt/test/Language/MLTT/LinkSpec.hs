@@ -20,18 +20,19 @@ import           Data.Maybe                   (isJust, isNothing)
 import           Test.Hspec
 
 import           Language.MLTT.Impl
-import           Language.MLTT.Impl.Generated (parseProgram)
+import           Language.MLTT.Impl.Generated (SourceText,
+                                               parseProgram, sourceLines)
 import qualified Language.MLTT.Syntax.Abs     as Raw
 import           Language.MLTT.Typecheck      (ctxScope)
 
-srcI, srcA, srcB, srcC, srcX :: String
-srcI = unlines ["module I", "def base : 𝟙 := tt"]
-srcA = unlines ["module A", "import I", "def a : 𝟙 := base"]
-srcB = unlines ["module B", "import I", "def b : 𝟙 → 𝟙 := λ x ⇒ base"]
-srcC = unlines ["module C", "import A", "import B", "compute b a"]
-srcX = unlines ["module X", "def unrelated : 𝟙 := tt"]
+srcI, srcA, srcB, srcC, srcX :: SourceText
+srcI = sourceLines ["module I", "def base : 𝟙 := tt"]
+srcA = sourceLines ["module A", "import I", "def a : 𝟙 := base"]
+srcB = sourceLines ["module B", "import I", "def b : 𝟙 → 𝟙 := λ x ⇒ base"]
+srcC = sourceLines ["module C", "import A", "import B", "compute b a"]
+srcX = sourceLines ["module X", "def unrelated : 𝟙 := tt"]
 
-oneModule :: String -> Raw.Module
+oneModule :: SourceText -> Raw.Module
 oneModule src = case parseProgram src of
   Right (Raw.AProgram _ [m]) -> m
   Right _                    -> error "expected exactly one module"
@@ -47,18 +48,18 @@ mX = oneModule srcX
 
 -- Two chains over a shared base: P; Q imports P; R imports Q; S imports P;
 -- T imports S; U imports both chain ends.
-srcP, srcQ, srcR, srcS, srcT, srcU :: String
-srcP = unlines ["module P", "def base : \120793 := tt"]
-srcQ = unlines ["module Q", "import P", "def q : \120793 := base"]
-srcR = unlines ["module R", "import Q", "def r : \120793 := q"]
-srcS = unlines
+srcP, srcQ, srcR, srcS, srcT, srcU :: SourceText
+srcP = sourceLines ["module P", "def base : \120793 := tt"]
+srcQ = sourceLines ["module Q", "import P", "def q : \120793 := base"]
+srcR = sourceLines ["module R", "import Q", "def r : \120793 := q"]
+srcS = sourceLines
   [ "module S (A : \120140) (a : A)"
   , "import P"
   , "def s : A \8594 A := \955 u \8658 a"
   , "def sbase : \120793 := base"
   ]
-srcT = unlines ["module T", "import S", "def t : \120793 \8594 \120793 := s \120793 sbase"]
-srcU = unlines ["module U", "import R", "import T", "compute t r"]
+srcT = sourceLines ["module T", "import S", "def t : \120793 \8594 \120793 := s \120793 sbase"]
+srcU = sourceLines ["module U", "import R", "import T", "compute t r"]
 
 mP, mQ, mR, mS, mT, mU :: Raw.Module
 mP = oneModule srcP

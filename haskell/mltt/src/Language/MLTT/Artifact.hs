@@ -42,6 +42,7 @@ module Language.MLTT.Artifact (
   ArtifactDecl (..),
   ContentHash (..),
   StoredTerm (..),
+  ArtifactError,
   makeArtifact,
   loadArtifact,
   loadArtifactAfter,
@@ -100,12 +101,16 @@ newtype StoredTerm = StoredTerm { storedText :: String }
 newtype ContentHash = ContentHash Integer
   deriving (Eq, Show, Read)
 
+-- | What reading or loading an artifact can report: malformed wire text, a
+-- stale import hash, or a stored term that no longer re-interns.
+type ArtifactError = String
+
 -- | Render an artifact for writing. 'readArtifact' is its inverse.
 renderArtifact :: ModuleArtifact -> String
 renderArtifact = show
 
 -- | Read an artifact back; reports rather than crashes on malformed input.
-readArtifact :: String -> Either String ModuleArtifact
+readArtifact :: String -> Either ArtifactError ModuleArtifact
 readArtifact = readEither
 
 -- | FNV-1a over a string, 64 bits. A build-cache checksum, not a defence.
@@ -159,7 +164,7 @@ makeArtifact name stripe source imports cm = withCheckedModule cm $ \_ env _ ->
         }
 
 -- | The canonical spelling of a bound variable in an artifact.
-boundName :: Int -> Raw.VarIdent
+boundName :: Foil.RawName -> Raw.VarIdent
 boundName i = Raw.VarIdent ("l" <> show i)
 
 -- | What the content hash covers: everything semantically relevant. The
@@ -188,7 +193,7 @@ loadArtifact
   -> Foil.NameRange       -- ^ The module's stripe, from this run's registry.
   -> Env c                -- ^ Environment holding what its imports export.
   -> ModuleArtifact
-  -> Either String (CheckedModule c)
+  -> Either ArtifactError (CheckedModule c)
 loadArtifact hashes range env artifact = do
   mapM_ checkImport (artifactImports artifact)
   go (Blocks.beginBlock range) env' (artifactDecls artifact)
@@ -211,7 +216,7 @@ loadArtifact hashes range env artifact = do
       }
 
     go :: Foil.DExt c n
-       => Blocks.Block c n -> Env n -> [ArtifactDecl] -> Either String (CheckedModule c)
+       => Blocks.Block c n -> Env n -> [ArtifactDecl] -> Either ArtifactError (CheckedModule c)
     go block envN [] =
       Right (CheckedModule (Blocks.blockExt block)
                            (finishModule (artifactModule artifact) envN)
@@ -226,7 +231,7 @@ loadArtifact hashes range env artifact = do
 
     -- Parse a stored term and convert it against the environment assembled
     -- so far: this is the re-interning the wire format promises.
-    reintern :: Foil.Distinct n => Env n -> StoredTerm -> Either String (Term n)
+    reintern :: Foil.Distinct n => Env n -> StoredTerm -> Either ArtifactError (Term n)
     reintern envN (StoredTerm input) = do
       raw <- Raw.pTerm (Raw.tokens input)
       case tryToTerm'In localRegion (ctxScope (envCtx envN)) (envDeclared envN) raw of
@@ -244,7 +249,7 @@ loadArtifactAfter
   -> Foil.NameRange       -- ^ The next module's stripe, from this run's registry.
   -> CheckedModule c      -- ^ The chain so far.
   -> ModuleArtifact
-  -> Either String (CheckedModule c)
+  -> Either ArtifactError (CheckedModule c)
 loadArtifactAfter hashes range (CheckedModule ext env results) artifact = do
   cm <- loadArtifact hashes range env artifact
   case cm of

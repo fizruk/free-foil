@@ -15,24 +15,25 @@ import           Test.Hspec
 
 import           Language.MLTT.Artifact
 import           Language.MLTT.Impl
-import           Language.MLTT.Impl.Generated (parseProgram)
+import           Language.MLTT.Impl.Generated (SourceText,
+                                               parseProgram, sourceLines)
 import qualified Language.MLTT.Syntax.Abs     as Raw
 import qualified Language.MLTT.Syntax.Print   as Raw
 
-srcP, srcQ, srcR, srcS, srcT, srcU :: String
-srcP = unlines ["module P", "def base : 𝟙 := tt"]
-srcQ = unlines ["module Q", "import P", "def q : 𝟙 := base"]
-srcR = unlines ["module R", "import Q", "def r : 𝟙 := q"]
-srcS = unlines
+srcP, srcQ, srcR, srcS, srcT, srcU :: SourceText
+srcP = sourceLines ["module P", "def base : 𝟙 := tt"]
+srcQ = sourceLines ["module Q", "import P", "def q : 𝟙 := base"]
+srcR = sourceLines ["module R", "import Q", "def r : 𝟙 := q"]
+srcS = sourceLines
   [ "module S (A : 𝕌) (a : A)"
   , "import P"
   , "def s : A → A := λ u ⇒ a"
   , "def sbase : 𝟙 := base"
   ]
-srcT = unlines ["module T", "import S", "def t : 𝟙 → 𝟙 := s 𝟙 sbase"]
-srcU = unlines ["module U", "import R", "import T", "compute t r"]
+srcT = sourceLines ["module T", "import S", "def t : 𝟙 → 𝟙 := s 𝟙 sbase"]
+srcU = sourceLines ["module U", "import R", "import T", "compute t r"]
 
-oneModule :: String -> Raw.Module
+oneModule :: SourceText -> Raw.Module
 oneModule src = case parseProgram src of
   Right (Raw.AProgram _ [m]) -> m
   Right _                    -> error "expected exactly one module"

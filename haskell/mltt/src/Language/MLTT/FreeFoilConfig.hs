@@ -8,10 +8,11 @@
 module Language.MLTT.FreeFoilConfig where
 
 import           Control.Monad.Free.Foil.TH.MkFreeFoil
+import qualified Control.Monad.Foil                    as Foil
 import qualified Language.MLTT.Syntax.Abs              as Raw
 
--- | Name a bound variable after its underlying integer identifier.
-intToVarIdent :: Int -> Raw.VarIdent
+-- | Name a bound variable after its underlying raw name.
+intToVarIdent :: Foil.RawName -> Raw.VarIdent
 intToVarIdent i = Raw.VarIdent ("x" <> show i)
 
 -- | The variable constructor, with the annotation erased.

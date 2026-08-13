@@ -1,18 +1,20 @@
 {-# OPTIONS_GHC -Wno-orphans -Wno-redundant-constraints #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE DeriveTraversable   #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE PatternSynonyms     #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TemplateHaskell     #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DeriveTraversable          #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE PatternSynonyms            #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TypeFamilies               #-}
 -- | Everything about MLTT that is /generated/ rather than written.
 --
 -- The scope-safe term type, the signature bifunctor, the pattern synonyms and
@@ -87,21 +89,34 @@ instance Foil.UnifiableInPattern Raw.BNFC'Position where
 
 -- * Parsing and printing
 
+-- | Source text as the parser receives it: the contents of a file, of
+-- standard input, or of one interactive step. The 'IsString' instance lets
+-- tests and doctests write literals.
+newtype SourceText = SourceText { sourceText :: String }
+  deriving newtype (Eq, Show, IsString, Semigroup, Monoid)
+
+-- | Assemble a source from its lines, 'unlines'-style.
+sourceLines :: [String] -> SourceText
+sourceLines = SourceText . unlines
+
+-- | What the parser reports when the input is not MLTT.
+type ParseError = String
+
 -- | Parse a raw term, calling 'error' if it does not parse.
-unsafeParse :: ([Raw.Token] -> Either String a) -> String -> a
-unsafeParse parse input =
+unsafeParse :: ([Raw.Token] -> Either ParseError a) -> SourceText -> a
+unsafeParse parse (SourceText input) =
   case parse (Raw.tokens input) of
     Left err -> error ("could not parse an MLTT term: " <> input <> "\n  " <> err)
     Right x  -> x
 
 -- | Parse a raw program: a sequence of modules, laid out.
-parseProgram :: String -> Either String Raw.Program
-parseProgram input = Raw.pProgram (Raw.resolveLayout True (Raw.tokens input))
+parseProgram :: SourceText -> Either ParseError Raw.Program
+parseProgram (SourceText input) = Raw.pProgram (Raw.resolveLayout True (Raw.tokens input))
 
 -- | Parse a run of declarations, laid out as a module body is: what one
 -- interactive input holds.
-parseDecls :: String -> Either String [Raw.Decl]
-parseDecls input = Raw.pListDecl (Raw.resolveLayout True (Raw.tokens input))
+parseDecls :: SourceText -> Either ParseError [Raw.Decl]
+parseDecls (SourceText input) = Raw.pListDecl (Raw.resolveLayout True (Raw.tokens input))
 
 -- |
 -- >>> "λ x ⇒ λ y ⇒ x" :: Term' Raw.BNFC'Position Foil.VoidS
@@ -122,7 +137,7 @@ parseDecls input = Raw.pListDecl (Raw.resolveLayout True (Raw.tokens input))
 -- >>> toTerm'In (Foil.NameRange 50 59) Foil.emptyScope Map.empty (unsafeParse Par.pTerm "λ x ⇒ λ y ⇒ x")
 -- λ x50 ⇒ λ x51 ⇒ x50
 instance IsString (Term' Raw.BNFC'Position Foil.VoidS) where
-  fromString = toTerm' Foil.emptyScope Map.empty . unsafeParse Raw.pTerm
+  fromString = toTerm' Foil.emptyScope Map.empty . unsafeParse Raw.pTerm . SourceText
 
 instance Show (Term' a n) where show = Raw.printTree . fromTerm'
 
