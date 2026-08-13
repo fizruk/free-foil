@@ -97,6 +97,7 @@ test-suite spec
       Control.Monad.Foil.BlocksSpec
       Control.Monad.Foil.NameMapSpec
       Control.Monad.Foil.NameRangeSpec
+      Control.Monad.Foil.SinkableSpec
       Control.Monad.Foil.UnifiablePatternSpec
       Control.Monad.Foil.UnifyNameBindersSpec
       Control.Monad.Free.Foil.AnnotatedSpec

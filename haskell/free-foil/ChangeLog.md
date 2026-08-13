@@ -62,6 +62,8 @@ New:
 
   Rewrite rules turn `map sink`, `fmap sink`, `IntMap.map sink` and `bimap sink sink` into the corresponding family member, so an elementwise sink costs \(O(1)\) in optimised builds even when written the slow way. The rules are best-effort (they need `-O`), so `sink`'s haddock warns against the elementwise forms, and hlint hints (`Use sink1`/`Use sink2` in `.hlint.yaml`, checked in CI) flag them at the source.
 
+  Records need no member of their own, and no private `unsafeCoerce` helper: a record of sinkable fields derives `Sinkable` through `GenericK` (empty `SinkableK` and `Sinkable` instances) and then sinks whole in one coercion. This has worked since 0.3.2 but was undocumented; `sink`'s haddock now says it, and a spec pins it — including that a record holding the `Scope` itself is refused, which is exactly the field a hand-rolled coercion gets wrong.
+
 - `Control.Monad.Foil` exports the `Id` and `RawName` synonyms, so a client can type its raw-name arithmetic (stripe bases, interned identifiers) the way `nameId`'s result already means.
 
 Changed:

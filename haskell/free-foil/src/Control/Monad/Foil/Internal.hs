@@ -973,6 +973,16 @@ instance (Functor f, Sinkable e) => Sinkable (Compose f e) where
 -- 'sink2' through a 'Bifunctor', each justified by a lifted sinkability
 -- proof of its own.
 --
+-- Tuples and records need no private @unsafeCoerce@ helpers either. A pair
+-- of sinkables is a 'sink2' ('Data.Bifunctor.Tannen.Tannen' for a whole
+-- container of them), a pair whose first component is scope-free is a
+-- 'sink1' through @'Compose' f ((,) a)@, and a record of sinkable fields
+-- derives 'Sinkable' — 'Generics.Kind.TH.deriveGenericK' plus empty
+-- 'SinkableK' and 'Sinkable' instances — after which the whole record sinks
+-- in one coercion. A record holding the 'Scope' itself is rightly refused
+-- (there is no @SinkableK Scope@): the scope must grow when a binder is
+-- entered, so keep it beside the sinkable part, not inside it.
+--
 -- __Do not map 'sink' over a container.__ @'fmap' 'sink'@ walks the whole
 -- spine to apply a per-element coercion, where 'sink1' is one coercion.
 -- Rewrite rules turn the elementwise forms into the corresponding family
