@@ -12,9 +12,9 @@
 -- reservation (a 'NameRange', via 'withFreshIn'), so that units checked
 -- independently — in either order, or in parallel — can later be /linked/
 -- without renaming. The evidence this module tracks is 'ExtWithin': scope @l@
--- extends scope @n@ only within a given range. Note that the range bounds the
--- /extension/ and not the scope: the names of @n@ itself (typically, a unit's
--- imports) lie wherever they lie.
+-- extends scope @n@ only within a set of reserved ranges. Note that the
+-- ranges bound the /extension/ and not the scope: the names of @n@ itself
+-- (typically, a unit's imports) lie wherever they lie.
 --
 -- Two units that extend a common scope @c@ within disjoint ranges have
 -- disjoint deltas, so their union is again a scope with distinct names.
@@ -25,13 +25,14 @@
 -- loaded from a cache, rebuild the union scope and re-mint the evidence with
 -- 'checkExtScope' and 'checkScopeUnion'.
 --
--- 'ExtWithin' deliberately has no composition operator. The composite of two
--- extensions is an extension within the convex hull of the two ranges, and
--- the hull may swallow an unrelated reservation, making a later disjointness
--- test fail spuriously. Should linking many units at once prove common, the
--- shape to add is an n-ary 'withDisjointUnion' over a list of deltas —
--- pairwise range checks and one union, minting per-unit evidence in a single
--- step — rather than a fold of the binary one.
+-- The evidence carries a /set/ of ranges so that it composes. Over a single
+-- range there could be no composition: the composite would only be bounded
+-- by the convex hull of the two ranges, and the hull may cover an unrelated
+-- reservation, failing a later disjointness test that should succeed. With a
+-- set, 'composeExtWithin' is exact: the composite's bound is the union of
+-- the two sets. A chain of units, each checked in the scope of the previous
+-- one, thereby presents itself as one unit over the chain's base, and links
+-- against a sibling chain in one 'withDisjointUnion'.
 --
 -- One kind of function here is a trust boundary, and its documentation says
 -- so: 'checkExtScope' and 'checkScopeUnion' compare raw names across
@@ -41,9 +42,10 @@
 module Control.Monad.Foil.Blocks (
   -- * Extension-within-a-range evidence
   ExtWithin,
-  extWithinRange,
+  extWithinRanges,
   extWithinRefl,
   extWithinStep,
+  composeExtWithin,
   -- * Bulk extension of a scope by a range
   withExtendScopeRange,
   -- * Linking
@@ -54,6 +56,7 @@ module Control.Monad.Foil.Blocks (
   unionNameMaps,
 ) where
 
+import           Data.List                   (sortOn)
 import qualified Data.IntMap                 as IntMap
 import qualified Data.IntSet                 as IntSet
 import           Unsafe.Coerce               (unsafeCoerce)
@@ -65,44 +68,84 @@ import           Control.Monad.Foil.Internal
 -- >>> :set -XFlexibleContexts
 -- >>> import Control.Monad.Foil.Internal
 
--- | Evidence that scope @l@ extends scope @n@ only within a reserved range:
--- every name of @l@ that is not a name of @n@ lies inside the range.
+-- | Evidence that scope @l@ extends scope @n@ only within a set of reserved
+-- ranges: every name of @l@ that is not a name of @n@ lies inside one of
+-- them.
 --
--- The runtime content is the range itself, two 'Int's. The evidence is built
--- alongside allocation — 'extWithinRefl' at the start of a unit,
--- 'extWithinStep' at each binder — so each step is a range test and nothing
--- is ever traversed.
-data ExtWithin (n :: S) (l :: S) = UnsafeExtWithin NameRange
+-- The runtime content is the ranges, sorted and disjoint — a handful of
+-- 'Int's, since one unit contributes one range and a chain of units one per
+-- link. The evidence is built alongside allocation ('extWithinRefl' at the
+-- start of a unit, 'extWithinStep' at each binder) and composes along a
+-- chain of scopes with 'composeExtWithin'.
+data ExtWithin (n :: S) (l :: S) = UnsafeExtWithin [NameRange]
 
--- | The reservation an 'ExtWithin' is evidence about.
-extWithinRange :: ExtWithin n l -> NameRange
-extWithinRange (UnsafeExtWithin range) = range
+-- | The reservations an 'ExtWithin' is evidence about: sorted, disjoint,
+-- adjacent ranges coalesced, empty ones dropped.
+extWithinRanges :: ExtWithin n l -> [NameRange]
+extWithinRanges (UnsafeExtWithin ranges) = ranges
 
 -- | A scope extends itself within any range: the extension is empty.
 --
 -- Note that this does /not/ say the range is disjoint from the scope; it is
 -- 'withExtendScopeRange' that checks that, because it allocates blindly.
 extWithinRefl :: NameRange -> ExtWithin n n
-extWithinRefl = UnsafeExtWithin
+extWithinRefl range = UnsafeExtWithin (normaliseRanges [range])
 
--- | Extend the evidence across one more binder, if its name lies inside the
--- range. \(O(1)\).
+-- | Extend the evidence across one more binder, if its name lies inside one
+-- of the ranges. A membership test per range, and a unit rarely has more
+-- than a few.
 --
--- A binder allocated by 'withFreshIn' at this range always passes. A binder
--- allocated elsewhere — 'withFresh', 'withRefreshed' — is rejected with
--- 'Nothing' unless it happens to land inside the range, which is the point:
+-- A binder allocated by 'withFreshIn' at one of these ranges always passes.
+-- A binder allocated elsewhere — 'withFresh', 'withRefreshed' — is rejected
+-- with 'Nothing' unless it happens to land inside them, which is the point:
 -- the evidence cannot be extended past a name that would escape the
--- reservation.
+-- reservations.
 --
 -- >>> let range = NameRange 100 199
--- >>> withFreshIn range emptyScope (\b -> fmap extWithinRange (extWithinStep b (extWithinRefl range)))
--- Just (NameRange {nameRangeLo = 100, nameRangeHi = 199})
+-- >>> withFreshIn range emptyScope (\b -> fmap extWithinRanges (extWithinStep b (extWithinRefl range)))
+-- Just [NameRange {nameRangeLo = 100, nameRangeHi = 199}]
 extWithinStep :: NameBinder l l' -> ExtWithin n l -> Maybe (ExtWithin n l')
-extWithinStep binder (UnsafeExtWithin range@(NameRange lo hi))
-  | lo <= x && x <= hi = Just (UnsafeExtWithin range)
-  | otherwise          = Nothing
+extWithinStep binder (UnsafeExtWithin ranges)
+  | any (\(NameRange lo hi) -> lo <= x && x <= hi) ranges = Just (UnsafeExtWithin ranges)
+  | otherwise = Nothing
   where
     x = nameId (nameOf binder)
+
+-- | Compose evidence along a chain of scopes: if @m@ extends @n@ only within
+-- one set of ranges and @l@ extends @m@ only within another, then @l@
+-- extends @n@ only within their union.
+--
+-- The union is exact, not a hull: no name outside the two sets enters the
+-- bound, so an unrelated reservation lying between them stays linkable.
+-- Adjacent ranges are coalesced, so a chain of units with consecutive
+-- stripes collapses back to a single range.
+--
+-- >>> extWithinRanges (composeExtWithin (extWithinRefl (NameRange 0 9)) (extWithinRefl (NameRange 30 39)))
+-- [NameRange {nameRangeLo = 0, nameRangeHi = 9},NameRange {nameRangeLo = 30, nameRangeHi = 39}]
+-- >>> extWithinRanges (composeExtWithin (extWithinRefl (NameRange 0 9)) (extWithinRefl (NameRange 10 19)))
+-- [NameRange {nameRangeLo = 0, nameRangeHi = 19}]
+composeExtWithin :: ExtWithin n m -> ExtWithin m l -> ExtWithin n l
+composeExtWithin (UnsafeExtWithin rs1) (UnsafeExtWithin rs2) =
+  UnsafeExtWithin (normaliseRanges (rs1 <> rs2))
+
+-- | Sort ranges, drop empty ones, and coalesce overlapping or adjacent ones.
+normaliseRanges :: [NameRange] -> [NameRange]
+normaliseRanges = go . sortOn nameRangeLo . filter nonEmpty
+  where
+    nonEmpty (NameRange lo hi) = lo <= hi
+    go (NameRange lo1 hi1 : r2@(NameRange lo2 hi2) : rs)
+      | lo2 <= hi1                      = go (NameRange lo1 (max hi1 hi2) : rs)
+      | hi1 /= maxBound, lo2 == hi1 + 1 = go (NameRange lo1 hi2 : rs)
+      | otherwise = NameRange lo1 hi1 : go (r2 : rs)
+    go rs = rs
+
+-- | Whether two sorted sets of disjoint ranges share a name. One sweep.
+rangeSetsOverlap :: [NameRange] -> [NameRange] -> Bool
+rangeSetsOverlap (r1@(NameRange lo1 hi1) : rs1) (r2@(NameRange lo2 hi2) : rs2)
+  | hi1 < lo2 = rangeSetsOverlap rs1 (r2 : rs2)
+  | hi2 < lo1 = rangeSetsOverlap (r1 : rs1) rs2
+  | otherwise = True
+rangeSetsOverlap _ _ = False
 
 -- | Extend a scope with the first @k@ names of a range, in one step.
 --
@@ -130,7 +173,7 @@ withExtendScopeRange (UnsafeScope scope) range@(NameRange lo hi) k cont
   | rangeOccupied                = Nothing
   | toInteger k > rangeCapacity  = Nothing
   | otherwise =
-      Just (unsafeExtendedWithin (UnsafeScope scope') binders (UnsafeExtWithin range) cont)
+      Just (unsafeExtendedWithin (UnsafeScope scope') binders (UnsafeExtWithin (normaliseRanges [range])) cont)
   where
     rangeOccupied = case IntSet.lookupGE lo scope of
       Just y  -> y <= hi
@@ -162,16 +205,17 @@ unsafeExtendedWithin scope binders ext cont =
       Ext -> cont scope binders ext
 
 -- | Link two scopes that extend a common scope @c@ within their respective
--- reservations. \(O(1)\) in evidence; the scope union is one 'IntSet.union'.
+-- reservations. The evidence check is one sweep over the two range sets;
+-- the scope union is one 'IntSet.union'.
 --
--- 'Nothing' when the two ranges overlap. The overlap test is soundness, not
--- an optimisation: the deltas @n \\ c@ and @m \\ c@ lie inside their
--- respective ranges, so disjoint ranges are what guarantees that no raw name
--- denotes two different variables in the union. The names the two scopes
--- share are exactly the names of @c@, identified rather than renamed apart,
--- which is what linking two units over a common import must do. With
--- overlapping ranges one raw name could stand for a variable of each side,
--- and the union would conflate them — hence no evidence is produced.
+-- 'Nothing' when the two range sets overlap. The overlap test is soundness,
+-- not an optimisation: the deltas @n \\ c@ and @m \\ c@ lie inside their
+-- respective range sets, so their disjointness is what guarantees that no
+-- raw name denotes two different variables in the union. The names the two
+-- scopes share are exactly the names of @c@, identified rather than renamed
+-- apart, which is what linking two units over a common import must do. With
+-- overlapping reservations one raw name could stand for a variable of each
+-- side, and the union would conflate them; hence no evidence is produced.
 --
 -- Both extension facts are handed to the continuation at once, as
 -- 'withThinnedNameBinderList' does, together with a 'ScopeUnion' witness:
@@ -186,8 +230,8 @@ withDisjointUnion
   -> Scope m        -- ^ The second unit's scope.
   -> (forall k. (Ext n k, Ext m k, Distinct k) => Scope k -> ScopeUnion n m k -> r)
   -> Maybe r
-withDisjointUnion (UnsafeExtWithin r1) (UnsafeExtWithin r2) (UnsafeScope s1) (UnsafeScope s2) cont
-  | rangesOverlap r1 r2 = Nothing
+withDisjointUnion (UnsafeExtWithin rs1) (UnsafeExtWithin rs2) (UnsafeScope s1) (UnsafeScope s2) cont
+  | rangeSetsOverlap rs1 rs2 = Nothing
   | otherwise           = Just (unsafeUnion (UnsafeScope (IntSet.union s1 s2)))
   where
     unsafeUnion :: forall k. Scope k -> r
@@ -218,12 +262,6 @@ checkScopeUnion :: Scope n -> Scope m -> Scope k -> Maybe (ScopeUnion n m k)
 checkScopeUnion (UnsafeScope s1) (UnsafeScope s2) (UnsafeScope s3)
   | IntSet.union s1 s2 == s3 = Just UnsafeScopeUnion
   | otherwise                = Nothing
-
--- | Whether two ranges share a name. An empty range overlaps nothing.
-rangesOverlap :: NameRange -> NameRange -> Bool
-rangesOverlap (NameRange lo1 hi1) (NameRange lo2 hi2)
-  | lo1 > hi1 || lo2 > hi2 = False
-  | otherwise              = lo1 <= hi2 && lo2 <= hi1
 
 -- | Test that every name of one scope is a name of another, and mint the
 -- extension evidence if so. \(O(n+m)\) ('IntSet.isSubsetOf').

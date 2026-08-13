@@ -27,8 +27,8 @@ spec = do
   describe "extWithinStep" $ do
     it "accepts a binder allocated inside the range" $
       Foil.withFreshIn ra Foil.emptyScope $ \b ->
-        fmap extWithinRange (extWithinStep b (extWithinRefl ra))
-          `shouldBe` Just ra
+        fmap extWithinRanges (extWithinStep b (extWithinRefl ra))
+          `shouldBe` Just [ra]
 
     it "rejects a binder allocated outside the range" $
       Foil.withFresh Foil.emptyScope $ \b ->  -- allocates the name 0
@@ -39,8 +39,8 @@ spec = do
   describe "withExtendScopeRange" $ do
     it "hands back consecutive binders, the scope, and the evidence" $
       case withExtendScopeRange Foil.emptyScope ra 3 $ \scope binders ext ->
-             (scopeIds scope, rawNameBinderList binders, extWithinRange ext) of
-        Just result -> result `shouldBe` ([100, 101, 102], [100, 101, 102], ra)
+             (scopeIds scope, rawNameBinderList binders, extWithinRanges ext) of
+        Just result -> result `shouldBe` ([100, 101, 102], [100, 101, 102], [ra])
         Nothing     -> expectationFailure "the range was refused"
 
     it "refuses a range the scope already touches" $
@@ -51,6 +51,28 @@ spec = do
     it "refuses more names than the range holds" $
       withExtendScopeRange Foil.emptyScope (NameRange 0 1) 3 (\_ _ _ -> ())
         `shouldBe` Nothing
+
+  describe "composeExtWithin" $ do
+    it "collects a chain's reservations exactly, coalescing adjacent ones" $ do
+      extWithinRanges
+        (composeExtWithin (extWithinRefl (NameRange 0 9)) (extWithinRefl (NameRange 30 39)))
+        `shouldBe` [NameRange 0 9, NameRange 30 39]
+      extWithinRanges
+        (composeExtWithin (extWithinRefl (NameRange 0 9)) (extWithinRefl (NameRange 10 19)))
+        `shouldBe` [NameRange 0 19]
+
+    it "links two chains whose stripes interleave" $
+      -- Chains {10-19, 30-39} and {20-29, 40-49}: the convex hulls overlap,
+      -- the reservations do not. This is the diamond-of-chains shape that a
+      -- single-range evidence could not link.
+      let linked =
+            withExtendScopeRange Foil.emptyScope (NameRange 10 19) 1 $ \s1 _ e1 ->
+              withExtendScopeRange s1 (NameRange 30 39) 1 $ \s2 _ e2 ->
+                withExtendScopeRange Foil.emptyScope (NameRange 20 29) 1 $ \t1 _ f1 ->
+                  withExtendScopeRange t1 (NameRange 40 49) 1 $ \t2 _ f2 ->
+                    withDisjointUnion (composeExtWithin e1 e2) (composeExtWithin f1 f2)
+                      s2 t2 (\s _ -> scopeIds s)
+       in linked `shouldBe` Just (Just (Just (Just (Just [10, 20, 30, 40]))))
 
   describe "withDisjointUnion" $ do
     it "links two units over a shared import scope" $
