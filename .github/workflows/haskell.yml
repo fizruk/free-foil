@@ -29,9 +29,9 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set codepage on Windows
-        if: ${{ runner.os == 'Windows' }}
-        run: chcp 65001
+      # No code-page juggling for Windows here: the test suites set their
+      # output handles to UTF-8 themselves (test/SpecHook.hs in each package),
+      # which also covers redirected output that `chcp` never affected.
 
       - name: Restore Syntax files
         id: restore-syntax-files

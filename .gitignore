@@ -25,6 +25,9 @@ haskell/mltt/src/Language/MLTT/Syntax/Par.y
 # (no trailing slash, so the entry matches the symlink as well as a directory)
 /notes
 
+# An on-disk cache written by `mltt --cache=.mltt-cache`
+.mltt-cache/
+
 scala/free-foil/src/main/scala/.scala-build/
 
 dist
