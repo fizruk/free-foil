@@ -49,8 +49,10 @@ import           Control.DeepSeq    (NFData (..))
 import           Data.Bifunctor
 import           Data.Coerce        (coerce)
 import           Data.Functor.Compose (Compose (..))
+import           Data.Bifunctor.Tannen (Tannen (..))
 import           Data.IntMap
 import qualified Data.IntMap        as IntMap
+import qualified Data.Map
 import           Data.IntSet
 import qualified Data.IntSet        as IntSet
 import           Data.Kind          (Type)
@@ -993,15 +995,26 @@ sink :: (Sinkable e, DExt n l) => e n -> e l
 sink = unsafeCoerce
 {-# INLINE [0] sink #-}
 
--- The phase gate on 'sink' keeps it from inlining before these can match.
--- The map rule activates at phase 1, once list fusion has backed out and
--- rewritten unfused pipelines back to 'map' (the same trick as base's
--- @map/coerce@).
+-- The phase gates on 'sink' and 'sink2' keep them from inlining before
+-- these can match. The map rules activate at phase 1, once list fusion has
+-- backed out and rewritten unfused pipelines back to 'map' (the same trick
+-- as base's @map/coerce@). The sink2 rules finish what "bimap/sink" starts:
+-- @map (bimap sink sink)@ first becomes @map sink2@, and a functor around a
+-- 'Bifunctor' is a 'Bifunctor' again ('Tannen'), so that map is one
+-- coercion too.
+--
+-- These rules mirror the hlint hints in @.hlint.yaml@; keep the two lists
+-- in step. The one deliberate difference: @sink '<$>'@ has a hint but no
+-- rule, since the operator inlines to 'fmap' before rules run and
+-- "fmap/sink" covers it, while hlint matches surface syntax.
 {-# RULES
-"map/sink" [1]    Prelude.map sink     = sink1
-"fmap/sink"       fmap sink            = sink1
-"IntMap.map/sink" Data.IntMap.map sink = sink1
-"bimap/sink"      bimap sink sink      = sink2
+"map/sink" [1]    Prelude.map sink      = sink1
+"fmap/sink"       fmap sink             = sink1
+"IntMap.map/sink" Data.IntMap.map sink  = sink1
+"Map.map/sink"    Data.Map.map sink     = sink1
+"bimap/sink"      bimap sink sink       = sink2
+"map/sink2" [1]   Prelude.map sink2     = \xs -> runTannen (sink2 (Tannen xs))
+"fmap/sink2"      fmap sink2            = \xs -> runTannen (sink2 (Tannen xs))
   #-}
 
 -- | Sink an entire container of sinkable expressions, in \(O(1)\): 'sink'
@@ -1070,6 +1083,7 @@ sink2
   :: (Bifunctor p, Sinkable e1, Sinkable e2, DExt n n', DExt m m')
   => p (e1 n) (e2 m) -> p (e1 n') (e2 m')
 sink2 = unsafeCoerce
+{-# INLINE [0] sink2 #-}
 
 -- | Extend renaming when going under a 'CoSinkable' pattern (generalized binder).
 -- Note that the scope under pattern is independent of the codomain of the renaming.

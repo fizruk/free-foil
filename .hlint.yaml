@@ -3,12 +3,16 @@
 # sink is a coercion, so applying it elementwise rebuilds a container to do
 # nothing; the sink family (sink1 for a Functor layer, sink2 for a
 # Bifunctor, Tannen for a container of pairs) coerces the whole container in
-# O(1). CI greps for exactly these hints (hlint --only "Use sink1" --only
-# "Use sink2").
+# O(1). These hints mirror the rewrite rules in Control.Monad.Foil.Internal;
+# keep the two lists in step. CI greps for exactly these hints
+# (hlint --only "Use sink1" --only "Use sink2").
 - hint: {lhs: map sink x, rhs: sink1 x, name: Use sink1}
 - hint: {lhs: fmap sink x, rhs: sink1 x, name: Use sink1}
 - hint: {lhs: sink <$> x, rhs: sink1 x, name: Use sink1}
-- hint: {lhs: traverse sink x, rhs: pure (sink1 x), name: Use sink1}
+- hint: {lhs: Data.IntMap.map sink x, rhs: sink1 x, name: Use sink1}
+- hint: {lhs: Data.Map.map sink x, rhs: sink1 x, name: Use sink1}
 - hint: {lhs: bimap sink sink x, rhs: sink2 x, name: Use sink2}
 - hint: {lhs: map (bimap sink sink) x, rhs: runTannen (sink2 (Tannen x)), name: Use sink2}
 - hint: {lhs: fmap (bimap sink sink) x, rhs: runTannen (sink2 (Tannen x)), name: Use sink2}
+- hint: {lhs: map sink2 x, rhs: runTannen (sink2 (Tannen x)), name: Use sink2}
+- hint: {lhs: fmap sink2 x, rhs: runTannen (sink2 (Tannen x)), name: Use sink2}
