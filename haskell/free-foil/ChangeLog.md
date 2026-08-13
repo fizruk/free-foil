@@ -66,6 +66,8 @@ New:
 
 - `Control.Monad.Foil` exports the `Id` and `RawName` synonyms, so a client can type its raw-name arithmetic (stripe bases, interned identifiers) the way `nameId`'s result already means.
 
+- `Control.Monad.Foil.Blocks.resumeBlock` resumes allocating from a range once the evidence has grown past what a `Block` tracked by itself — after composing in a loaded unit's evidence, say. The invariant `withFreshInBlock` rests on is checked (the allocation range must lie inside the evidence's ranges), and this is what lets an interactive unit keep allocating in its own reservation after an import enlarges its scope.
+
 Changed:
 
 - `convertToAST` and `convertToScopedAST` are deprecated in favour of `unsafeConvertToAST` and `unsafeConvertToScopedAST`, which are the same functions under names that admit they call `error`. The old names still work.

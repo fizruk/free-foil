@@ -49,6 +49,7 @@ module Control.Monad.Foil.Blocks (
   -- * Blocks in use
   Block,
   beginBlock,
+  resumeBlock,
   blockRange,
   blockExt,
   withFreshInBlock,
@@ -169,6 +170,29 @@ data Block (c :: S) (l :: S) = UnsafeBlock !NameRange (ExtWithin c l)
 -- | Start a unit: no names allocated yet, so the evidence is trivial.
 beginBlock :: NameRange -> Block c c
 beginBlock range = UnsafeBlock range (extWithinRefl range)
+
+-- | Resume allocating from a range once the evidence has grown past what a
+-- 'Block' tracked by itself — after composing in a loaded unit's evidence
+-- with 'composeExtWithin', say, so that an interactive unit can keep
+-- allocating in its own reservation over the enlarged scope.
+--
+-- The invariant 'withFreshInBlock' rests on is checked: the allocation
+-- range must lie inside one of the evidence's ranges (they are normalised,
+-- so covering is containment in a single one), and 'Nothing' says it does
+-- not.
+--
+-- >>> let grown = composeExtWithin (extWithinRefl (NameRange 0 9)) (extWithinRefl (NameRange 10 19))
+-- >>> fmap blockRange (resumeBlock (NameRange 0 9) grown)
+-- Just (NameRange {nameRangeLo = 0, nameRangeHi = 9})
+-- >>> fmap blockRange (resumeBlock (NameRange 30 39) grown)
+-- Nothing
+resumeBlock :: NameRange -> ExtWithin c l -> Maybe (Block c l)
+resumeBlock range@(NameRange lo hi) ext
+  | lo > hi = Nothing
+  | any covers (extWithinRanges ext) = Just (UnsafeBlock range ext)
+  | otherwise = Nothing
+  where
+    covers (NameRange lo' hi') = lo' <= lo && hi <= hi'
 
 -- | The range 'withFreshInBlock' allocates from.
 blockRange :: Block c l -> NameRange
