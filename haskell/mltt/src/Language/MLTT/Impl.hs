@@ -218,17 +218,33 @@ moduleDecls (Raw.AModule _ _ _ _ decls) = decls
 stripeSize :: Int
 stripeSize = 0x100000
 
--- | Where the first stripe starts. Below it lies 'paramRegion'.
+-- | Where the first stripe starts. Below it lies 'localRegion'.
 firstStripeBase :: Int
 firstStripeBase = stripeSize
 
--- | The region module parameters are allocated in.
+-- | The region module parameters and elaboration-time binders live in.
 --
--- It lies below every stripe, so a parameter can never collide with a
--- declaration's name, and parameter indices stay small — a discharged type
--- prints as @Π (x0 : 𝕌) → …@ however many declarations precede it.
-paramRegion :: Foil.NameRange
-paramRegion = Foil.NameRange 0 (firstStripeBase - 1)
+-- It lies below every stripe, so nothing here can collide with a
+-- declaration's name, and the indices stay small — a discharged type prints
+-- as @Π (x0 : 𝕌) → …@ however many declarations precede it. More
+-- importantly, allocation inside the region depends only on the region's own
+-- content, so elaborating a declaration produces the same term whatever else
+-- the ambient scope holds: elaborated terms, and hence artifacts and their
+-- hashes, are canonical across worlds.
+--
+-- The region's budget is spent on syntax, not on computation. Evaluation and
+-- type checking allocate their transient names at the whole scope's
+-- successor, above every stripe, and nothing rests on those; what lands here
+-- is one name per binder /written/ in the declaration being elaborated, plus
+-- the parameters, and the region resets between declarations, since
+-- elaboration binders live inside terms and never enter the module's scope.
+-- So the occupancy bound is the source size of one declaration against a
+-- budget of \(2^{20}\). Were it ever exhausted, 'Foil.withFreshIn' fails
+-- loudly rather than colliding: the size is a liveness constant, not a
+-- soundness assumption, and widening the region relative to the stripes is a
+-- policy change confined to these constants.
+localRegion :: Foil.NameRange
+localRegion = Foil.NameRange 0 (firstStripeBase - 1)
 
 -- | A stripe's position in the registry: which run of 'stripeSize' names a
 -- module draws from. Its own type, so that a stripe index cannot be confused
@@ -434,7 +450,7 @@ data Two a = Two a a
 
 -- | Allocate a module's parameters, extending the environment with them.
 --
--- Parameters are allocated in 'paramRegion', below every stripe, so they can
+-- Parameters are allocated in 'localRegion', below every stripe, so they can
 -- never collide with a declaration's name — which is what used to force them
 -- to be re-allocated per declaration. They are still elaborated afresh for
 -- each declaration, but now only for simplicity: a parameter block is a few
@@ -452,11 +468,11 @@ withParams
   -> r
 withParams env [] _onErr cont = cont TelescopeEmpty env
 withParams env (Raw.AParam _loc name rawTy : rest) onErr cont =
-  case tryToTerm' (ctxScope ctx) (visibleAt [] (envDeclared env)) rawTy of
+  case tryToTerm'In localRegion (ctxScope ctx) (visibleAt [] (envDeclared env)) rawTy of
     Left err -> onErr (notInScope err)
     Right raw ->
       let ty = desugar raw
-       in withVarBinder paramRegion ctx ty $ \ctx' binder ->
+       in withVarBinder localRegion ctx ty $ \ctx' binder ->
             withParams (extendEnv ctx' binder name Private env) rest onErr $
               \tele envP -> cont (TelescopeCons name ty binder tele) envP
   where
@@ -593,7 +609,7 @@ withDecls me params path (decl : decls) cont = case decl of
       => Env p -> f Raw.Term -> (f (Term p) -> r) -> r
     withElaborated envP raws k =
       let (names, terms) = splitVisible envP (visibleAt path (envDeclared envP))
-       in case traverse (tryToTerm'With (ctxScope (envCtx envP)) names terms) raws of
+       in case traverse (tryToTerm'WithIn localRegion (ctxScope (envCtx envP)) names terms) raws of
             Left err -> continue (Failed (notInScope err))
             Right ts -> k (fmap desugar ts)
 

@@ -129,6 +129,27 @@ spec = do
             resultsOf (checkModule (stripeRange (StripeIndex 1)) envP mQ)
               `shouldBe` [EnteredModule "Q", Defined "q" []]
 
+  describe "canonical across worlds" $ do
+    it "produces the same artifact whatever else was checked around it" $
+      -- 'art "S"' comes from the sequential run, where Q was in scope when S
+      -- was checked; here S is checked with only P around. Byte-identical
+      -- artifacts, and hence hashes, are what let a cache survive changes
+      -- elsewhere in the module graph.
+      withCheckedModule (checkModule (stripeRange (StripeIndex 0)) emptyEnv mP) $ \_ envP _ ->
+        makeArtifact (moduleName mS) (StripeIndex 3)
+            [(moduleName mP, artifactHash (art "P"))]
+            (checkModule (stripeRange (StripeIndex 3)) envP mS)
+          `shouldBe` art "S"
+
+    it "a loaded module serialises back to the very same artifact" $
+      let roundTrip = do
+            cmP <- loadArtifact Map.empty (stripeRange (StripeIndex 0)) emptyEnv (art "P")
+            withCheckedModule cmP $ \_ envP _ -> do
+              cmS <- loadArtifact (hashesOf ["P"]) (stripeRange (StripeIndex 3)) envP (art "S")
+              Right (makeArtifact (moduleName mS) (StripeIndex 3)
+                       [(moduleName mP, artifactHash (art "P"))] cmS)
+       in roundTrip `shouldBe` Right (art "S")
+
   describe "the full diamond from cache" $
     it "loads both chains, links them, and checks the client on top" $
       let run = do
