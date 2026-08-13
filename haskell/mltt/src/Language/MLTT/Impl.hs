@@ -44,10 +44,12 @@ module Language.MLTT.Impl where
 import           Control.Monad                (foldM)
 import qualified Control.Monad.Foil           as Foil
 import qualified Control.Monad.Foil.Blocks    as Blocks
+import           Data.Functor.Compose         (Compose (..))
 import           Data.Functor.Identity        (Identity (..))
 import           Control.Monad.Free.Foil      (AST (Var), UnresolvedName (..))
 import           Data.List                    (foldl', intercalate)
 import           Data.Map                     (Map)
+import           Data.Maybe                   (listToMaybe)
 import qualified Data.Map                     as Map
 import qualified Data.Set                     as Set
 import           Language.MLTT.Eval
@@ -90,15 +92,17 @@ data Env n = Env
     -- ^ What each module checked so far exports.
   , envDisplay  :: Display n Raw.VarIdent
     -- ^ What each top-level name is called.
-  , envClosedOver :: Table (Foil.Name n, [Raw.VarIdent])
-    -- ^ For each declaration of the module being checked, its name and the
-    -- parameters it was closed over. A reference to one of them from inside the
+  , envClosedOver :: Table ([Raw.VarIdent], Foil.Name n)
+    -- ^ For each declaration of the module being checked, the parameters it
+    -- was closed over and its name. A reference to one of them from inside the
     -- same module is put back together with those parameters; see
     -- 'splitVisible'. It is emptied at a module boundary, since a client sees
     -- the closed constant and applies it itself.
     --
     -- The declaration's own 'Foil.Name' is recorded here, rather than looked up
     -- by spelling later, because a module parameter may shadow the spelling.
+    -- It sits second in the pair so that the pair is a 'Functor' over it, and
+    -- the whole table sinks as a coercion (see 'extendEnv').
   }
 
 -- | An empty environment, before any module is checked.
@@ -107,8 +111,11 @@ emptyEnv = Env emptyCtx Map.empty Map.empty Map.empty Foil.emptyNameMap Map.empt
 
 -- | Extend an environment with one top-level definition.
 --
--- Every map is a container of sinkables, so widening them is \(O(1)\); only the
--- new entry is inserted, and only the map of modules has its spine walked.
+-- Every map is a container of sinkables, so widening them is a coercion, and
+-- only the new entry is inserted. The nested containers (the tables of the
+-- module map, the pairs of 'envClosedOver') are sunk through 'Compose', the
+-- same idiom 'Foil.sinkContainer' itself uses one level down, so no spine is
+-- walked anywhere.
 extendEnv
   :: Foil.DExt n l
   => Ctx Raw.BNFC'Position l
@@ -121,9 +128,9 @@ extendEnv ctx binder full visibility env = Env
   { envCtx      = ctx
   , envDeclared = Map.insert full name (Foil.sinkContainer (envDeclared env))
   , envExports  = export visibility full name (Foil.sinkContainer (envExports env))
-  , envModules  = fmap Foil.sinkContainer (envModules env)
+  , envModules  = getCompose (Foil.sinkContainer (Compose (envModules env)))
   , envDisplay  = Foil.addNameBinder binder full (envDisplay env)
-  , envClosedOver = Map.map (\(x, ps) -> (Foil.sink x, ps)) (envClosedOver env)
+  , envClosedOver = getCompose (Foil.sinkContainer (Compose (envClosedOver env)))
   }
   where
     name = Foil.nameOf binder
@@ -386,8 +393,9 @@ linkModules (CheckedModule extA envA _) (CheckedModule extB envB _) cont =
                     (sunkTo scope (ctxDefs (envCtx envB))))
               , envDeclared = Map.empty
               , envExports  = Map.empty
-              , envModules  = Map.union (Map.map (sunkTo scope) (envModules envA))
-                                        (Map.map (sunkTo scope) (envModules envB))
+              , envModules  = Map.union
+                  (getCompose (sunkTo scope (Compose (envModules envA))))
+                  (getCompose (sunkTo scope (Compose (envModules envB))))
               , envDisplay  = Blocks.unionNameMaps union (envDisplay envA) (envDisplay envB)
               , envClosedOver = Map.empty
               }) of
@@ -477,7 +485,7 @@ splitVisible envP visible =
     closedOver = Map.elems (envClosedOver envP)
 
     expand name
-      | Just ps@(_ : _) <- lookup name closedOver
+      | Just ps@(_ : _) <- listToMaybe [ps' | (ps', x) <- closedOver, x == name]
       , Just args <- traverse (`Map.lookup` envDeclared envP) ps
       = Just (foldl' apply (Var name) args)
       | otherwise = Nothing
@@ -594,11 +602,11 @@ withDecls ext env range params path (decl : decls) cont = case decl of
                           Nothing -> error "impossible: a definition escaped its module's stripe"
                           Just extd ->
                             let full = qualify path name
-                                env' = (extendEnv ctx' binder full visibility env)
+                                extended = extendEnv ctx' binder full visibility env
+                                env' = extended
                                   { envClosedOver = Map.insert full
-                                      (Foil.nameOf binder, over')
-                                      (Map.map (\(x, ps) -> (Foil.sink x, ps))
-                                               (envClosedOver env)) }
+                                      (over', Foil.nameOf binder)
+                                      (envClosedOver extended) }
                              in withDecls extd env' range params path decls $ \ext' env'' rest ->
                                   cont ext' env''
                                     (Defined (prettyVarIdent full) (map prettyVarIdent over') : rest)
