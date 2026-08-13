@@ -52,6 +52,14 @@ spec = do
       withExtendScopeRange Foil.emptyScope (NameRange 0 1) 3 (\_ _ _ -> ())
         `shouldBe` Nothing
 
+  describe "withFreshInBlock" $
+    it "allocates from the range, stepping the evidence in the same motion" $
+      withFreshInBlock (beginBlock (NameRange 7 9)) Foil.emptyScope $ \b1 block1 ->
+        withFreshInBlock block1 (Foil.extendScope b1 Foil.emptyScope) $ \b2 block2 -> do
+          Foil.nameId (Foil.nameOf b1) `shouldBe` 7
+          Foil.nameId (Foil.nameOf b2) `shouldBe` 8
+          extWithinRanges (blockExt block2) `shouldBe` [NameRange 7 9]
+
   describe "composeExtWithin" $ do
     it "collects a chain's reservations exactly, coalescing adjacent ones" $ do
       extWithinRanges

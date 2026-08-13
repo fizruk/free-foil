@@ -46,6 +46,12 @@ module Control.Monad.Foil.Blocks (
   extWithinRefl,
   extWithinStep,
   composeExtWithin,
+  -- * Blocks in use
+  Block,
+  beginBlock,
+  blockRange,
+  blockExt,
+  withFreshInBlock,
   -- * Bulk extension of a scope by a range
   withExtendScopeRange,
   -- * Linking
@@ -146,6 +152,51 @@ rangeSetsOverlap (r1@(NameRange lo1 hi1) : rs1) (r2@(NameRange lo2 hi2) : rs2)
   | hi2 < lo1 = rangeSetsOverlap (r1 : rs1) rs2
   | otherwise = True
 rangeSetsOverlap _ _ = False
+
+-- | A reservation in use: the range fresh names are allocated from, paired
+-- with the evidence that everything allocated since the base scope @c@ lies
+-- within the unit's ranges.
+--
+-- The pairing keeps an invariant a caller would otherwise maintain by hand:
+-- the allocation range is among the evidence's ranges, so stepping the
+-- evidence at a freshly allocated name cannot fail, and 'withFreshInBlock'
+-- is total. Note that the two components are not redundant in general: the
+-- evidence is a normalised set (sorted, coalesced by 'composeExtWithin')
+-- bounding the whole extension, and once units are composed the range to
+-- allocate from can no longer be read off it.
+data Block (c :: S) (l :: S) = UnsafeBlock !NameRange (ExtWithin c l)
+
+-- | Start a unit: no names allocated yet, so the evidence is trivial.
+beginBlock :: NameRange -> Block c c
+beginBlock range = UnsafeBlock range (extWithinRefl range)
+
+-- | The range 'withFreshInBlock' allocates from.
+blockRange :: Block c l -> NameRange
+blockRange (UnsafeBlock range _) = range
+
+-- | The evidence accumulated so far: what a finished unit hands to
+-- 'withDisjointUnion', or to 'composeExtWithin' for the next unit of a
+-- chain.
+blockExt :: Block c l -> ExtWithin c l
+blockExt (UnsafeBlock _ ext) = ext
+
+-- | Allocate a fresh name in the block's range, stepping the evidence in
+-- the same motion. Fails with 'error' only on an exhausted range, exactly
+-- as 'withFreshIn' does.
+--
+-- >>> withFreshInBlock (beginBlock (NameRange 7 9)) emptyScope (\b block -> (nameId (nameOf b), extWithinRanges (blockExt block)))
+-- (7,[NameRange {nameRangeLo = 7, nameRangeHi = 9}])
+withFreshInBlock
+  :: Distinct l
+  => Block c l  -- ^ The block to allocate from.
+  -> Scope l    -- ^ The ambient scope.
+  -> (forall l'. DExt l l' => NameBinder l l' -> Block c l' -> r)
+  -> r
+withFreshInBlock (UnsafeBlock range ext) scope cont =
+  withFreshIn range scope $ \binder ->
+    case extWithinStep binder ext of
+      Just ext' -> cont binder (UnsafeBlock range ext')
+      Nothing   -> error "impossible: withFreshIn allocated outside its own range"
 
 -- | Extend a scope with the first @k@ names of a range, in one step.
 --
