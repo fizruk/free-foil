@@ -182,6 +182,8 @@ data CommandResult
   | Checked RenderedTerm RenderedTerm
                                 -- ^ @check@ succeeded, for a term and its type.
   | Computed RenderedTerm       -- ^ @compute@ succeeded, with the normal form.
+  | Imported RenderedName       -- ^ An interactive @import@ brought a
+                                -- module's exports into the session.
   | Failed ErrorMessage         -- ^ The declaration was rejected.
   deriving (Eq, Generic, Show)
 
@@ -205,6 +207,7 @@ renderResult = \case
                           <> " over (" <> intercalate ", " (map renderedName used) <> ")"
   Checked term ty    -> "  ✓ " <> renderedTerm term <> " : " <> renderedTerm ty
   Computed term      -> "  ↦ " <> renderedTerm term
+  Imported name      -> "  ✓ imported " <> renderedName name
   Failed err         -> "  ✗ " <> err
 
 -- * Build order
