@@ -123,6 +123,7 @@ test-suite spec
   other-modules:
       Language.LambdaPi.Impl.FoilSpec
       Language.LambdaPi.Impl.FreeFoilSpec
+      SpecHook
       Paths_lambda_pi
   hs-source-dirs:
       test

@@ -139,6 +139,7 @@ test-suite spec
       Language.MLTT.ModulesSpec
       Language.MLTT.ParametersSpec
       Language.MLTT.ReplSpec
+      SpecHook
       Paths_mltt
   hs-source-dirs:
       test

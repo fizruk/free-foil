@@ -119,6 +119,7 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      SpecHook
       Paths_soas
   hs-source-dirs:
       test
