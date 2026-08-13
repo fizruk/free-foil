@@ -1,7 +1,7 @@
 module Main where
 
-import Language.MLTT.Impl  (defaultMain)
+import Language.MLTT.Build (buildMain)
 import System.Environment (getArgs)
 
 main :: IO ()
-main = defaultMain =<< getArgs
+main = buildMain =<< getArgs

@@ -75,10 +75,6 @@ registry = Map.fromList
   [ (moduleName mI, StripeIndex 0), (moduleName mA, StripeIndex 1)
   , (moduleName mB, StripeIndex 2) ]
 
--- | The results a checked module reported.
-resultsOf :: CheckedModule c -> [CommandResult]
-resultsOf cm = withCheckedModule cm (\_ _ rs -> rs)
-
 -- | The raw name of everything a checked module can refer to, by spelling.
 declaredIds :: CheckedModule c -> [(Raw.VarIdent, Int)]
 declaredIds cm = withCheckedModule cm $ \_ env _ ->

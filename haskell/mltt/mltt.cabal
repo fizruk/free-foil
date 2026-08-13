@@ -36,6 +36,7 @@ custom-setup
 library
   exposed-modules:
       Language.MLTT.Artifact
+      Language.MLTT.Build
       Language.MLTT.Eval
       Language.MLTT.FreeFoilConfig
       Language.MLTT.Impl
@@ -64,6 +65,8 @@ library
     , bifunctors
     , containers
     , deepseq
+    , directory
+    , filepath
     , free-foil >=0.3.3
     , kind-generics-th
     , template-haskell
@@ -88,6 +91,8 @@ executable mltt
     , bifunctors
     , containers
     , deepseq
+    , directory
+    , filepath
     , free-foil >=0.3.3
     , kind-generics-th
     , mltt
@@ -113,7 +118,9 @@ test-suite doctests
     , bifunctors
     , containers
     , deepseq
+    , directory
     , doctest-parallel
+    , filepath
     , free-foil >=0.3.3
     , kind-generics-th
     , mltt
@@ -126,6 +133,7 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
       Language.MLTT.ArtifactSpec
+      Language.MLTT.BuildSpec
       Language.MLTT.ImplSpec
       Language.MLTT.LinkSpec
       Language.MLTT.ModulesSpec
@@ -146,6 +154,8 @@ test-suite spec
     , bifunctors
     , containers
     , deepseq
+    , directory
+    , filepath
     , free-foil
     , hspec
     , hspec-discover

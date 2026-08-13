@@ -73,6 +73,8 @@ import           Language.MLTT.Typecheck   (Ctx (..), extend)
 data ModuleArtifact = ModuleArtifact
   { artifactModule  :: Raw.VarIdent  -- ^ The module's qualified name.
   , artifactStripe  :: StripeIndex   -- ^ From the registry, at check time.
+  , artifactSource  :: ContentHash   -- ^ Of the module's printed source:
+                                     -- what an incremental rebuild compares.
   , artifactImports :: [(Raw.VarIdent, ContentHash)]
       -- ^ Each import, with its content hash at check time.
   , artifactHash    :: ContentHash   -- ^ Over the declarations below.
@@ -123,10 +125,11 @@ contentHash = ContentHash . foldl' step 0xcbf29ce484222325
 makeArtifact
   :: Raw.VarIdent               -- ^ The module's name.
   -> StripeIndex                -- ^ From the registry.
+  -> ContentHash                -- ^ Of the module's printed source.
   -> [(Raw.VarIdent, ContentHash)] -- ^ Its imports, with their content hashes.
   -> CheckedModule c
   -> ModuleArtifact
-makeArtifact name stripe imports cm = withCheckedModule cm $ \_ env _ ->
+makeArtifact name stripe source imports cm = withCheckedModule cm $ \_ env _ ->
   let Foil.NameRange lo hi = stripeRange stripe
       ctx = envCtx env
       own =
@@ -149,6 +152,7 @@ makeArtifact name stripe imports cm = withCheckedModule cm $ \_ env _ ->
    in ModuleArtifact
         { artifactModule  = name
         , artifactStripe  = stripe
+        , artifactSource  = source
         , artifactImports = imports
         , artifactHash    = contentHash (concatMap renderDecl decls)
         , artifactDecls   = decls

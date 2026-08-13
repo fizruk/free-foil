@@ -59,7 +59,6 @@ import           Language.MLTT.Resolve
 import qualified Language.MLTT.Syntax.Abs     as Raw
 import           Language.MLTT.Telescope
 import           Language.MLTT.Typecheck
-import           System.Exit                  (exitFailure)
 
 -- $setup
 -- >>> :set -XOverloadedStrings
@@ -145,6 +144,9 @@ display env = showTermWith intToVarIdent (envDisplay env)
 -- | What interpreting one declaration produced.
 data CommandResult
   = EnteredModule String      -- ^ A module was reached in build order.
+  | LoadedModule String       -- ^ A module was loaded from its cached
+                              -- artifact; its @check@ and @compute@ commands
+                              -- are not re-run.
   | Defined String [String]   -- ^ @def@ succeeded, for the fully qualified name
                               -- and the module parameters it was discharged over.
   | Checked String String     -- ^ @check@ succeeded, for a term and its type.
@@ -162,6 +164,7 @@ succeeded = all $ \case
 renderResult :: CommandResult -> String
 renderResult = \case
   EnteredModule name -> "module " <> name
+  LoadedModule name  -> "module " <> name <> " (cached)"
   Defined name []    -> "  ✓ defined " <> name
   Defined name used  -> "  ✓ defined " <> name
                           <> " over (" <> intercalate ", " used <> ")"
@@ -330,6 +333,10 @@ withCheckedModule
   -> r
 withCheckedModule (CheckedModule ext env results) cont = cont ext env results
 
+-- | The results a checked module reported.
+resultsOf :: CheckedModule c -> [CommandResult]
+resultsOf cm = withCheckedModule cm (\_ _ results -> results)
+
 -- | Check one module against an environment of already checked modules.
 --
 -- Nothing here depends on any sibling: the module sees only what it imports,
@@ -404,27 +411,41 @@ linkModules
   -> CheckedModule c    -- ^ The second unit.
   -> (forall k. Foil.Distinct k => Env k -> r)
   -> Either String r
-linkModules (CheckedModule extA envA _) (CheckedModule extB envB _) cont =
+linkModules a b cont = do
+  linked <- linkChecked a b
+  withCheckedModule linked (\_ env _ -> Right (cont env))
+
+-- | Link two units into one, keeping the evidence, so the result links
+-- further: a whole build folds through this, wave by wave.
+linkChecked :: CheckedModule c -> CheckedModule c -> Either String (CheckedModule c)
+linkChecked (CheckedModule extA envA rsA) (CheckedModule extB envB rsB) =
   case Blocks.withDisjointUnion extA extB (ctxScope (envCtx envA)) (ctxScope (envCtx envB))
-         (\scope union ->
-            cont Env
-              { envCtx      = Ctx scope
-                  (Blocks.unionNameMaps union
-                    (sunkTo scope (ctxTypes (envCtx envA)))
-                    (sunkTo scope (ctxTypes (envCtx envB))))
-                  (Blocks.unionNameMaps union
-                    (sunkTo scope (ctxDefs (envCtx envA)))
-                    (sunkTo scope (ctxDefs (envCtx envB))))
-              , envDeclared = Map.empty
-              , envExports  = Map.empty
-              , envModules  = Map.union
-                  (getCompose (sunkTo scope (Compose (envModules envA))))
-                  (getCompose (sunkTo scope (Compose (envModules envB))))
-              , envDisplay  = Blocks.unionNameMaps union (envDisplay envA) (envDisplay envB)
-              , envClosedOver = Map.empty
-              }) of
+         (\scope union extK ->
+            CheckedModule extK (mergeEnvs union scope envA envB) (rsA <> rsB)) of
     Nothing -> Left "linking: reserved name ranges overlap"
     Just r  -> Right r
+
+-- | Merge the environments of two linked units; see 'linkModules' for why
+-- nothing but the union is needed.
+mergeEnvs
+  :: (Foil.Ext n k, Foil.Ext m k, Foil.Distinct k)
+  => Blocks.ScopeUnion n m k -> Foil.Scope k -> Env n -> Env m -> Env k
+mergeEnvs union scope envA envB = Env
+  { envCtx      = Ctx scope
+      (Blocks.unionNameMaps union
+        (sunkTo scope (ctxTypes (envCtx envA)))
+        (sunkTo scope (ctxTypes (envCtx envB))))
+      (Blocks.unionNameMaps union
+        (sunkTo scope (ctxDefs (envCtx envA)))
+        (sunkTo scope (ctxDefs (envCtx envB))))
+  , envDeclared = Map.empty
+  , envExports  = Map.empty
+  , envModules  = Map.union
+      (getCompose (sunkTo scope (Compose (envModules envA))))
+      (getCompose (sunkTo scope (Compose (envModules envB))))
+  , envDisplay  = Blocks.unionNameMaps union (envDisplay envA) (envDisplay envB)
+  , envClosedOver = Map.empty
+  }
 
 -- | 'Foil.sinkContainer', with the target index determined by a scope the
 -- caller already holds, so that the wanted constraints match the givens of a
@@ -695,17 +716,3 @@ interpretSources sources = interpretModules . concat <$> traverse parseSource so
       Left err                    -> Left (path <> ":" <> err)
       Right (Raw.AProgram _ms ms) -> Right ms
 
--- | Read modules from the given files, or from standard input if none are
--- given, and interpret them.
-defaultMain :: [FilePath] -> IO ()
-defaultMain paths = do
-  sources <- case paths of
-    [] -> (\input -> [("<stdin>", input)]) <$> getContents
-    _  -> mapM (\path -> (,) path <$> readFile path) paths
-  case interpretSources sources of
-    Left err -> do
-      putStrLn err
-      exitFailure
-    Right results -> do
-      mapM_ (putStrLn . renderResult) results
-      if succeeded results then return () else exitFailure
