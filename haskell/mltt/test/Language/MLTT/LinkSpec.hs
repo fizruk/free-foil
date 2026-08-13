@@ -41,6 +41,25 @@ mB = oneModule srcB
 mC = oneModule srcC
 mX = oneModule srcX
 
+
+-- Two chains over a shared base: P; Q imports P; R imports Q; S imports P;
+-- T imports S; U imports both chain ends.
+srcP, srcQ, srcR, srcS, srcT, srcU :: String
+srcP = unlines ["module P", "def base : \120793 := tt"]
+srcQ = unlines ["module Q", "import P", "def q : \120793 := base"]
+srcR = unlines ["module R", "import Q", "def r : \120793 := q"]
+srcS = unlines ["module S", "import P", "def s : \120793 \8594 \120793 := \955 u \8658 base"]
+srcT = unlines ["module T", "import S", "def t : \120793 \8594 \120793 := \955 u \8658 s u"]
+srcU = unlines ["module U", "import R", "import T", "compute t r"]
+
+mP, mQ, mR, mS, mT, mU :: Raw.Module
+mP = oneModule srcP
+mQ = oneModule srcQ
+mR = oneModule srcR
+mS = oneModule srcS
+mT = oneModule srcT
+mU = oneModule srcU
+
 -- | The registry as the sequential driver would build it, so that the linked
 -- run and 'interpretModules' hand out the same stripes.
 registry :: Registry
@@ -65,8 +84,8 @@ linkedRun swapped =
         cb = checkModule (stripeRange 2) envI mB
         runC envK = goModules registry envK [mC]
         linked
-          | swapped   = linkModules (moduleName mB) cb (moduleName mA) ca runC
-          | otherwise = linkModules (moduleName mA) ca (moduleName mB) cb runC
+          | swapped   = linkModules cb ca runC
+          | otherwise = linkModules ca cb runC
      in fmap (\resultsC -> resultsI <> resultsOf ca <> resultsOf cb <> resultsC) linked
 
 spec :: Spec
@@ -95,12 +114,28 @@ spec = do
           declaredIds (checkModule (stripeRange 1) envX mA)
             `shouldBe` declaredIds (checkModule (stripeRange 1) envI mA)
 
+
+  describe "linking chains" $
+    it "folds each chain into one unit, then links, matching the sequential run" $
+      -- The chains get interleaved stripes (Q = 1, S = 2, R = 3, T = 4), so
+      -- the convex hulls of the two chains overlap while their reservations
+      -- do not: the case that forces evidence over a set of ranges.
+      withCheckedModule (checkModule (stripeRange 0) emptyEnv mP) $ \_ envP resultsP ->
+        let chainQR = checkModuleAfter (stripeRange 3) (checkModule (stripeRange 1) envP mQ) mR
+            chainST = checkModuleAfter (stripeRange 4) (checkModule (stripeRange 2) envP mS) mT
+            chainRegistry = Map.fromList
+              [ (moduleName mP, 0), (moduleName mQ, 1), (moduleName mS, 2)
+              , (moduleName mR, 3), (moduleName mT, 4) ]
+            linked = linkModules chainQR chainST (\envU -> goModules chainRegistry envU [mU])
+         in fmap (\resultsU -> resultsP <> resultsOf chainQR <> resultsOf chainST <> resultsU) linked
+              `shouldBe` Right (interpretModules [mP, mQ, mR, mS, mT, mU])
+
   describe "linking failures" $
     it "refuses two modules whose stripes overlap" $
       withCheckedModule (checkModule (stripeRange 0) emptyEnv mI) $ \_ envI _ ->
         let ca  = checkModule (stripeRange 1) envI mA
             cb' = checkModule (stripeRange 1) envI mB  -- a registry gone wrong
-         in linkModules (moduleName mA) ca (moduleName mB) cb' (\_ -> ())
+         in linkModules ca cb' (\_ -> ())
               `shouldSatisfy` isLeft
 
   describe "re-attachment by inclusion (checkExtScope)" $
@@ -109,7 +144,7 @@ spec = do
         let ca = checkModule (stripeRange 1) envI mA
             cb = checkModule (stripeRange 2) envI mB
          in withCheckedModule ca $ \_ envA _ ->
-              linkModules (moduleName mA) ca (moduleName mB) cb (\envK ->
+              linkModules ca cb (\envK ->
                 ( isJust (Blocks.checkExtScope (ctxScope (envCtx envA)) (ctxScope (envCtx envK)))
                 , isNothing (Blocks.checkExtScope (ctxScope (envCtx envK)) (ctxScope (envCtx envA)))
                 ))

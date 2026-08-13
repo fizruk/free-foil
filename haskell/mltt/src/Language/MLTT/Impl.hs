@@ -336,24 +336,44 @@ checkModule range env m =
       , envClosedOver = Map.empty
       }
 
--- | Link two modules checked independently against the same environment.
+-- | Check a module against the environment of an already checked one,
+-- composing the evidence, so that a chain of modules — each importing the
+-- previous — presents itself as one checked unit over the chain's base.
+-- The chain's results accumulate.
+--
+-- This is what lets two chains over a shared base be checked in parallel
+-- and then linked as wholes: fold each chain with this, then 'linkModules'.
+checkModuleAfter
+  :: Foil.NameRange     -- ^ The next module's stripe, from the registry.
+  -> CheckedModule c    -- ^ The chain so far.
+  -> Raw.Module
+  -> CheckedModule c
+checkModuleAfter range (CheckedModule ext env results) m =
+  case checkModule range env m of
+    CheckedModule ext' env' results' ->
+      CheckedModule (Blocks.composeExtWithin ext ext') env' (results <> results')
+
+-- | Link two units checked independently against the same environment — two
+-- modules, or two chains folded with 'checkModuleAfter'.
 --
 -- The two scopes share exactly the names of the common environment — the
 -- amalgamated part, identified rather than renamed apart — and extend it
--- only within their stripes, so the whole disjointness obligation is one
--- range comparison ('Blocks.withDisjointUnion'). Each side's tables are then
--- sunk into the union, and the total maps are merged with
+-- only within their reservations, so the whole disjointness obligation is
+-- one sweep over two range sets ('Blocks.withDisjointUnion'). Each side's
+-- tables are then sunk into the union, and the total maps are merged with
 -- 'Blocks.unionNameMaps'.
 --
--- The result is an environment a further module can be checked in, exactly
--- as if the two had been checked in sequence.
+-- No module registration happens here: each side's 'envModules' already
+-- records everything it checked ('finishModule'), so the union of the two
+-- suffices. The result is an environment a further module can be checked in,
+-- exactly as if the two sides had been checked in sequence.
 linkModules
   :: forall c r
-   . Raw.VarIdent -> CheckedModule c    -- ^ The first module, by name.
-  -> Raw.VarIdent -> CheckedModule c    -- ^ The second module, by name.
+   . CheckedModule c    -- ^ The first unit.
+  -> CheckedModule c    -- ^ The second unit.
   -> (forall k. Foil.Distinct k => Env k -> r)
   -> Either String r
-linkModules nameA (CheckedModule extA envA _) nameB (CheckedModule extB envB _) cont =
+linkModules (CheckedModule extA envA _) (CheckedModule extB envB _) cont =
   case Blocks.withDisjointUnion extA extB (ctxScope (envCtx envA)) (ctxScope (envCtx envB))
          (\scope union ->
             cont Env
@@ -366,15 +386,12 @@ linkModules nameA (CheckedModule extA envA _) nameB (CheckedModule extB envB _) 
                     (sunkTo scope (ctxDefs (envCtx envB))))
               , envDeclared = Map.empty
               , envExports  = Map.empty
-              , envModules  = Map.insert nameA (sunkTo scope (envExports envA))
-                                (Map.insert nameB (sunkTo scope (envExports envB))
-                                  (Map.union (Map.map (sunkTo scope) (envModules envA))
-                                             (Map.map (sunkTo scope) (envModules envB))))
+              , envModules  = Map.union (Map.map (sunkTo scope) (envModules envA))
+                                        (Map.map (sunkTo scope) (envModules envB))
               , envDisplay  = Blocks.unionNameMaps union (envDisplay envA) (envDisplay envB)
               , envClosedOver = Map.empty
               }) of
-    Nothing -> Left ("linking " <> prettyVarIdent nameA <> " and " <> prettyVarIdent nameB
-                       <> ": their stripes overlap")
+    Nothing -> Left "linking: reserved name ranges overlap"
     Just r  -> Right r
 
 -- | 'Foil.sinkContainer', with the target index determined by a scope the
