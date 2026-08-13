@@ -27,8 +27,10 @@
 -- the cache reconstructs environments, not output.
 --
 -- With @--repl@, the build is followed by an interactive session over its
--- result: every built module's exports are in scope, and the session
--- allocates from the first stripe the build left free.
+-- result. The session starts seeing nothing, like any module: an @import@
+-- brings a built module's exports into scope, or loads a module (and its
+-- missing imports) from the cache mid-session. The session allocates from
+-- the first stripe the build left free.
 module Language.MLTT.Build (
   BuildMode (..),
   BuildOptions (..),
@@ -38,6 +40,7 @@ module Language.MLTT.Build (
   buildSources,
   buildSourcesWith,
   sessionOver,
+  replImport,
   buildMain,
 ) where
 
@@ -47,8 +50,10 @@ import           Control.DeepSeq          (force)
 import           Control.Exception        (evaluate)
 import           Control.Monad            (foldM, forM, forM_, unless, when)
 import qualified Control.Monad.Foil       as Foil
+import qualified Control.Monad.Foil.Blocks as Blocks
 import           Data.Char                (isSpace)
 import           Data.Function            (on)
+import           Data.Functor.Compose     (Compose (..))
 import           Data.List                (foldl', isPrefixOf, sortOn,
                                            stripPrefix)
 import           Data.List.NonEmpty       (NonEmpty (..))
@@ -63,7 +68,8 @@ import           System.IO                (hFlush, isEOF, stdout)
 
 import           Language.MLTT.Artifact
 import           Language.MLTT.Impl
-import           Language.MLTT.Impl.Generated (SourceText (..), parseProgram)
+import           Language.MLTT.Impl.Generated (SourceText (..), parseImports,
+                                               parseProgram)
 import           Language.MLTT.Resolve    (prettyVarIdent)
 import qualified Language.MLTT.Syntax.Abs as Raw
 import qualified Language.MLTT.Syntax.Print as Raw
@@ -90,7 +96,7 @@ buildMain args =
         \registry env results -> do
           mapM_ (putStrLn . renderResult) results
           case optSession opts of
-            Interactive -> True <$ runRepl (sessionOver registry env)
+            Interactive -> True <$ runRepl (optCache opts) (sessionOver registry env)
             BatchOnly   -> pure (succeeded results)
       case result of
         Left err -> putStrLn err >> exitFailure
@@ -124,19 +130,160 @@ parseArgs = fmap done . foldM step (BuildOptions Sequential Nothing BatchOnly []
         | otherwise -> Right opts { optFiles = arg : optFiles opts }
     usage = "\nusage: mltt [--mode=sequential|linked|parallel] [--cache=DIR] [--repl] [FILES...]"
 
--- | Begin a session over a build. Every built module's exports are in scope,
--- as if the session's module imported them all, and names are allocated from
--- the first stripe the build left free — the registry is append-only, so its
+-- | Begin a session over a build. The session is a module that never ends,
+-- and like any module it starts seeing nothing: an @import@ brings a built
+-- module's exports into scope ('replImport'). Names are allocated from the
+-- first stripe the build left free — the registry is append-only, so its
 -- size names that stripe.
 sessionOver :: Foil.Distinct c => Registry -> Env c -> Repl c
 sessionOver registry env =
   beginRepl (stripeRange (StripeIndex (Map.size registry)))
-            env { envDeclared = Map.unions (Map.elems (envModules env)) }
+            env { envDeclared   = Map.empty
+                , envExports    = Map.empty
+                , envClosedOver = Map.empty
+                }
 
--- | The loop itself: one 'replStep' per line, until end of input. Blank
+-- | One interactive @import@.
+--
+-- A module the session's world already holds — built before the session, or
+-- imported earlier — contributes its exports to what the session can name,
+-- and nothing else: the import is resolution, exactly as in a module
+-- header, except that a later import rebinds a spelling an earlier one
+-- brought in, the way a later @def@ rebinds one.
+--
+-- A module the world does not hold is loaded from the cache: the module and
+-- its missing imports, dependency-first, each artifact loaded over the
+-- session's current scope at its recorded stripe, so the session's evidence
+-- grows by the imports' stripes ('Blocks.composeExtWithin') and the session
+-- keeps allocating in its own stripe over the enlarged scope
+-- ('Blocks.resumeBlock'). Staleness is checked exactly as in the builder:
+-- an artifact's recorded import hashes must agree with the artifacts its
+-- imports load from.
+replImport :: Maybe FilePath -> Raw.VarIdent -> Repl c -> IO (Repl c, [CommandResult])
+replImport cacheDir name repl@(Repl me)
+  | Map.member name (envModules (moduleEnv me)) = pure (resolutionImport name repl)
+  | otherwise = case cacheDir of
+      Nothing ->
+        pure (repl, [Failed ("unknown module " <> prettyVarIdent name
+                              <> ", and no cache directory to load it from")])
+      Just dir -> do
+        gathered <- gatherArtifacts dir (moduleEnv me) name
+        pure $ case gathered of
+          Left err                  -> (repl, [Failed err])
+          Right (artifacts, hashes) -> loadImports hashes artifacts name repl
+
+-- | Bring an already-checked module's exports into the session's view.
+resolutionImport :: Raw.VarIdent -> Repl c -> (Repl c, [CommandResult])
+resolutionImport name (Repl (ModuleEnv block env)) =
+  case Map.lookup name (envModules env) of
+    Nothing ->
+      ( Repl (ModuleEnv block env)
+      , [Failed ("unknown module " <> prettyVarIdent name)] )
+    Just exports ->
+      ( Repl (ModuleEnv block env { envDeclared = exports <> envDeclared env })
+      , [Imported (renderVarIdent name)] )
+
+-- | Collect, dependency-first, the artifacts an import has to load: the
+-- module itself and every import of it the session's world does not hold.
+-- For an import the world does hold, only its artifact's content hash is
+-- read, which is what a dependant's staleness check compares against.
+gatherArtifacts
+  :: FilePath -> Env n -> Raw.VarIdent
+  -> IO (Either ErrorMessage ([ModuleArtifact], Map Raw.VarIdent ContentHash))
+gatherArtifacts dir env = go [] ([], Map.empty)
+  where
+    artifactPath name = dir </> prettyVarIdent name <> ".mltta"
+
+    readArtifactFor name = do
+      exists <- doesFileExist (artifactPath name)
+      if not exists
+        then pure (Left ("unknown module " <> prettyVarIdent name
+                          <> ": not in this session's world, and no artifact at "
+                          <> artifactPath name))
+        else either (\e -> Left ("artifact for " <> prettyVarIdent name <> ": " <> e)) Right
+               . readArtifact <$> readFile (artifactPath name)
+
+    go trail acc@(loads, hashes) name
+      | name `elem` trail =
+          pure (Left ("import cycle in cached artifacts through " <> prettyVarIdent name))
+      | Map.member name hashes = pure (Right acc)
+      | Map.member name (envModules env) = fmap recordHash <$> readArtifactFor name
+      | otherwise = do
+          ea <- readArtifactFor name
+          case ea of
+            Left err -> pure (Left err)
+            Right a -> do
+              deeper <- foldM (visit (name : trail)) (Right acc)
+                              [x | (x, _) <- artifactImports a]
+              pure $ case deeper of
+                Left err -> Left err
+                Right (loads', hashes') ->
+                  Right ( loads' <> [a]
+                        , Map.insert (artifactModule a) (artifactHash a) hashes' )
+      where
+        recordHash a = (loads, Map.insert name (artifactHash a) hashes)
+
+    visit trail acc name = case acc of
+      Left err   -> pure (Left err)
+      Right acc' -> go trail acc' name
+
+-- | The session's own view of the world: what it can name, what it has
+-- defined, and what those definitions were closed over. Loading an artifact
+-- rewires exactly these three tables to the loaded module's view, so an
+-- import saves them, sinks them along each load, and puts them back.
+data SessionView n = SessionView
+  { viewDeclared   :: Map Raw.VarIdent (Foil.Name n)
+  , viewExports    :: Map Raw.VarIdent (Foil.Name n)
+  , viewClosedOver :: Map Raw.VarIdent ([Raw.VarIdent], Foil.Name n)
+  }
+
+sessionView :: Env n -> SessionView n
+sessionView env = SessionView (envDeclared env) (envExports env) (envClosedOver env)
+
+sinkView :: Foil.DExt n l => SessionView n -> SessionView l
+sinkView (SessionView decls exports closed) =
+  SessionView (Foil.sink1 decls) (Foil.sink1 exports)
+              (getCompose (Foil.sink1 (Compose closed)))
+
+-- | The importing fold's carrier: the session's block over its base, the
+-- environment after the loads so far, and the session's view sunk along.
+data Importing c where
+  Importing
+    :: Foil.DExt c n
+    => Blocks.Block c n -> Env n -> SessionView n -> Importing c
+
+-- | Load the gathered artifacts over the session, dependency-first, and
+-- bring the imported module's exports into the session's view.
+loadImports
+  :: Map Raw.VarIdent ContentHash -> [ModuleArtifact] -> Raw.VarIdent
+  -> Repl c -> (Repl c, [CommandResult])
+loadImports hashes artifacts name (Repl me) =
+  case foldM step (Importing (moduleBlock me) (moduleEnv me) (sessionView (moduleEnv me))) artifacts of
+    Left err -> (Repl me, [Failed err])
+    Right (Importing block env view) ->
+      let exports = Map.findWithDefault Map.empty name (envModules env)
+          env' = env
+            { envDeclared   = exports <> viewDeclared view
+            , envExports    = viewExports view
+            , envClosedOver = viewClosedOver view
+            }
+       in ( Repl (ModuleEnv block env')
+          , [LoadedModule (renderVarIdent (artifactModule a)) | a <- artifacts]
+              <> [Imported (renderVarIdent name)] )
+  where
+    step (Importing block env view) a = do
+      cm <- loadArtifact hashes (stripeRange (artifactStripe a)) env a
+      withCheckedModule cm $ \ext env' _ ->
+        case Blocks.resumeBlock (Blocks.blockRange block)
+               (Blocks.composeExtWithin (Blocks.blockExt block) ext) of
+          Nothing     -> error "impossible: composition dropped the session's own range"
+          Just block' -> Right (Importing block' env' (sinkView view))
+
+-- | The loop itself: one step per line, until end of input. A line of
+-- imports goes through 'replImport'; anything else is a 'replStep'. Blank
 -- lines are skipped, and results are rendered exactly like the builder's.
-runRepl :: Repl c -> IO ()
-runRepl = loop
+runRepl :: Maybe FilePath -> Repl c -> IO ()
+runRepl cacheDir = loop
   where
     loop s = do
       putStr "mltt> "
@@ -148,10 +295,19 @@ runRepl = loop
           line <- getLine
           if all isSpace line
             then loop s
-            else do
-              let (s', results) = replStep (SourceText line) s
-              mapM_ (putStrLn . renderResult) results
-              loop s'
+            else case parseImports (SourceText line) of
+              Right imports@(_ : _) -> do
+                (s', results) <- foldM importOne (s, []) imports
+                mapM_ (putStrLn . renderResult) results
+                loop s'
+              _ -> do
+                let (s', results) = replStep (SourceText line) s
+                mapM_ (putStrLn . renderResult) results
+                loop s'
+
+    importOne (s, results) (Raw.AnImport _ name) = do
+      (s', more) <- replImport cacheDir name s
+      pure (s', results <> more)
 
 -- | How to schedule the checking.
 data BuildMode = Sequential | Linked | Parallel

@@ -76,10 +76,16 @@ spec = do
       fmap loadedNames r3 `shouldBe` Right ["P", "S", "T", "U"]
 
   describe "a session over a build" $
-    it "sees every built module's exports and continues from there" $ do
+    it "starts seeing nothing; imports bring built modules' exports in" $ do
       r <- buildModulesWith Linked Nothing ms $ \registry env results -> do
         let s0 = sessionOver registry env
-            (s1, r1) = replStep "def mine : 𝟙 := t r" s0
-            (_,  r2) = replStep "compute mine" s1
-        pure (succeeded results, r1, r2)
-      r `shouldBe` Right (True, [Defined "mine" []], [Computed "tt"])
+            (_, r0) = replStep "def nope : 𝟙 := t r" s0
+        (s1, r1) <- replImport Nothing (Raw.VarIdent "T") s0
+        (s2, r2) <- replImport Nothing (Raw.VarIdent "R") s1
+        let (s3, r3) = replStep "def mine : 𝟙 := t r" s2
+            (_,  r4) = replStep "compute mine" s3
+        pure ( succeeded results, null [msg | Failed msg <- r0]
+             , r1, r2, r3, r4 )
+      r `shouldBe` Right ( True, False
+                         , [Imported "T"], [Imported "R"]
+                         , [Defined "mine" []], [Computed "tt"] )

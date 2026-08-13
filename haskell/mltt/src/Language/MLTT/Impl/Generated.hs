@@ -118,6 +118,11 @@ parseProgram (SourceText input) = Raw.pProgram (Raw.resolveLayout True (Raw.toke
 parseDecls :: SourceText -> Either ParseError [Raw.Decl]
 parseDecls (SourceText input) = Raw.pListDecl (Raw.resolveLayout True (Raw.tokens input))
 
+-- | Parse a run of imports, laid out as a module header is: what an
+-- interactive @import@ line holds.
+parseImports :: SourceText -> Either ParseError [Raw.Import]
+parseImports (SourceText input) = Raw.pListImport (Raw.resolveLayout True (Raw.tokens input))
+
 -- |
 -- >>> "λ x ⇒ λ y ⇒ x" :: Term' Raw.BNFC'Position Foil.VoidS
 -- λ x0 ⇒ λ x1 ⇒ x0
