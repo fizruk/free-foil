@@ -73,3 +73,12 @@ spec = do
       r3 <- buildModules Linked (Just dir) ms'
       fmap checkedNames r3 `shouldBe` Right ["Q", "R"]
       fmap loadedNames r3 `shouldBe` Right ["P", "S", "T", "U"]
+
+  describe "a session over a build" $
+    it "sees every built module's exports and continues from there" $ do
+      r <- buildModulesWith Linked Nothing ms $ \registry env results -> do
+        let s0 = sessionOver registry env
+            (s1, r1) = replStep "def mine : 𝟙 := t r" s0
+            (_,  r2) = replStep "compute mine" s1
+        pure (succeeded results, r1, r2)
+      r `shouldBe` Right (True, [Defined "mine" []], [Computed "tt"])
