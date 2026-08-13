@@ -9,6 +9,9 @@
 -- with the shared import identified rather than renamed apart.
 module Language.MLTT.LinkSpec (spec) where
 
+import           Control.Concurrent           (forkIO, newEmptyMVar, putMVar,
+                                               takeMVar)
+import           Control.Exception            (evaluate)
 import qualified Control.Monad.Foil           as Foil
 import qualified Control.Monad.Foil.Blocks    as Blocks
 import           Data.Either                  (isLeft)
@@ -136,6 +139,33 @@ spec = do
             linked = linkModules chainQR chainST (\envU -> goModules chainRegistry envU [mU])
          in fmap (\resultsU -> resultsP <> resultsOf chainQR <> resultsOf chainST <> resultsU) linked
               `shouldBe` Right (interpretModules [mP, mQ, mR, mS, mT, mU])
+
+  describe "checking on separate threads" $
+    it "checks the two chains concurrently and matches the sequential run" $
+      withCheckedModule (checkModule (stripeRange (StripeIndex 0)) emptyEnv mP) $ \_ envP resultsP -> do
+        vQR <- newEmptyMVar
+        vST <- newEmptyMVar
+        _ <- forkIO $ do
+          let chain = checkModuleAfter (stripeRange (StripeIndex 3))
+                        (checkModule (stripeRange (StripeIndex 1)) envP mQ) mR
+          _ <- evaluate (length (show (resultsOf chain)))  -- do the work here
+          putMVar vQR chain
+        _ <- forkIO $ do
+          let chain = checkModuleAfter (stripeRange (StripeIndex 4))
+                        (checkModule (stripeRange (StripeIndex 2)) envP mS) mT
+          _ <- evaluate (length (show (resultsOf chain)))
+          putMVar vST chain
+        chainQR <- takeMVar vQR
+        chainST <- takeMVar vST
+        let chainRegistry = Map.fromList
+              [ (moduleName mP, StripeIndex 0), (moduleName mQ, StripeIndex 1)
+              , (moduleName mS, StripeIndex 2), (moduleName mR, StripeIndex 3)
+              , (moduleName mT, StripeIndex 4) ]
+        case linkModules chainQR chainST (\envU -> goModules chainRegistry envU [mU]) of
+          Left err -> expectationFailure err
+          Right resultsU ->
+            (resultsP <> resultsOf chainQR <> resultsOf chainST <> resultsU)
+              `shouldBe` interpretModules [mP, mQ, mR, mS, mT, mU]
 
   describe "linking failures" $
     it "refuses two modules whose stripes overlap" $
