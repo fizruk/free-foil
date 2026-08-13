@@ -43,6 +43,7 @@ module Language.MLTT.Impl where
 
 import           Control.Monad                (foldM)
 import qualified Control.Monad.Foil           as Foil
+import qualified Control.Monad.Foil.Blocks    as Blocks
 import           Data.Functor.Identity        (Identity (..))
 import           Control.Monad.Free.Foil      (AST (Var), UnresolvedName (..))
 import           Data.List                    (foldl', intercalate)
@@ -273,14 +274,58 @@ interpretModules modules = case buildOrder modules of
 -- against every declaration that would have been checked under it.
 goModules :: Foil.Distinct n => Registry -> Env n -> [Raw.Module] -> [CommandResult]
 goModules _registry _env [] = []
-goModules registry env (m : ms) = EnteredModule (prettyVarIdent (moduleName m)) :
-    case validateParams env' (moduleParams m) of
-      Just err -> Failed err : goModules registry' env ms
-      Nothing ->
-        withDecls env' range (moduleParams m) [] (moduleDecls m) $ \env'' results ->
-          results <> goModules registry' (finishModule (moduleName m) env'') ms
+goModules registry env (m : ms) =
+    withCheckedModule (checkModule range env m) $ \_ext env' results ->
+      results <> goModules registry' env' ms
   where
     (registry', range) = registerModule (moduleName m) registry
+
+-- * Separate checking and linking
+
+-- | A module checked on its own: its final environment, at an existential
+-- scope index, together with the evidence that everything it added to the
+-- scope it started from lies inside its stripe. Two of these over the same
+-- start can be linked; see 'linkModules'.
+data CheckedModule c where
+  CheckedModule
+    :: Foil.DExt c n
+    => Blocks.ExtWithin c n
+    -> Env n
+    -> [CommandResult]
+    -> CheckedModule c
+
+-- | Open a checked module's existential package.
+withCheckedModule
+  :: CheckedModule c
+  -> (forall n. Foil.DExt c n => Blocks.ExtWithin c n -> Env n -> [CommandResult] -> r)
+  -> r
+withCheckedModule (CheckedModule ext env results) cont = cont ext env results
+
+-- | Check one module against an environment of already checked modules.
+--
+-- Nothing here depends on any sibling: the module sees only what it imports,
+-- and its declarations take the names its stripe dictates, so two modules
+-- with no import path between them can be checked in either order — or in
+-- parallel — and produce identical results.
+--
+-- A module's parameters are elaborated once here, before its declarations, so
+-- that a parameter block that does not resolve is reported once rather than
+-- against every declaration that would have been checked under it.
+checkModule
+  :: forall c. Foil.Distinct c
+  => Foil.NameRange     -- ^ The module's stripe, from the registry.
+  -> Env c              -- ^ Environment holding what its imports export.
+  -> Raw.Module
+  -> CheckedModule c
+checkModule range env m =
+  case validateParams env' (moduleParams m) of
+    Just err -> CheckedModule (Blocks.extWithinRefl range) env' [entered, Failed err]
+    Nothing ->
+      withDecls (Blocks.extWithinRefl range) env' range (moduleParams m) [] (moduleDecls m) $
+        \ext env'' results ->
+          CheckedModule ext (finishModule (moduleName m) env'') (entered : results)
+  where
+    entered = EnteredModule (prettyVarIdent (moduleName m))
     -- An import contributes the exporting module's public names, under the
     -- spellings it exported them with. Nothing else crosses a module boundary.
     env' = env
@@ -290,6 +335,55 @@ goModules registry env (m : ms) = EnteredModule (prettyVarIdent (moduleName m)) 
       , envExports = Map.empty
       , envClosedOver = Map.empty
       }
+
+-- | Link two modules checked independently against the same environment.
+--
+-- The two scopes share exactly the names of the common environment — the
+-- amalgamated part, identified rather than renamed apart — and extend it
+-- only within their stripes, so the whole disjointness obligation is one
+-- range comparison ('Blocks.withDisjointUnion'). Each side's tables are then
+-- sunk into the union, and the total maps are merged with
+-- 'Blocks.unionNameMaps'.
+--
+-- The result is an environment a further module can be checked in, exactly
+-- as if the two had been checked in sequence.
+linkModules
+  :: forall c r
+   . Raw.VarIdent -> CheckedModule c    -- ^ The first module, by name.
+  -> Raw.VarIdent -> CheckedModule c    -- ^ The second module, by name.
+  -> (forall k. Foil.Distinct k => Env k -> r)
+  -> Either String r
+linkModules nameA (CheckedModule extA envA _) nameB (CheckedModule extB envB _) cont =
+  case Blocks.withDisjointUnion extA extB (ctxScope (envCtx envA)) (ctxScope (envCtx envB))
+         (\scope union ->
+            cont Env
+              { envCtx      = Ctx scope
+                  (Blocks.unionNameMaps union
+                    (sunkTo scope (ctxTypes (envCtx envA)))
+                    (sunkTo scope (ctxTypes (envCtx envB))))
+                  (Blocks.unionNameMaps union
+                    (sunkTo scope (ctxDefs (envCtx envA)))
+                    (sunkTo scope (ctxDefs (envCtx envB))))
+              , envDeclared = Map.empty
+              , envExports  = Map.empty
+              , envModules  = Map.insert nameA (sunkTo scope (envExports envA))
+                                (Map.insert nameB (sunkTo scope (envExports envB))
+                                  (Map.union (Map.map (sunkTo scope) (envModules envA))
+                                             (Map.map (sunkTo scope) (envModules envB))))
+              , envDisplay  = Blocks.unionNameMaps union (envDisplay envA) (envDisplay envB)
+              , envClosedOver = Map.empty
+              }) of
+    Nothing -> Left ("linking " <> prettyVarIdent nameA <> " and " <> prettyVarIdent nameB
+                       <> ": their stripes overlap")
+    Just r  -> Right r
+
+-- | 'Foil.sinkContainer', with the target index determined by a scope the
+-- caller already holds, so that the wanted constraints match the givens of a
+-- linking continuation.
+sunkTo
+  :: (Functor f, Foil.Sinkable e, Foil.DExt n l)
+  => Foil.Scope l -> f (e n) -> f (e l)
+sunkTo _scope = Foil.sinkContainer
 
 -- | Record what a module exported, once it is checked.
 finishModule :: Raw.VarIdent -> Env l -> Env l
@@ -401,27 +495,29 @@ notInScope (UnresolvedName x inScope) =
 -- @def@ is then discharged over the ones it uses, so that what is added to the
 -- environment lives in the parameter-free scope the module started in.
 withDecls
-  :: forall n r. Foil.Distinct n
-  => Env n
+  :: forall c n r. Foil.Distinct n
+  => Blocks.ExtWithin c n -- ^ Evidence that the scope so far extends the
+                          -- module's starting scope only within its stripe.
+  -> Env n
   -> Foil.NameRange       -- ^ The stripe of the enclosing module.
   -> [Raw.Param]          -- ^ The parameters of the enclosing module.
   -> Path                 -- ^ The namespace path these declarations sit at.
   -> [Raw.Decl]
-  -> (forall l. Foil.DExt n l => Env l -> [CommandResult] -> r)
+  -> (forall l. Foil.DExt n l => Blocks.ExtWithin c l -> Env l -> [CommandResult] -> r)
   -> r
-withDecls env _range _params _path [] cont = cont env []
-withDecls env range params path (decl : decls) cont = case decl of
+withDecls ext env _range _params _path [] cont = cont ext env []
+withDecls ext env range params path (decl : decls) cont = case decl of
 
   Raw.DeclDef loc name over ty value        -> define loc Public name over ty value
   Raw.DeclPrivateDef loc name over ty value -> define loc Private name over ty value
 
   Raw.DeclNamespace _loc name inner ->
-    withDecls env range params (path <> segments name) inner $ \envInner innerResults ->
-      withDecls envInner range params path decls $ \envAfter rest ->
-        cont envAfter (innerResults <> rest)
+    withDecls ext env range params (path <> segments name) inner $ \extInner envInner innerResults ->
+      withDecls extInner envInner range params path decls $ \extAfter envAfter rest ->
+        cont extAfter envAfter (innerResults <> rest)
 
   Raw.DeclOpen _loc name ->
-    withDecls (env { envDeclared = openNamespace (qualify path name) (envDeclared env) })
+    withDecls ext (env { envDeclared = openNamespace (qualify path name) (envDeclared env) })
               range params path decls cont
 
   Raw.DeclCheck _loc rawTerm rawType ->
@@ -444,7 +540,8 @@ withDecls env range params path (decl : decls) cont = case decl of
     universe = Universe Raw.BNFC'NoPosition
 
     -- Continue with the remaining declarations, with one result in front.
-    continue result = withDecls env range params path decls $ \env' rest -> cont env' (result : rest)
+    continue result = withDecls ext env range params path decls $ \ext' env' rest ->
+      cont ext' env' (result : rest)
 
     -- Convert some raw terms, or report the identifiers that do not resolve.
     --
@@ -476,15 +573,18 @@ withDecls env range params path (decl : decls) cont = case decl of
                     Left err -> continue (Failed err)
                     Right () ->
                       withDefinition range (envCtx env) ty' value' $ \ctx' binder ->
-                        let full = qualify path name
-                            env' = (extendEnv ctx' binder full visibility env)
-                              { envClosedOver = Map.insert full
-                                  (Foil.nameOf binder, over')
-                                  (Map.map (\(x, ps) -> (Foil.sink x, ps))
-                                           (envClosedOver env)) }
-                         in withDecls env' range params path decls $ \env'' rest ->
-                              cont env''
-                                (Defined (prettyVarIdent full) (map prettyVarIdent over') : rest)
+                        case Blocks.extWithinStep binder ext of
+                          Nothing -> error "impossible: a definition escaped its module's stripe"
+                          Just extd ->
+                            let full = qualify path name
+                                env' = (extendEnv ctx' binder full visibility env)
+                                  { envClosedOver = Map.insert full
+                                      (Foil.nameOf binder, over')
+                                      (Map.map (\(x, ps) -> (Foil.sink x, ps))
+                                               (envClosedOver env)) }
+                             in withDecls extd env' range params path decls $ \ext' env'' rest ->
+                                  cont ext' env''
+                                    (Defined (prettyVarIdent full) (map prettyVarIdent over') : rest)
 
 -- | Parse and interpret one source.
 --

@@ -125,6 +125,7 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
       Language.MLTT.ImplSpec
+      Language.MLTT.LinkSpec
       Language.MLTT.ModulesSpec
       Language.MLTT.ParametersSpec
       Paths_mltt
