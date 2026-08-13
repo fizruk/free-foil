@@ -11,6 +11,7 @@ import Control.Monad.State
 import Test.Hspec
 import Test.QuickCheck
 import Data.Bifunctor
+import Data.Bifunctor.Tannen
 import Data.Bitraversable
 
 import qualified Control.Monad.Foil.Internal as Foil.Internal
@@ -65,7 +66,7 @@ genAlphaEquivLambdaPis withRefreshed' scope1 scope2 names = sized go
           name2 <- Foil.Internal.UnsafeName <$> choose (1, 1000)
           withRefreshed' scope1 name1 $ \binder1 ->
             withRefreshed' scope2 name2 $ \binder2 -> do
-              let names' = (nameOf binder1, nameOf binder2) : map (bimap sink sink) names
+              let names' = (nameOf binder1, nameOf binder2) : runTannen (sink2 (Tannen names))
                   scope1' = extendScope binder1 scope1
                   scope2' = extendScope binder2 scope2
               (a1, a2) <- go (n `div` 2)
@@ -77,7 +78,7 @@ genAlphaEquivLambdaPis withRefreshed' scope1 scope2 names = sized go
           name2 <- Foil.Internal.UnsafeName <$> choose (1, 1000)
           withRefreshed' scope1 name1 $ \binder1 ->
             withRefreshed' scope2 name2 $ \binder2 -> do
-              let names' = (nameOf binder1, nameOf binder2) : map (bimap sink sink) names
+              let names' = (nameOf binder1, nameOf binder2) : runTannen (sink2 (Tannen names))
                   scope1' = extendScope binder1 scope1
                   scope2' = extendScope binder2 scope2
               (body1, body2) <- resize (max 0 (n - 1)) $ genAlphaEquivLambdaPis withRefreshed' scope1' scope2' names'
@@ -103,7 +104,7 @@ alterNames scope names = go
     goScoped (ScopedAST binder body) =
       case (assertExt binder, assertDistinct binder) of
         (Ext, Distinct) -> ScopedAST binder <$>
-          alterNames (extendScope binder scope) (nameOf binder : map sink names) body
+          alterNames (extendScope binder scope) (nameOf binder : sink1 names) body
 
 instance Arbitrary (LambdaPi VoidS) where
   arbitrary = genLambdaPi emptyScope []

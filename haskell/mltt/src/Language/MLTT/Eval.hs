@@ -108,7 +108,7 @@ extendDefs
   :: (Foil.CoSinkable binder, Foil.DExt n l)
   => binder n l -> Defs a n -> Defs a l
 extendDefs binder defs =
-  Foil.addNameBinders binder (repeat (Def Nothing)) (Foil.sinkContainer defs)
+  Foil.addNameBinders binder (repeat (Def Nothing)) (Foil.sink1 defs)
 
 -- * Reduction
 

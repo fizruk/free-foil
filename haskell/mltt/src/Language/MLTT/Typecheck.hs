@@ -113,8 +113,8 @@ extend
   => Ctx a n -> Foil.NameBinder n l -> Term' a n -> Maybe (Term' a n) -> Ctx a l
 extend ctx binder ty value = Ctx
   { ctxScope = Foil.extendScope binder (ctxScope ctx)
-  , ctxTypes = Foil.addNameBinder binder (Foil.sink ty) (Foil.sinkContainer (ctxTypes ctx))
-  , ctxDefs  = Foil.addNameBinder binder (Def (fmap Foil.sink value)) (Foil.sinkContainer (ctxDefs ctx))
+  , ctxTypes = Foil.addNameBinder binder (Foil.sink ty) (Foil.sink1 (ctxTypes ctx))
+  , ctxDefs  = Foil.addNameBinder binder (Def (Foil.sink1 value)) (Foil.sink1 (ctxDefs ctx))
   }
 
 -- | Reduce a term to weak head normal form in a context.
