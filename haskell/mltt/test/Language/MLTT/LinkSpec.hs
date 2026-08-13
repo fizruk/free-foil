@@ -48,8 +48,13 @@ srcP, srcQ, srcR, srcS, srcT, srcU :: String
 srcP = unlines ["module P", "def base : \120793 := tt"]
 srcQ = unlines ["module Q", "import P", "def q : \120793 := base"]
 srcR = unlines ["module R", "import Q", "def r : \120793 := q"]
-srcS = unlines ["module S", "import P", "def s : \120793 \8594 \120793 := \955 u \8658 base"]
-srcT = unlines ["module T", "import S", "def t : \120793 \8594 \120793 := \955 u \8658 s u"]
+srcS = unlines
+  [ "module S (A : \120140) (a : A)"
+  , "import P"
+  , "def s : A \8594 A := \955 u \8658 a"
+  , "def sbase : \120793 := base"
+  ]
+srcT = unlines ["module T", "import S", "def t : \120793 \8594 \120793 := s \120793 sbase"]
 srcU = unlines ["module U", "import R", "import T", "compute t r"]
 
 mP, mQ, mR, mS, mT, mU :: Raw.Module
