@@ -56,6 +56,8 @@ New:
 
   On the way out, the binding converter gains a naming-parametric sibling (`fromPatternWith` beside `fromPattern`, for a binding type named `Pattern`), taking the binder-naming function instead of baking `intToRawIdentName` in. The same function must name the bound-variable references, or a reference comes out free of its own binder; that mismatch is exactly the bug a serialiser hits with the baked naming, and `mltt` hit it.
 
+- `withDisjointUnion` hands its continuation two more things. The union's own `ExtWithin`: the linked scope extends the common base only within the union of the two range sets, which is exact, so a linked unit is itself linkable and a whole build folds through the one function. And the `Ext c k` constraint, which a caller cannot derive on the spot: obtaining it from `Ext c n` and `Ext n k` is exactly the chain the solver refuses when both sides' paths are in scope, since either given offers a candidate and it commits to neither.
+
 Changed:
 
 - `convertToAST` and `convertToScopedAST` are deprecated in favour of `unsafeConvertToAST` and `unsafeConvertToScopedAST`, which are the same functions under names that admit they call `error`. The old names still work.
