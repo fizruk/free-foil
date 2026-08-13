@@ -644,6 +644,31 @@ withDecls me params path (decl : decls) cont = case decl of
                               cont me''
                                 (Defined (prettyVarIdent full) (map prettyVarIdent over') : rest)
 
+-- * An interactive session
+
+-- | A read–eval–print session: a module that never ends. The session holds
+-- a 'ModuleEnv' at an existential scope index, so each step picks up exactly
+-- where the previous one stopped, allocating from one interactive stripe.
+data Repl c where
+  Repl :: Foil.DExt c n => ModuleEnv c n -> Repl c
+
+-- | Start a session over an environment of already checked (or loaded)
+-- modules, allocating in the given stripe.
+beginRepl :: Foil.Distinct c => Foil.NameRange -> Env c -> Repl c
+beginRepl range env = Repl (ModuleEnv (Blocks.beginBlock range) env)
+
+-- | Feed one input — any run of declarations, including @check@ and
+-- @compute@ — to the session.
+--
+-- A redefinition allocates a new name and rebinds the spelling, GHCi-style:
+-- a term that already refers to the old binding keeps it, since withholding
+-- a spelling touches no term.
+replStep :: String -> Repl c -> (Repl c, [CommandResult])
+replStep input (Repl me) = case parseDecls input of
+  Left err -> (Repl me, [Failed ("parse error: " <> err)])
+  Right decls ->
+    withDecls me [] [] decls $ \me' results -> (Repl me', results)
+
 -- | Parse and interpret one source.
 --
 -- >>> let report = mapM_ (putStrLn . renderResult) . either error id . interpret

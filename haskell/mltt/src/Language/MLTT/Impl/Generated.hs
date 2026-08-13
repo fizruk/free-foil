@@ -98,6 +98,11 @@ unsafeParse parse input =
 parseProgram :: String -> Either String Raw.Program
 parseProgram input = Raw.pProgram (Raw.resolveLayout True (Raw.tokens input))
 
+-- | Parse a run of declarations, laid out as a module body is: what one
+-- interactive input holds.
+parseDecls :: String -> Either String [Raw.Decl]
+parseDecls input = Raw.pListDecl (Raw.resolveLayout True (Raw.tokens input))
+
 -- |
 -- >>> "λ x ⇒ λ y ⇒ x" :: Term' Raw.BNFC'Position Foil.VoidS
 -- λ x0 ⇒ λ x1 ⇒ x0
