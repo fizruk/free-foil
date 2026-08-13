@@ -42,10 +42,11 @@ module Language.MLTT.Build (
 import           Control.Concurrent       (forkIO, newEmptyMVar, putMVar,
                                            takeMVar)
 import           Control.Exception        (evaluate)
-import           Control.Monad            (foldM, forM, forM_, when)
+import           Control.Monad            (foldM, forM, forM_, unless, when)
 import qualified Control.Monad.Foil       as Foil
 import           Data.Char                (isSpace)
-import           Data.List                (groupBy, isPrefixOf, sortOn,
+import           Data.Function            (on)
+import           Data.List                (foldl', groupBy, isPrefixOf, sortOn,
                                            stripPrefix)
 import           Data.Map                 (Map)
 import qualified Data.Map                 as Map
@@ -86,7 +87,7 @@ buildMain args =
           else pure (succeeded results)
       case result of
         Left err -> putStrLn err >> exitFailure
-        Right ok -> if ok then pure () else exitFailure
+        Right ok -> unless ok exitFailure
 
 parseArgs :: [String] -> Either String (BuildMode, Maybe FilePath, Bool, [FilePath])
 parseArgs = fmap done . foldM step (Sequential, Nothing, False, [])
@@ -181,8 +182,8 @@ buildModulesWith mode cacheDir modules k =
     Left err -> pure (Left err)
     Right ordered -> do
       forM_ cacheDir (createDirectoryIfMissing True)
-      let registry = foldl (\r m -> fst (registerModule (moduleName m) r))
-                           emptyRegistry ordered
+      let registry = foldl' (\r m -> fst (registerModule (moduleName m) r))
+                            emptyRegistry ordered
           waves = case mode of
             Sequential -> [[m] | m <- ordered]
             _          -> wavesOf ordered
@@ -274,11 +275,11 @@ buildModulesWith mode cacheDir modules k =
 -- module's wave is one past the deepest wave among its imports, so the
 -- members of a wave are mutually independent.
 wavesOf :: [Raw.Module] -> [[Raw.Module]]
-wavesOf ordered = map (map snd) (groupBy (\a b -> fst a == fst b) (sortOn fst levelled))
+wavesOf ordered = map (map snd) (groupBy ((==) `on` fst) (sortOn fst levelled))
   where
     levelled = [(levelOf m, m) | m <- ordered]
     levels :: Map Raw.VarIdent Int
-    levels = foldl step Map.empty ordered
+    levels = foldl' step Map.empty ordered
     step acc m = Map.insert (moduleName m) (computeLevel acc m) acc
     computeLevel acc m = 1 + maximum
       (0 : [ Map.findWithDefault 0 x acc | Raw.AnImport _ x <- moduleImports m ])
