@@ -71,27 +71,6 @@ data Ctx a n = Ctx
 emptyCtx :: Ctx a Foil.VoidS
 emptyCtx = Ctx Foil.emptyScope Foil.emptyNameMap emptyDefs
 
--- | Extend a context with a top-level definition of a given type and value.
---
--- A definition is an ordinary name in scope whose 'Def' is not 'Nothing', so
--- \(\delta\)-reduction unfolds it and nothing else has to change. Note that this
--- makes a top-level constant a 'Foil.Name' in a growing scope, which is one of
--- the two possible designs for a global environment.
--- The continuation receives the /binder/ rather than just its name, so that a
--- caller can extend a 'Foil.NameMap' of its own alongside the context.
-withDefinition
-  :: Foil.Distinct n
-  => Foil.NameRange       -- ^ The reservation to allocate the name from:
-                          -- the enclosing module's stripe.
-  -> Ctx a n
-  -> Term' a n            -- ^ The type of the definition.
-  -> Term' a n            -- ^ Its value.
-  -> (forall l. Foil.DExt n l => Ctx a l -> Foil.NameBinder n l -> r)
-  -> r
-withDefinition range ctx ty value cont =
-  Foil.withFreshIn range (ctxScope ctx) $ \binder ->
-    cont (extend ctx binder ty (Just value)) binder
-
 -- | Extend a context with a fresh variable of a given type.
 withVar
   :: Foil.Distinct n
@@ -123,6 +102,12 @@ withVarBinder range ctx ty cont = Foil.withFreshIn range (ctxScope ctx) $ \binde
 
 -- | Add one binder to a context. Sinking the two maps is \(O(1)\); only the
 -- new entry is inserted.
+--
+-- A top-level definition goes through this too, with a 'Just' value: it is
+-- an ordinary name in scope whose 'Def' is not 'Nothing', so
+-- \(\delta\)-reduction unfolds it and nothing else has to change. That makes
+-- a top-level constant a 'Foil.Name' in a growing scope, which is one of the
+-- two possible designs for a global environment.
 extend
   :: Foil.DExt n l
   => Ctx a n -> Foil.NameBinder n l -> Term' a n -> Maybe (Term' a n) -> Ctx a l

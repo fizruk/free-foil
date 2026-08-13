@@ -328,9 +328,11 @@ checkModule range env m =
   case validateParams env' (moduleParams m) of
     Just err -> CheckedModule (Blocks.extWithinRefl range) env' [entered, Failed err]
     Nothing ->
-      withDecls (Blocks.extWithinRefl range) env' range (moduleParams m) [] (moduleDecls m) $
-        \ext env'' results ->
-          CheckedModule ext (finishModule (moduleName m) env'') (entered : results)
+      withDecls (ModuleEnv (Blocks.beginBlock range) env') (moduleParams m) [] (moduleDecls m) $
+        \me results ->
+          CheckedModule (Blocks.blockExt (moduleBlock me))
+                        (finishModule (moduleName m) (moduleEnv me))
+                        (entered : results)
   where
     entered = EnteredModule (prettyVarIdent (moduleName m))
     -- An import contributes the exporting module's public names, under the
@@ -509,6 +511,15 @@ notInScope (UnresolvedName x inScope) =
     hints -> "not in scope: " <> prettyVarIdent x
                <> "; did you mean " <> intercalate ", " (map prettyVarIdent hints) <> "?"
 
+-- | Everything a block of declarations is checked in: the module's
+-- 'Blocks.Block' — the stripe its names are allocated from, paired with the
+-- linking evidence — and the environment. The scope indices are the module's
+-- starting scope @c@ and the current scope @n@.
+data ModuleEnv c n = ModuleEnv
+  { moduleBlock :: Blocks.Block c n
+  , moduleEnv   :: Env n
+  }
+
 -- | Check a block of declarations at a namespace path.
 --
 -- The path is lexical, so a nested @namespace@ is just a recursive call with a
@@ -521,29 +532,26 @@ notInScope (UnresolvedName x inScope) =
 -- environment lives in the parameter-free scope the module started in.
 withDecls
   :: forall c n r. Foil.Distinct n
-  => Blocks.ExtWithin c n -- ^ Evidence that the scope so far extends the
-                          -- module's starting scope only within its stripe.
-  -> Env n
-  -> Foil.NameRange       -- ^ The stripe of the enclosing module.
+  => ModuleEnv c n
   -> [Raw.Param]          -- ^ The parameters of the enclosing module.
   -> Path                 -- ^ The namespace path these declarations sit at.
   -> [Raw.Decl]
-  -> (forall l. Foil.DExt n l => Blocks.ExtWithin c l -> Env l -> [CommandResult] -> r)
+  -> (forall l. Foil.DExt n l => ModuleEnv c l -> [CommandResult] -> r)
   -> r
-withDecls ext env _range _params _path [] cont = cont ext env []
-withDecls ext env range params path (decl : decls) cont = case decl of
+withDecls me _params _path [] cont = cont me []
+withDecls me params path (decl : decls) cont = case decl of
 
   Raw.DeclDef loc name over ty value        -> define loc Public name over ty value
   Raw.DeclPrivateDef loc name over ty value -> define loc Private name over ty value
 
   Raw.DeclNamespace _loc name inner ->
-    withDecls ext env range params (path <> segments name) inner $ \extInner envInner innerResults ->
-      withDecls extInner envInner range params path decls $ \extAfter envAfter rest ->
-        cont extAfter envAfter (innerResults <> rest)
+    withDecls me params (path <> segments name) inner $ \meInner innerResults ->
+      withDecls meInner params path decls $ \meAfter rest ->
+        cont meAfter (innerResults <> rest)
 
   Raw.DeclOpen _loc name ->
-    withDecls ext (env { envDeclared = openNamespace (qualify path name) (envDeclared env) })
-              range params path decls cont
+    withDecls me { moduleEnv = env { envDeclared = openNamespace (qualify path name) (envDeclared env) } }
+              params path decls cont
 
   Raw.DeclCheck _loc rawTerm rawType ->
     withParams env params (continue . Failed) $ \_tele envP ->
@@ -563,10 +571,11 @@ withDecls ext env range params path (decl : decls) cont = case decl of
 
   where
     universe = Universe Raw.BNFC'NoPosition
+    env = moduleEnv me
 
     -- Continue with the remaining declarations, with one result in front.
-    continue result = withDecls ext env range params path decls $ \ext' env' rest ->
-      cont ext' env' (result : rest)
+    continue result = withDecls me params path decls $ \me' rest ->
+      cont me' (result : rest)
 
     -- Convert some raw terms, or report the identifiers that do not resolve.
     --
@@ -597,19 +606,21 @@ withDecls ext env range params path (decl : decls) cont = case decl of
                   case checkDischarge over over' of
                     Left err -> continue (Failed err)
                     Right () ->
-                      withDefinition range (envCtx env) ty' value' $ \ctx' binder ->
-                        case Blocks.extWithinStep binder ext of
-                          Nothing -> error "impossible: a definition escaped its module's stripe"
-                          Just extd ->
-                            let full = qualify path name
-                                extended = extendEnv ctx' binder full visibility env
-                                env' = extended
-                                  { envClosedOver = Map.insert full
-                                      (over', Foil.nameOf binder)
-                                      (envClosedOver extended) }
-                             in withDecls extd env' range params path decls $ \ext' env'' rest ->
-                                  cont ext' env''
-                                    (Defined (prettyVarIdent full) (map prettyVarIdent over') : rest)
+                      -- A top-level constant is an ordinary name in the
+                      -- growing scope. It is allocated from the module's
+                      -- block, which steps the linking evidence in the same
+                      -- motion, so nothing can escape the stripe.
+                      Blocks.withFreshInBlock (moduleBlock me) (ctxScope (envCtx env)) $ \binder block' ->
+                        let ctx' = extend (envCtx env) binder ty' (Just value')
+                            full = qualify path name
+                            extended = extendEnv ctx' binder full visibility env
+                            env' = extended
+                              { envClosedOver = Map.insert full
+                                  (over', Foil.nameOf binder)
+                                  (envClosedOver extended) }
+                         in withDecls (ModuleEnv block' env') params path decls $ \me'' rest ->
+                              cont me''
+                                (Defined (prettyVarIdent full) (map prettyVarIdent over') : rest)
 
 -- | Parse and interpret one source.
 --
