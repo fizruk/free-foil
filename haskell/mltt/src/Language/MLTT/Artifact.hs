@@ -26,22 +26,17 @@
 -- 'contentHash', a plain FNV-1a over the rendered content — collision
 -- resistance enough for a build cache, not for an adversary.
 --
--- Three wire-format notes:
+-- Two wire-format notes:
 --
 -- * Bound variables are printed @l\<i\>@ from their raw ids; a program whose
 --   fully qualified spelling matches that pattern would need escaping,
---   which this demo does not implement.
+--   which this demo does not implement. The ids themselves are canonical:
+--   elaboration allocates its binders in 'localRegion', whose content does
+--   not depend on what else is in scope, so the same module produces a
+--   byte-identical artifact — and hash — whatever world it is checked in.
 --
 -- * Source positions inside a loaded term point into the artifact text, not
 --   the original source.
---
--- * The bound spellings inherit the one place raw ids are not
---   deterministic: a λ-binder allocated during checking takes the successor
---   of the whole ambient scope's maximum, so its id — harmless in memory —
---   leaks into the artifact text, and the content hash is reproducible only
---   for a module checked in the same environment. The fix is for the
---   conversion layer to allocate the binders it introduces in a
---   caller-supplied region, not more code here.
 module Language.MLTT.Artifact (
   ModuleArtifact (..),
   ArtifactDecl (..),
@@ -230,7 +225,7 @@ loadArtifact hashes range env artifact = do
     reintern :: Foil.Distinct n => Env n -> StoredTerm -> Either String (Term n)
     reintern envN (StoredTerm input) = do
       raw <- Raw.pTerm (Raw.tokens input)
-      case tryToTerm' (ctxScope (envCtx envN)) (envDeclared envN) raw of
+      case tryToTerm'In localRegion (ctxScope (envCtx envN)) (envDeclared envN) raw of
         Left err -> Left ("artifact for " <> prettyVarIdent (artifactModule artifact)
                             <> ": " <> notInScope err)
         Right t  -> Right (desugar t)
