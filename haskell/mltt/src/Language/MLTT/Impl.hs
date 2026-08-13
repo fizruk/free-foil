@@ -44,8 +44,7 @@ module Language.MLTT.Impl where
 import           Control.Monad                (foldM)
 import qualified Control.Monad.Foil           as Foil
 import           Data.Functor.Identity        (Identity (..))
-import           Control.Monad.Free.Foil      (AST (Var), UnresolvedName (..),
-                                               substitute)
+import           Control.Monad.Free.Foil      (AST (Var), UnresolvedName (..))
 import           Data.List                    (foldl', intercalate)
 import           Data.Map                     (Map)
 import qualified Data.Map                     as Map
@@ -93,9 +92,9 @@ data Env n = Env
   , envClosedOver :: Table (Foil.Name n, [Raw.VarIdent])
     -- ^ For each declaration of the module being checked, its name and the
     -- parameters it was closed over. A reference to one of them from inside the
-    -- same module is put back together with those parameters; see 'reinstate'.
-    -- It is emptied at a module boundary, since a client sees the closed
-    -- constant and applies it itself.
+    -- same module is put back together with those parameters; see
+    -- 'splitVisible'. It is emptied at a module boundary, since a client sees
+    -- the closed constant and applies it itself.
     --
     -- The declaration's own 'Foil.Name' is recorded here, rather than looked up
     -- by spelling later, because a module parameter may shadow the spelling.
@@ -292,39 +291,37 @@ withParams env (Raw.AParam _loc name rawTy : rest) onErr cont =
 validateParams :: Foil.Distinct n => Env n -> [Raw.Param] -> Maybe String
 validateParams env params = withParams env params Just (\_tele _envP -> Nothing)
 
--- | Put the module's parameters back into references to its own declarations.
+-- | Split the visible spellings into a table of names and a table of terms,
+-- putting the module's parameters back into references to its own
+-- declarations.
 --
 -- A declaration is closed at the point it is defined, so a later one in the
 -- same module refers to a constant that expects the parameters it was closed
--- over. Rather than making the source apply them, elaboration expands each such
--- reference into that application.
+-- over. Rather than making the source apply them, each spelling that reaches
+-- such a constant is moved to the terms table of the conversion
+-- ('tryToTerm'With'), where it stands for the constant applied to those
+-- parameters. This happens during resolution, so no second pass over the
+-- elaborated term is needed.
 --
--- It is a substitution, so the library sees to it that a local binder shadowing
--- a declaration is left alone, and that nothing is captured. Outside the
--- declaring module the table is empty and this is the identity, which is right:
--- a client is handed a closed constant and instantiates it as it likes.
---
--- The substitution is built by mapping over 'envDisplay', which is total on the
--- scope because every binder that extends the scope enters it. Nothing is ever
--- inserted into a substitution by name, which would be a way to undo the
--- shadowing that 'Foil.addRename' performs under a binder.
-reinstate
-  :: Foil.Distinct p
-  => Env p
-  -> Term p
-  -> Term p
-reinstate envP term
-  | Map.null closedOver = term
-  | otherwise = substitute (ctxScope (envCtx envP)) subst term
+-- The table of names is consulted first, so a local binder or a parameter
+-- shadowing the spelling wins, and nothing can be captured. Outside the
+-- declaring module the table of terms is empty, which is right: a client is
+-- handed a closed constant and instantiates it as it likes.
+splitVisible
+  :: Env p
+  -> Table (Foil.Name p)
+  -> (Table (Foil.Name p), Table (Term p))
+splitVisible envP visible =
+    (Map.difference visible parametrised, parametrised)
   where
-    closedOver = envClosedOver envP
-    subst = Foil.nameMapToSubstitution (Foil.mapWithName expand (envDisplay envP))
+    parametrised = Map.mapMaybe expand visible
+    closedOver = Map.elems (envClosedOver envP)
 
-    expand name _spelling
-      | Just ps <- lookup name (Map.elems closedOver)
+    expand name
+      | Just ps@(_ : _) <- lookup name closedOver
       , Just args <- traverse (`Map.lookup` envDeclared envP) ps
-      = foldl' apply (Var name) args
-      | otherwise = Var name
+      = Just (foldl' apply (Var name) args)
+      | otherwise = Nothing
 
     apply f x = App Raw.BNFC'NoPosition f (Var x)
 
@@ -409,9 +406,10 @@ withDecls env params path (decl : decls) cont = case decl of
       :: forall p f. (Foil.Distinct p, Traversable f)
       => Env p -> f Raw.Term -> (f (Term p) -> r) -> r
     withElaborated envP raws k =
-      case traverse (tryToTerm' (ctxScope (envCtx envP)) (visibleAt path (envDeclared envP))) raws of
-        Left err -> continue (Failed (notInScope err))
-        Right ts -> k (fmap (reinstate envP . desugar) ts)
+      let (names, terms) = splitVisible envP (visibleAt path (envDeclared envP))
+       in case traverse (tryToTerm'With (ctxScope (envCtx envP)) names terms) raws of
+            Left err -> continue (Failed (notInScope err))
+            Right ts -> k (fmap desugar ts)
 
     define loc visibility name over rawType rawValue =
       withParams env params (continue . Failed) $ \tele envP ->
