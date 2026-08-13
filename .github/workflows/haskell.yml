@@ -121,9 +121,12 @@ jobs:
           cache-prefix: docs-
 
       - name: Add haddock
+        # The same --system-ghc arguments as the build: a bare `stack path`
+        # would install a stack-managed GHC and answer with that install
+        # root, where no docs were ever built.
         run: |
           mkdir -p dist/haddock
-          mv $(stack path --local-doc-root)/* dist/haddock
+          mv $(stack --system-ghc --no-install-ghc path --local-doc-root)/* dist/haddock
 
       - name: 🚀 Publish Site
         uses: JamesIves/github-pages-deploy-action@v4
