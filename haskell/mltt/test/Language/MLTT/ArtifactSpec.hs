@@ -17,6 +17,7 @@ import           Language.MLTT.Artifact
 import           Language.MLTT.Impl
 import           Language.MLTT.Impl.Generated (parseProgram)
 import qualified Language.MLTT.Syntax.Abs     as Raw
+import qualified Language.MLTT.Syntax.Print   as Raw
 
 srcP, srcQ, srcR, srcS, srcT, srcU :: String
 srcP = unlines ["module P", "def base : 𝟙 := tt"]
@@ -59,7 +60,8 @@ artifactsOf = go (0 :: Int) Map.empty emptyEnv
             [ (x, artifactHash (acc Map.! x))
             | Raw.AnImport _ x <- moduleImports m ]
           cm = checkModule (stripeRange (StripeIndex i)) env m
-          a  = makeArtifact (moduleName m) (StripeIndex i) importHashes cm
+          a  = makeArtifact (moduleName m) (StripeIndex i)
+                 (contentHash (Raw.printTree m)) importHashes cm
        in withCheckedModule cm $ \_ env' results ->
             if succeeded results
               then go (i + 1) (Map.insert (artifactModule a) a acc) env' ms
@@ -79,8 +81,6 @@ declaredIds :: CheckedModule c -> [(Raw.VarIdent, Int)]
 declaredIds cm = withCheckedModule cm $ \_ env _ ->
   Map.toList (fmap Foil.nameId (envDeclared env))
 
-resultsOf :: CheckedModule c -> [CommandResult]
-resultsOf cm = withCheckedModule cm (\_ _ rs -> rs)
 
 spec :: Spec
 spec = do
@@ -137,6 +137,7 @@ spec = do
       -- elsewhere in the module graph.
       withCheckedModule (checkModule (stripeRange (StripeIndex 0)) emptyEnv mP) $ \_ envP _ ->
         makeArtifact (moduleName mS) (StripeIndex 3)
+            (contentHash (Raw.printTree mS))
             [(moduleName mP, artifactHash (art "P"))]
             (checkModule (stripeRange (StripeIndex 3)) envP mS)
           `shouldBe` art "S"
@@ -147,6 +148,7 @@ spec = do
             withCheckedModule cmP $ \_ envP _ -> do
               cmS <- loadArtifact (hashesOf ["P"]) (stripeRange (StripeIndex 3)) envP (art "S")
               Right (makeArtifact (moduleName mS) (StripeIndex 3)
+                       (contentHash (Raw.printTree mS))
                        [(moduleName mP, artifactHash (art "P"))] cmS)
        in roundTrip `shouldBe` Right (art "S")
 

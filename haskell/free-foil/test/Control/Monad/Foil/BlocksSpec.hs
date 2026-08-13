@@ -79,7 +79,7 @@ spec = do
                 withExtendScopeRange Foil.emptyScope (NameRange 20 29) 1 $ \t1 _ f1 ->
                   withExtendScopeRange t1 (NameRange 40 49) 1 $ \t2 _ f2 ->
                     withDisjointUnion (composeExtWithin e1 e2) (composeExtWithin f1 f2)
-                      s2 t2 (\s _ -> scopeIds s)
+                      s2 t2 (\s _ _ -> scopeIds s)
        in linked `shouldBe` Just (Just (Just (Just (Just [10, 20, 30, 40]))))
 
   describe "withDisjointUnion" $ do
@@ -89,14 +89,14 @@ spec = do
             linked =
               withExtendScopeRange c ra 2 $ \sa _ ea ->
                 withExtendScopeRange c rb 1 $ \sb _ eb ->
-                  withDisjointUnion ea eb sa sb (\s _ -> scopeIds s)
+                  withDisjointUnion ea eb sa sb (\s _ _ -> scopeIds s)
          in linked `shouldBe` Just (Just (Just [0, 100, 101, 200]))
 
     it "refuses overlapping reservations" $
       let linked =
             withExtendScopeRange Foil.emptyScope ra 2 $ \sa _ ea ->
               withExtendScopeRange Foil.emptyScope ra 1 $ \sb _ eb ->
-                withDisjointUnion ea eb sa sb (\s _ -> scopeIds s)
+                withDisjointUnion ea eb sa sb (\s _ _ -> scopeIds s)
        in linked `shouldBe` Just (Just Nothing)
 
     it "extends both sides' maps to the union" $
@@ -107,7 +107,7 @@ spec = do
                     m2 = Foil.addNameBinderList bsb ["b"] Foil.emptyNameMap
                  in case (Foil.namesOfPattern bsa, Foil.namesOfPattern bsb) of
                       ([x1], [x2]) ->
-                        withDisjointUnion ea eb sa sb $ \_scope union ->
+                        withDisjointUnion ea eb sa sb $ \_scope union _ext ->
                           let u = unionNameMaps union m1 m2
                            in ( Foil.lookupName (Foil.sink x1) u
                               , Foil.lookupName (Foil.sink x2) u
@@ -120,7 +120,7 @@ spec = do
       let checked =
             withExtendScopeRange Foil.emptyScope ra 1 $ \sa _ ea ->
               withExtendScopeRange Foil.emptyScope rb 1 $ \sb _ eb ->
-                withDisjointUnion ea eb sa sb $ \scope _ ->
+                withDisjointUnion ea eb sa sb $ \scope _ _ ->
                   ( isJust (checkScopeUnion sa sb scope)
                   , isJust (checkScopeUnion sa sa scope)  -- misses b's delta
                   )

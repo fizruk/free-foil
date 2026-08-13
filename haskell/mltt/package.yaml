@@ -37,6 +37,8 @@ dependencies:
   text: ">= 1.2.3.1"
   containers:
   bifunctors:
+  directory:
+  filepath:
   template-haskell:
   deepseq:
   free-foil: ">= 0.3.3"
@@ -85,6 +87,8 @@ tests:
     dependencies:
       - mltt
       - free-foil
+      - directory
+      - filepath
       - hspec
       - hspec-discover
 

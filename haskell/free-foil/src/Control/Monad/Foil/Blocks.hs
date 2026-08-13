@@ -269,17 +269,21 @@ unsafeExtendedWithin scope binders ext cont =
 -- side, and the union would conflate them; hence no evidence is produced.
 --
 -- Both extension facts are handed to the continuation at once, as
--- 'withThinnedNameBinderList' does, together with a 'ScopeUnion' witness:
--- the constraints say that @k@ contains @n@ and @m@, and the witness says
+-- 'withThinnedNameBinderList' does, together with a 'ScopeUnion' witness
+-- (the constraints say that @k@ contains @n@ and @m@, and the witness says
 -- that it contains nothing else, which is what a total map on the union
--- needs ('unionNameMaps').
+-- needs — 'unionNameMaps') and with the union's own 'ExtWithin': the linked
+-- scope extends the common base only within the union of the two range
+-- sets, which is exact, so a linked unit is itself linkable and a whole
+-- build folds through this one function.
 withDisjointUnion
   :: forall c n m r. (Distinct n, Distinct m)
   => ExtWithin c n  -- ^ Evidence for the first unit.
   -> ExtWithin c m  -- ^ Evidence for the second unit.
   -> Scope n        -- ^ The first unit's scope.
   -> Scope m        -- ^ The second unit's scope.
-  -> (forall k. (Ext n k, Ext m k, Distinct k) => Scope k -> ScopeUnion n m k -> r)
+  -> (forall k. (Ext n k, Ext m k, Ext c k, Distinct k)
+        => Scope k -> ScopeUnion n m k -> ExtWithin c k -> r)
   -> Maybe r
 withDisjointUnion (UnsafeExtWithin rs1) (UnsafeExtWithin rs2) (UnsafeScope s1) (UnsafeScope s2) cont
   | rangeSetsOverlap rs1 rs2 = Nothing
@@ -290,7 +294,14 @@ withDisjointUnion (UnsafeExtWithin rs1) (UnsafeExtWithin rs2) (UnsafeScope s1) (
       case unsafeDistinct @k of
         Distinct -> case unsafeExt @n @k of
           Ext -> case unsafeExt @m @k of
-            Ext -> cont scope UnsafeScopeUnion
+            Ext -> case unsafeExt @c @k of
+              -- The base is below both sides: each delta lies within its
+              -- ranges over @c@, so the names of @c@ are in @n@ and in @m@,
+              -- hence in the union. Handing this as a given matters for
+              -- folds: deriving it from @Ext c n@ and @Ext n k@ is exactly
+              -- the two-candidate chain GHC refuses.
+              Ext -> cont scope UnsafeScopeUnion
+                          (UnsafeExtWithin (normaliseRanges (rs1 <> rs2)))
 
 -- | Evidence that scope @k@ is /precisely/ the union of scopes @n@ and @m@:
 -- every name of @n@ and of @m@ is a name of @k@, and nothing else is.

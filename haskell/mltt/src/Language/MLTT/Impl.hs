@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveFoldable      #-}
 {-# LANGUAGE DeriveFunctor       #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE DeriveTraversable   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -41,6 +42,7 @@
 -- narrowing belongs above the library rather than inside it.
 module Language.MLTT.Impl where
 
+import           Control.DeepSeq              (NFData)
 import           Control.Monad                (foldM)
 import qualified Control.Monad.Foil           as Foil
 import qualified Control.Monad.Foil.Blocks    as Blocks
@@ -52,6 +54,7 @@ import           Data.Map                     (Map)
 import           Data.Maybe                   (listToMaybe)
 import qualified Data.Map                     as Map
 import qualified Data.Set                     as Set
+import           GHC.Generics                 (Generic)
 import           Language.MLTT.Eval
 import           Language.MLTT.FreeFoilConfig (intToVarIdent)
 import           Language.MLTT.Impl.Generated
@@ -59,7 +62,6 @@ import           Language.MLTT.Resolve
 import qualified Language.MLTT.Syntax.Abs     as Raw
 import           Language.MLTT.Telescope
 import           Language.MLTT.Typecheck
-import           System.Exit                  (exitFailure)
 
 -- $setup
 -- >>> :set -XOverloadedStrings
@@ -145,12 +147,19 @@ display env = showTermWith intToVarIdent (envDisplay env)
 -- | What interpreting one declaration produced.
 data CommandResult
   = EnteredModule String      -- ^ A module was reached in build order.
+  | LoadedModule String       -- ^ A module was loaded from its cached
+                              -- artifact; its @check@ and @compute@ commands
+                              -- are not re-run.
   | Defined String [String]   -- ^ @def@ succeeded, for the fully qualified name
                               -- and the module parameters it was discharged over.
   | Checked String String     -- ^ @check@ succeeded, for a term and its type.
   | Computed String           -- ^ @compute@ succeeded, with the normal form.
   | Failed String             -- ^ The declaration was rejected.
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
+
+-- | Forcing a result forces the checking that produced it; the parallel
+-- builder relies on this to keep each module's work on its own thread.
+instance NFData CommandResult
 
 -- | Did everything succeed?
 succeeded :: [CommandResult] -> Bool
@@ -162,6 +171,7 @@ succeeded = all $ \case
 renderResult :: CommandResult -> String
 renderResult = \case
   EnteredModule name -> "module " <> name
+  LoadedModule name  -> "module " <> name <> " (cached)"
   Defined name []    -> "  ✓ defined " <> name
   Defined name used  -> "  ✓ defined " <> name
                           <> " over (" <> intercalate ", " used <> ")"
@@ -330,6 +340,10 @@ withCheckedModule
   -> r
 withCheckedModule (CheckedModule ext env results) cont = cont ext env results
 
+-- | The results a checked module reported.
+resultsOf :: CheckedModule c -> [CommandResult]
+resultsOf cm = withCheckedModule cm (\_ _ results -> results)
+
 -- | Check one module against an environment of already checked modules.
 --
 -- Nothing here depends on any sibling: the module sees only what it imports,
@@ -404,27 +418,41 @@ linkModules
   -> CheckedModule c    -- ^ The second unit.
   -> (forall k. Foil.Distinct k => Env k -> r)
   -> Either String r
-linkModules (CheckedModule extA envA _) (CheckedModule extB envB _) cont =
+linkModules a b cont = do
+  linked <- linkChecked a b
+  withCheckedModule linked (\_ env _ -> Right (cont env))
+
+-- | Link two units into one, keeping the evidence, so the result links
+-- further: a whole build folds through this, wave by wave.
+linkChecked :: CheckedModule c -> CheckedModule c -> Either String (CheckedModule c)
+linkChecked (CheckedModule extA envA rsA) (CheckedModule extB envB rsB) =
   case Blocks.withDisjointUnion extA extB (ctxScope (envCtx envA)) (ctxScope (envCtx envB))
-         (\scope union ->
-            cont Env
-              { envCtx      = Ctx scope
-                  (Blocks.unionNameMaps union
-                    (sunkTo scope (ctxTypes (envCtx envA)))
-                    (sunkTo scope (ctxTypes (envCtx envB))))
-                  (Blocks.unionNameMaps union
-                    (sunkTo scope (ctxDefs (envCtx envA)))
-                    (sunkTo scope (ctxDefs (envCtx envB))))
-              , envDeclared = Map.empty
-              , envExports  = Map.empty
-              , envModules  = Map.union
-                  (getCompose (sunkTo scope (Compose (envModules envA))))
-                  (getCompose (sunkTo scope (Compose (envModules envB))))
-              , envDisplay  = Blocks.unionNameMaps union (envDisplay envA) (envDisplay envB)
-              , envClosedOver = Map.empty
-              }) of
+         (\scope union extK ->
+            CheckedModule extK (mergeEnvs union scope envA envB) (rsA <> rsB)) of
     Nothing -> Left "linking: reserved name ranges overlap"
     Just r  -> Right r
+
+-- | Merge the environments of two linked units; see 'linkModules' for why
+-- nothing but the union is needed.
+mergeEnvs
+  :: (Foil.Ext n k, Foil.Ext m k, Foil.Distinct k)
+  => Blocks.ScopeUnion n m k -> Foil.Scope k -> Env n -> Env m -> Env k
+mergeEnvs union scope envA envB = Env
+  { envCtx      = Ctx scope
+      (Blocks.unionNameMaps union
+        (sunkTo scope (ctxTypes (envCtx envA)))
+        (sunkTo scope (ctxTypes (envCtx envB))))
+      (Blocks.unionNameMaps union
+        (sunkTo scope (ctxDefs (envCtx envA)))
+        (sunkTo scope (ctxDefs (envCtx envB))))
+  , envDeclared = Map.empty
+  , envExports  = Map.empty
+  , envModules  = Map.union
+      (getCompose (sunkTo scope (Compose (envModules envA))))
+      (getCompose (sunkTo scope (Compose (envModules envB))))
+  , envDisplay  = Blocks.unionNameMaps union (envDisplay envA) (envDisplay envB)
+  , envClosedOver = Map.empty
+  }
 
 -- | 'Foil.sinkContainer', with the target index determined by a scope the
 -- caller already holds, so that the wanted constraints match the givens of a
@@ -644,6 +672,31 @@ withDecls me params path (decl : decls) cont = case decl of
                               cont me''
                                 (Defined (prettyVarIdent full) (map prettyVarIdent over') : rest)
 
+-- * An interactive session
+
+-- | A read–eval–print session: a module that never ends. The session holds
+-- a 'ModuleEnv' at an existential scope index, so each step picks up exactly
+-- where the previous one stopped, allocating from one interactive stripe.
+data Repl c where
+  Repl :: Foil.DExt c n => ModuleEnv c n -> Repl c
+
+-- | Start a session over an environment of already checked (or loaded)
+-- modules, allocating in the given stripe.
+beginRepl :: Foil.Distinct c => Foil.NameRange -> Env c -> Repl c
+beginRepl range env = Repl (ModuleEnv (Blocks.beginBlock range) env)
+
+-- | Feed one input — any run of declarations, including @check@ and
+-- @compute@ — to the session.
+--
+-- A redefinition allocates a new name and rebinds the spelling, GHCi-style:
+-- a term that already refers to the old binding keeps it, since withholding
+-- a spelling touches no term.
+replStep :: String -> Repl c -> (Repl c, [CommandResult])
+replStep input (Repl me) = case parseDecls input of
+  Left err -> (Repl me, [Failed ("parse error: " <> err)])
+  Right decls ->
+    withDecls me [] [] decls $ \me' results -> (Repl me', results)
+
 -- | Parse and interpret one source.
 --
 -- >>> let report = mapM_ (putStrLn . renderResult) . either error id . interpret
@@ -670,17 +723,3 @@ interpretSources sources = interpretModules . concat <$> traverse parseSource so
       Left err                    -> Left (path <> ":" <> err)
       Right (Raw.AProgram _ms ms) -> Right ms
 
--- | Read modules from the given files, or from standard input if none are
--- given, and interpret them.
-defaultMain :: [FilePath] -> IO ()
-defaultMain paths = do
-  sources <- case paths of
-    [] -> (\input -> [("<stdin>", input)]) <$> getContents
-    _  -> mapM (\path -> (,) path <$> readFile path) paths
-  case interpretSources sources of
-    Left err -> do
-      putStrLn err
-      exitFailure
-    Right results -> do
-      mapM_ (putStrLn . renderResult) results
-      if succeeded results then return () else exitFailure
