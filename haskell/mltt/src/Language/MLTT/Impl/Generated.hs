@@ -135,6 +135,35 @@ showTermWith
   => (Int -> Raw.VarIdent) -> Foil.NameMap n Raw.VarIdent -> Term' a n -> String
 showTermWith bound names = Raw.printTree . fromTermWith bound names
 
+-- | Convert a pattern back to raw syntax, naming its binders from their
+-- indices with a caller-supplied function.
+--
+-- The generated 'fromPattern'' bakes the display naming into the binder
+-- occurrences, while 'fromTermWith' applies its @bound@ function only to the
+-- bound-variable /references/. A serialiser needs the two to go through the
+-- same function, or a reference comes out free of its own binder.
+fromPatternNamed :: (Int -> Raw.VarIdent) -> Pattern' a o i -> Raw.Pattern' a
+fromPatternNamed _named (PatternWildcard loc) = Raw.PatternWildcard loc
+fromPatternNamed named (PatternVar loc binder) =
+  Raw.PatternVar loc (named (Foil.nameId (Foil.nameOf binder)))
+fromPatternNamed named (PatternPair loc p1 p2) =
+  Raw.PatternPair loc (fromPatternNamed named p1) (fromPatternNamed named p2)
+
+-- | 'fromTermWith', with one naming function covering both the binder
+-- occurrences and the bound-variable references.
+fromTermNamed
+  :: Foil.Distinct n
+  => (Int -> Raw.VarIdent) -> Foil.NameMap n Raw.VarIdent -> Term' a n -> Raw.Term' a
+fromTermNamed bound names =
+  convertFromASTWith fromTerm'Sig rawVar (fromPatternNamed bound) rawScopedTerm
+    (`Foil.lookupName` names) bound
+
+-- | Print a term with one naming function for everything bound.
+showTermNamed
+  :: Foil.Distinct n
+  => (Int -> Raw.VarIdent) -> Foil.NameMap n Raw.VarIdent -> Term' a n -> String
+showTermNamed bound names = Raw.printTree . fromTermNamed bound names
+
 -- * Convenient monomorphic synonyms
 --
 -- Everything downstream is written against terms annotated with a source

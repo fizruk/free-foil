@@ -154,7 +154,7 @@ data Visibility
   | Private
     -- ^ Not exported. An importing module cannot /name/ it — and can still
     -- /reduce/ through it, since withholding a spelling touches no term.
-  deriving (Eq, Show)
+  deriving (Eq, Show, Read)
 
 -- | Add a declaration to what a module exports, if it is public.
 --
