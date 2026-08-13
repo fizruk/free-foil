@@ -71,24 +71,6 @@ data Ctx a n = Ctx
 emptyCtx :: Ctx a Foil.VoidS
 emptyCtx = Ctx Foil.emptyScope Foil.emptyNameMap emptyDefs
 
--- | Extend a context with a top-level definition of a given type and value.
---
--- A definition is an ordinary name in scope whose 'Def' is not 'Nothing', so
--- \(\delta\)-reduction unfolds it and nothing else has to change. Note that this
--- makes a top-level constant a 'Foil.Name' in a growing scope, which is one of
--- the two possible designs for a global environment.
--- The continuation receives the /binder/ rather than just its name, so that a
--- caller can extend a 'Foil.NameMap' of its own alongside the context.
-withDefinition
-  :: Foil.Distinct n
-  => Ctx a n
-  -> Term' a n            -- ^ The type of the definition.
-  -> Term' a n            -- ^ Its value.
-  -> (forall l. Foil.DExt n l => Ctx a l -> Foil.NameBinder n l -> r)
-  -> r
-withDefinition ctx ty value cont = Foil.withFresh (ctxScope ctx) $ \binder ->
-  cont (extend ctx binder ty (Just value)) binder
-
 -- | Extend a context with a fresh variable of a given type.
 withVar
   :: Foil.Distinct n
@@ -96,7 +78,11 @@ withVar
   -> Term' a n            -- ^ The type of the new variable.
   -> (forall l. Foil.DExt n l => Ctx a l -> Foil.Name l -> r)
   -> r
-withVar ctx ty cont = withVarBinder ctx ty $ \ctx' binder ->
+-- The variable is ephemeral — it exists only while the checker is under the
+-- binder — so it is allocated with no reservation. Its raw name may land
+-- inside some module's stripe; that is harmless, because it never enters a
+-- module's scope and nothing about linking rests on term-internal names.
+withVar ctx ty cont = withVarBinder Foil.fullNameRange ctx ty $ \ctx' binder ->
   cont ctx' (Foil.nameOf binder)
 
 -- | Extend a context with a fresh variable, handing back its /binder/.
@@ -106,15 +92,22 @@ withVar ctx ty cont = withVarBinder ctx ty $ \ctx' binder ->
 -- from. See "Language.MLTT.Telescope".
 withVarBinder
   :: Foil.Distinct n
-  => Ctx a n
+  => Foil.NameRange       -- ^ The reservation to allocate the name from.
+  -> Ctx a n
   -> Term' a n            -- ^ The type of the new variable.
   -> (forall l. Foil.DExt n l => Ctx a l -> Foil.NameBinder n l -> r)
   -> r
-withVarBinder ctx ty cont = Foil.withFresh (ctxScope ctx) $ \binder ->
+withVarBinder range ctx ty cont = Foil.withFreshIn range (ctxScope ctx) $ \binder ->
   cont (extend ctx binder ty Nothing) binder
 
 -- | Add one binder to a context. Sinking the two maps is \(O(1)\); only the
 -- new entry is inserted.
+--
+-- A top-level definition goes through this too, with a 'Just' value: it is
+-- an ordinary name in scope whose 'Def' is not 'Nothing', so
+-- \(\delta\)-reduction unfolds it and nothing else has to change. That makes
+-- a top-level constant a 'Foil.Name' in a growing scope, which is one of the
+-- two possible designs for a global environment.
 extend
   :: Foil.DExt n l
   => Ctx a n -> Foil.NameBinder n l -> Term' a n -> Maybe (Term' a n) -> Ctx a l

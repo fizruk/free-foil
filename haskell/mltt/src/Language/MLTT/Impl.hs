@@ -43,11 +43,13 @@ module Language.MLTT.Impl where
 
 import           Control.Monad                (foldM)
 import qualified Control.Monad.Foil           as Foil
+import qualified Control.Monad.Foil.Blocks    as Blocks
+import           Data.Functor.Compose         (Compose (..))
 import           Data.Functor.Identity        (Identity (..))
-import           Control.Monad.Free.Foil      (AST (Var), UnresolvedName (..),
-                                               substitute)
+import           Control.Monad.Free.Foil      (AST (Var), UnresolvedName (..))
 import           Data.List                    (foldl', intercalate)
 import           Data.Map                     (Map)
+import           Data.Maybe                   (listToMaybe)
 import qualified Data.Map                     as Map
 import qualified Data.Set                     as Set
 import           Language.MLTT.Eval
@@ -90,15 +92,17 @@ data Env n = Env
     -- ^ What each module checked so far exports.
   , envDisplay  :: Display n Raw.VarIdent
     -- ^ What each top-level name is called.
-  , envClosedOver :: Table (Foil.Name n, [Raw.VarIdent])
-    -- ^ For each declaration of the module being checked, its name and the
-    -- parameters it was closed over. A reference to one of them from inside the
-    -- same module is put back together with those parameters; see 'reinstate'.
-    -- It is emptied at a module boundary, since a client sees the closed
-    -- constant and applies it itself.
+  , envClosedOver :: Table ([Raw.VarIdent], Foil.Name n)
+    -- ^ For each declaration of the module being checked, the parameters it
+    -- was closed over and its name. A reference to one of them from inside the
+    -- same module is put back together with those parameters; see
+    -- 'splitVisible'. It is emptied at a module boundary, since a client sees
+    -- the closed constant and applies it itself.
     --
     -- The declaration's own 'Foil.Name' is recorded here, rather than looked up
     -- by spelling later, because a module parameter may shadow the spelling.
+    -- It sits second in the pair so that the pair is a 'Functor' over it, and
+    -- the whole table sinks as a coercion (see 'extendEnv').
   }
 
 -- | An empty environment, before any module is checked.
@@ -107,8 +111,11 @@ emptyEnv = Env emptyCtx Map.empty Map.empty Map.empty Foil.emptyNameMap Map.empt
 
 -- | Extend an environment with one top-level definition.
 --
--- Every map is a container of sinkables, so widening them is \(O(1)\); only the
--- new entry is inserted, and only the map of modules has its spine walked.
+-- Every map is a container of sinkables, so widening them is a coercion, and
+-- only the new entry is inserted. The nested containers (the tables of the
+-- module map, the pairs of 'envClosedOver') are sunk through 'Compose', the
+-- same idiom 'Foil.sinkContainer' itself uses one level down, so no spine is
+-- walked anywhere.
 extendEnv
   :: Foil.DExt n l
   => Ctx Raw.BNFC'Position l
@@ -121,9 +128,9 @@ extendEnv ctx binder full visibility env = Env
   { envCtx      = ctx
   , envDeclared = Map.insert full name (Foil.sinkContainer (envDeclared env))
   , envExports  = export visibility full name (Foil.sinkContainer (envExports env))
-  , envModules  = fmap Foil.sinkContainer (envModules env)
+  , envModules  = getCompose (Foil.sinkContainer (Compose (envModules env)))
   , envDisplay  = Foil.addNameBinder binder full (envDisplay env)
-  , envClosedOver = Map.map (\(x, ps) -> (Foil.sink x, ps)) (envClosedOver env)
+  , envClosedOver = getCompose (Foil.sinkContainer (Compose (envClosedOver env)))
   }
   where
     name = Foil.nameOf binder
@@ -205,6 +212,53 @@ moduleImports (Raw.AModule _ _ _ imports _) = imports
 moduleDecls :: Raw.Module -> [Raw.Decl]
 moduleDecls (Raw.AModule _ _ _ _ decls) = decls
 
+-- * Name layout
+
+-- | How many top-level names a module may declare.
+stripeSize :: Int
+stripeSize = 0x100000
+
+-- | Where the first stripe starts. Below it lies 'paramRegion'.
+firstStripeBase :: Int
+firstStripeBase = stripeSize
+
+-- | The region module parameters are allocated in.
+--
+-- It lies below every stripe, so a parameter can never collide with a
+-- declaration's name, and parameter indices stay small — a discharged type
+-- prints as @Π (x0 : 𝕌) → …@ however many declarations precede it.
+paramRegion :: Foil.NameRange
+paramRegion = Foil.NameRange 0 (firstStripeBase - 1)
+
+-- | Which stripe each module's declarations live in.
+--
+-- The assignment is what makes raw names deterministic: a module's
+-- declarations are numbered @base@, @base + 1@, … in declaration order,
+-- whatever else is checked around it. In a real build this map is persistent
+-- — written beside the build products and loaded at start — because cached
+-- artefacts survive changes elsewhere in the module graph exactly when the
+-- assignment does not move. Here it is threaded through one run, and a test
+-- (or a driver) can seed it.
+type Registry = Map Raw.VarIdent Int
+
+-- | The registry before any module has ever been checked.
+emptyRegistry :: Registry
+emptyRegistry = Map.empty
+
+-- | The stripe of a module, assigning the next one on first use.
+-- The registry is append-only, so the next stripe index is its size.
+registerModule :: Raw.VarIdent -> Registry -> (Registry, Foil.NameRange)
+registerModule name registry = case Map.lookup name registry of
+  Just i  -> (registry, stripeRange i)
+  Nothing -> let i = Map.size registry
+              in (Map.insert name i registry, stripeRange i)
+
+-- | Stripe @i@ is the @i@-th run of 'stripeSize' names above 'firstStripeBase'.
+stripeRange :: Int -> Foil.NameRange
+stripeRange i = Foil.NameRange lo (lo + stripeSize - 1)
+  where
+    lo = firstStripeBase + i * stripeSize
+
 -- * Interpreting a program
 
 -- | Interpret a program: order its modules by their imports, then check each.
@@ -218,22 +272,69 @@ interpretProgram (Raw.AProgram _loc modules) = interpretModules modules
 interpretModules :: [Raw.Module] -> [CommandResult]
 interpretModules modules = case buildOrder modules of
   Left err      -> [Failed err]
-  Right ordered -> goModules emptyEnv ordered
+  Right ordered -> goModules emptyRegistry emptyEnv ordered
 
 -- | Check each module in turn, in the growing top-level scope.
 --
 -- A module's parameters are elaborated once here, before its declarations, so
 -- that a parameter block that does not resolve is reported once rather than
 -- against every declaration that would have been checked under it.
-goModules :: Foil.Distinct n => Env n -> [Raw.Module] -> [CommandResult]
-goModules _env [] = []
-goModules env (m : ms) = EnteredModule (prettyVarIdent (moduleName m)) :
-    case validateParams env' (moduleParams m) of
-      Just err -> Failed err : goModules env ms
-      Nothing ->
-        withDecls env' (moduleParams m) [] (moduleDecls m) $ \env'' results ->
-          results <> goModules (finishModule (moduleName m) env'') ms
+goModules :: Foil.Distinct n => Registry -> Env n -> [Raw.Module] -> [CommandResult]
+goModules _registry _env [] = []
+goModules registry env (m : ms) =
+    withCheckedModule (checkModule range env m) $ \_ext env' results ->
+      results <> goModules registry' env' ms
   where
+    (registry', range) = registerModule (moduleName m) registry
+
+-- * Separate checking and linking
+
+-- | A module checked on its own: its final environment, at an existential
+-- scope index, together with the evidence that everything it added to the
+-- scope it started from lies inside its stripe. Two of these over the same
+-- start can be linked; see 'linkModules'.
+data CheckedModule c where
+  CheckedModule
+    :: Foil.DExt c n
+    => Blocks.ExtWithin c n
+    -> Env n
+    -> [CommandResult]
+    -> CheckedModule c
+
+-- | Open a checked module's existential package.
+withCheckedModule
+  :: CheckedModule c
+  -> (forall n. Foil.DExt c n => Blocks.ExtWithin c n -> Env n -> [CommandResult] -> r)
+  -> r
+withCheckedModule (CheckedModule ext env results) cont = cont ext env results
+
+-- | Check one module against an environment of already checked modules.
+--
+-- Nothing here depends on any sibling: the module sees only what it imports,
+-- and its declarations take the names its stripe dictates, so two modules
+-- with no import path between them can be checked in either order — or in
+-- parallel — and produce identical results.
+--
+-- A module's parameters are elaborated once here, before its declarations, so
+-- that a parameter block that does not resolve is reported once rather than
+-- against every declaration that would have been checked under it.
+checkModule
+  :: forall c. Foil.Distinct c
+  => Foil.NameRange     -- ^ The module's stripe, from the registry.
+  -> Env c              -- ^ Environment holding what its imports export.
+  -> Raw.Module
+  -> CheckedModule c
+checkModule range env m =
+  case validateParams env' (moduleParams m) of
+    Just err -> CheckedModule (Blocks.extWithinRefl range) env' [entered, Failed err]
+    Nothing ->
+      withDecls (ModuleEnv (Blocks.beginBlock range) env') (moduleParams m) [] (moduleDecls m) $
+        \me results ->
+          CheckedModule (Blocks.blockExt (moduleBlock me))
+                        (finishModule (moduleName m) (moduleEnv me))
+                        (entered : results)
+  where
+    entered = EnteredModule (prettyVarIdent (moduleName m))
     -- An import contributes the exporting module's public names, under the
     -- spellings it exported them with. Nothing else crosses a module boundary.
     env' = env
@@ -243,6 +344,73 @@ goModules env (m : ms) = EnteredModule (prettyVarIdent (moduleName m)) :
       , envExports = Map.empty
       , envClosedOver = Map.empty
       }
+
+-- | Check a module against the environment of an already checked one,
+-- composing the evidence, so that a chain of modules — each importing the
+-- previous — presents itself as one checked unit over the chain's base.
+-- The chain's results accumulate.
+--
+-- This is what lets two chains over a shared base be checked in parallel
+-- and then linked as wholes: fold each chain with this, then 'linkModules'.
+checkModuleAfter
+  :: Foil.NameRange     -- ^ The next module's stripe, from the registry.
+  -> CheckedModule c    -- ^ The chain so far.
+  -> Raw.Module
+  -> CheckedModule c
+checkModuleAfter range (CheckedModule ext env results) m =
+  case checkModule range env m of
+    CheckedModule ext' env' results' ->
+      CheckedModule (Blocks.composeExtWithin ext ext') env' (results <> results')
+
+-- | Link two units checked independently against the same environment — two
+-- modules, or two chains folded with 'checkModuleAfter'.
+--
+-- The two scopes share exactly the names of the common environment — the
+-- amalgamated part, identified rather than renamed apart — and extend it
+-- only within their reservations, so the whole disjointness obligation is
+-- one sweep over two range sets ('Blocks.withDisjointUnion'). Each side's
+-- tables are then sunk into the union, and the total maps are merged with
+-- 'Blocks.unionNameMaps'.
+--
+-- No module registration happens here: each side's 'envModules' already
+-- records everything it checked ('finishModule'), so the union of the two
+-- suffices. The result is an environment a further module can be checked in,
+-- exactly as if the two sides had been checked in sequence.
+linkModules
+  :: forall c r
+   . CheckedModule c    -- ^ The first unit.
+  -> CheckedModule c    -- ^ The second unit.
+  -> (forall k. Foil.Distinct k => Env k -> r)
+  -> Either String r
+linkModules (CheckedModule extA envA _) (CheckedModule extB envB _) cont =
+  case Blocks.withDisjointUnion extA extB (ctxScope (envCtx envA)) (ctxScope (envCtx envB))
+         (\scope union ->
+            cont Env
+              { envCtx      = Ctx scope
+                  (Blocks.unionNameMaps union
+                    (sunkTo scope (ctxTypes (envCtx envA)))
+                    (sunkTo scope (ctxTypes (envCtx envB))))
+                  (Blocks.unionNameMaps union
+                    (sunkTo scope (ctxDefs (envCtx envA)))
+                    (sunkTo scope (ctxDefs (envCtx envB))))
+              , envDeclared = Map.empty
+              , envExports  = Map.empty
+              , envModules  = Map.union
+                  (getCompose (sunkTo scope (Compose (envModules envA))))
+                  (getCompose (sunkTo scope (Compose (envModules envB))))
+              , envDisplay  = Blocks.unionNameMaps union (envDisplay envA) (envDisplay envB)
+              , envClosedOver = Map.empty
+              }) of
+    Nothing -> Left "linking: reserved name ranges overlap"
+    Just r  -> Right r
+
+-- | 'Foil.sinkContainer', with the target index determined by a scope the
+-- caller already holds, so that the wanted constraints match the givens of a
+-- linking continuation.
+sunkTo
+  :: (Functor f, Foil.Sinkable e, Foil.DExt n l)
+  => Foil.Scope l -> f (e n) -> f (e l)
+sunkTo _scope = Foil.sinkContainer
 
 -- | Record what a module exported, once it is checked.
 finishModule :: Raw.VarIdent -> Env l -> Env l
@@ -260,11 +428,11 @@ data Two a = Two a a
 
 -- | Allocate a module's parameters, extending the environment with them.
 --
--- Parameters are allocated afresh for each declaration rather than once for the
--- module, because a declaration is added to the module's own scope after being
--- discharged, and a name allocated there would otherwise collide with a
--- parameter allocated before it. Re-elaborating a parameter block costs a few
--- small terms and buys a scope that grows only by definitions.
+-- Parameters are allocated in 'paramRegion', below every stripe, so they can
+-- never collide with a declaration's name — which is what used to force them
+-- to be re-allocated per declaration. They are still elaborated afresh for
+-- each declaration, but now only for simplicity: a parameter block is a few
+-- small terms, and re-elaborating it keeps 'withDecls' a plain fold.
 --
 -- A parameter is nameable by its bare spelling and is not exported, which is
 -- exactly what 'extendEnv' does for a private declaration.
@@ -282,7 +450,7 @@ withParams env (Raw.AParam _loc name rawTy : rest) onErr cont =
     Left err -> onErr (notInScope err)
     Right raw ->
       let ty = desugar raw
-       in withVarBinder ctx ty $ \ctx' binder ->
+       in withVarBinder paramRegion ctx ty $ \ctx' binder ->
             withParams (extendEnv ctx' binder name Private env) rest onErr $
               \tele envP -> cont (TelescopeCons name ty binder tele) envP
   where
@@ -292,39 +460,37 @@ withParams env (Raw.AParam _loc name rawTy : rest) onErr cont =
 validateParams :: Foil.Distinct n => Env n -> [Raw.Param] -> Maybe String
 validateParams env params = withParams env params Just (\_tele _envP -> Nothing)
 
--- | Put the module's parameters back into references to its own declarations.
+-- | Split the visible spellings into a table of names and a table of terms,
+-- putting the module's parameters back into references to its own
+-- declarations.
 --
 -- A declaration is closed at the point it is defined, so a later one in the
 -- same module refers to a constant that expects the parameters it was closed
--- over. Rather than making the source apply them, elaboration expands each such
--- reference into that application.
+-- over. Rather than making the source apply them, each spelling that reaches
+-- such a constant is moved to the terms table of the conversion
+-- ('tryToTerm'With'), where it stands for the constant applied to those
+-- parameters. This happens during resolution, so no second pass over the
+-- elaborated term is needed.
 --
--- It is a substitution, so the library sees to it that a local binder shadowing
--- a declaration is left alone, and that nothing is captured. Outside the
--- declaring module the table is empty and this is the identity, which is right:
--- a client is handed a closed constant and instantiates it as it likes.
---
--- The substitution is built by mapping over 'envDisplay', which is total on the
--- scope because every binder that extends the scope enters it. Nothing is ever
--- inserted into a substitution by name, which would be a way to undo the
--- shadowing that 'Foil.addRename' performs under a binder.
-reinstate
-  :: Foil.Distinct p
-  => Env p
-  -> Term p
-  -> Term p
-reinstate envP term
-  | Map.null closedOver = term
-  | otherwise = substitute (ctxScope (envCtx envP)) subst term
+-- The table of names is consulted first, so a local binder or a parameter
+-- shadowing the spelling wins, and nothing can be captured. Outside the
+-- declaring module the table of terms is empty, which is right: a client is
+-- handed a closed constant and instantiates it as it likes.
+splitVisible
+  :: Env p
+  -> Table (Foil.Name p)
+  -> (Table (Foil.Name p), Table (Term p))
+splitVisible envP visible =
+    (Map.difference visible parametrised, parametrised)
   where
-    closedOver = envClosedOver envP
-    subst = Foil.nameMapToSubstitution (Foil.mapWithName expand (envDisplay envP))
+    parametrised = Map.mapMaybe expand visible
+    closedOver = Map.elems (envClosedOver envP)
 
-    expand name _spelling
-      | Just ps <- lookup name (Map.elems closedOver)
+    expand name
+      | Just ps@(_ : _) <- listToMaybe [ps' | (ps', x) <- closedOver, x == name]
       , Just args <- traverse (`Map.lookup` envDeclared envP) ps
-      = foldl' apply (Var name) args
-      | otherwise = Var name
+      = Just (foldl' apply (Var name) args)
+      | otherwise = Nothing
 
     apply f x = App Raw.BNFC'NoPosition f (Var x)
 
@@ -345,6 +511,15 @@ notInScope (UnresolvedName x inScope) =
     hints -> "not in scope: " <> prettyVarIdent x
                <> "; did you mean " <> intercalate ", " (map prettyVarIdent hints) <> "?"
 
+-- | Everything a block of declarations is checked in: the module's
+-- 'Blocks.Block' — the stripe its names are allocated from, paired with the
+-- linking evidence — and the environment. The scope indices are the module's
+-- starting scope @c@ and the current scope @n@.
+data ModuleEnv c n = ModuleEnv
+  { moduleBlock :: Blocks.Block c n
+  , moduleEnv   :: Env n
+  }
+
 -- | Check a block of declarations at a namespace path.
 --
 -- The path is lexical, so a nested @namespace@ is just a recursive call with a
@@ -356,26 +531,26 @@ notInScope (UnresolvedName x inScope) =
 -- @def@ is then discharged over the ones it uses, so that what is added to the
 -- environment lives in the parameter-free scope the module started in.
 withDecls
-  :: forall n r. Foil.Distinct n
-  => Env n
+  :: forall c n r. Foil.Distinct n
+  => ModuleEnv c n
   -> [Raw.Param]          -- ^ The parameters of the enclosing module.
   -> Path                 -- ^ The namespace path these declarations sit at.
   -> [Raw.Decl]
-  -> (forall l. Foil.DExt n l => Env l -> [CommandResult] -> r)
+  -> (forall l. Foil.DExt n l => ModuleEnv c l -> [CommandResult] -> r)
   -> r
-withDecls env _params _path [] cont = cont env []
-withDecls env params path (decl : decls) cont = case decl of
+withDecls me _params _path [] cont = cont me []
+withDecls me params path (decl : decls) cont = case decl of
 
   Raw.DeclDef loc name over ty value        -> define loc Public name over ty value
   Raw.DeclPrivateDef loc name over ty value -> define loc Private name over ty value
 
   Raw.DeclNamespace _loc name inner ->
-    withDecls env params (path <> segments name) inner $ \envInner innerResults ->
-      withDecls envInner params path decls $ \envAfter rest ->
-        cont envAfter (innerResults <> rest)
+    withDecls me params (path <> segments name) inner $ \meInner innerResults ->
+      withDecls meInner params path decls $ \meAfter rest ->
+        cont meAfter (innerResults <> rest)
 
   Raw.DeclOpen _loc name ->
-    withDecls (env { envDeclared = openNamespace (qualify path name) (envDeclared env) })
+    withDecls me { moduleEnv = env { envDeclared = openNamespace (qualify path name) (envDeclared env) } }
               params path decls cont
 
   Raw.DeclCheck _loc rawTerm rawType ->
@@ -396,9 +571,11 @@ withDecls env params path (decl : decls) cont = case decl of
 
   where
     universe = Universe Raw.BNFC'NoPosition
+    env = moduleEnv me
 
     -- Continue with the remaining declarations, with one result in front.
-    continue result = withDecls env params path decls $ \env' rest -> cont env' (result : rest)
+    continue result = withDecls me params path decls $ \me' rest ->
+      cont me' (result : rest)
 
     -- Convert some raw terms, or report the identifiers that do not resolve.
     --
@@ -409,9 +586,10 @@ withDecls env params path (decl : decls) cont = case decl of
       :: forall p f. (Foil.Distinct p, Traversable f)
       => Env p -> f Raw.Term -> (f (Term p) -> r) -> r
     withElaborated envP raws k =
-      case traverse (tryToTerm' (ctxScope (envCtx envP)) (visibleAt path (envDeclared envP))) raws of
-        Left err -> continue (Failed (notInScope err))
-        Right ts -> k (fmap (reinstate envP . desugar) ts)
+      let (names, terms) = splitVisible envP (visibleAt path (envDeclared envP))
+       in case traverse (tryToTerm'With (ctxScope (envCtx envP)) names terms) raws of
+            Left err -> continue (Failed (notInScope err))
+            Right ts -> k (fmap desugar ts)
 
     define loc visibility name over rawType rawValue =
       withParams env params (continue . Failed) $ \tele envP ->
@@ -428,15 +606,20 @@ withDecls env params path (decl : decls) cont = case decl of
                   case checkDischarge over over' of
                     Left err -> continue (Failed err)
                     Right () ->
-                      withDefinition (envCtx env) ty' value' $ \ctx' binder ->
-                        let full = qualify path name
-                            env' = (extendEnv ctx' binder full visibility env)
+                      -- A top-level constant is an ordinary name in the
+                      -- growing scope. It is allocated from the module's
+                      -- block, which steps the linking evidence in the same
+                      -- motion, so nothing can escape the stripe.
+                      Blocks.withFreshInBlock (moduleBlock me) (ctxScope (envCtx env)) $ \binder block' ->
+                        let ctx' = extend (envCtx env) binder ty' (Just value')
+                            full = qualify path name
+                            extended = extendEnv ctx' binder full visibility env
+                            env' = extended
                               { envClosedOver = Map.insert full
-                                  (Foil.nameOf binder, over')
-                                  (Map.map (\(x, ps) -> (Foil.sink x, ps))
-                                           (envClosedOver env)) }
-                         in withDecls env' params path decls $ \env'' rest ->
-                              cont env''
+                                  (over', Foil.nameOf binder)
+                                  (envClosedOver extended) }
+                         in withDecls (ModuleEnv block' env') params path decls $ \me'' rest ->
+                              cont me''
                                 (Defined (prettyVarIdent full) (map prettyVarIdent over') : rest)
 
 -- | Parse and interpret one source.

@@ -373,7 +373,8 @@ unresolvedNames toSig fromRawPattern getScopedTerm = go
 -- for a better message.
 tryConvertToAST
   :: forall sig binder rawIdent rawTerm rawPattern rawScopedTerm n.
-     (Foil.Distinct n, Bitraversable sig, Ord rawIdent, Foil.CoSinkable binder)
+     (Foil.Distinct n, Bitraversable sig, Ord rawIdent,
+      Foil.CoSinkable binder, Foil.SinkableK binder)
   => (rawTerm -> Either rawIdent (sig (rawPattern, rawScopedTerm) rawTerm))
   -- ^ Unpeel one syntax node (or a variable) from a raw term.
   -> (forall x z. Foil.Distinct x
@@ -395,25 +396,74 @@ tryConvertToAST
   -> rawTerm
   -- ^ Raw term.
   -> Either (UnresolvedName rawIdent) (AST binder sig n)
-tryConvertToAST toSig fromRawPattern getScopedTerm = go
+tryConvertToAST toSig fromRawPattern getScopedTerm scope names =
+  tryConvertToASTWith toSig fromRawPattern getScopedTerm scope names Map.empty
+
+-- | Convert a raw term into a scope-safe term, resolving some identifiers to
+-- whole terms rather than to variables.
+--
+-- The extra table is what a language with /constants/ needs: an identifier that
+-- denotes a top-level declaration, a primitive, or an abbreviation stands for
+-- something that is not a variable, and resolving it during conversion is the
+-- only place where the binders are known. Doing it in a pass of one's own means
+-- writing a binder-aware traversal of the raw syntax by hand.
+--
+-- Variables win: the table of names is consulted first, so a binder shadows an
+-- entry here, and an entry here shadows nothing. The table is sunk when going
+-- under a binder, exactly as the names are, so its entries may mention anything
+-- in scope where conversion started and need not be closed.
+tryConvertToASTWith
+  :: forall sig binder rawIdent rawTerm rawPattern rawScopedTerm n.
+     (Foil.Distinct n, Bitraversable sig, Ord rawIdent,
+      Foil.CoSinkable binder, Foil.SinkableK binder)
+  => (rawTerm -> Either rawIdent (sig (rawPattern, rawScopedTerm) rawTerm))
+  -- ^ Unpeel one syntax node (or a variable) from a raw term.
+  -> (forall x z. Foil.Distinct x
+      => Foil.Scope x
+      -> Map rawIdent (Foil.Name x)
+      -> rawPattern
+      -> (forall y. Foil.DExt x y
+          => binder x y
+          -> Map rawIdent (Foil.Name y)
+          -> z)
+      -> z)
+  -- ^ Convert raw pattern into a scope-safe pattern.
+  -> (rawScopedTerm -> rawTerm)
+  -- ^ Extract a term from a scoped term (or crash).
+  -> Foil.Scope n
+  -- ^ Resulting scope of the constructed term.
+  -> Map rawIdent (Foil.Name n)
+  -- ^ Known names of free variables in scope @n@.
+  -> Map rawIdent (AST binder sig n)
+  -- ^ Identifiers that denote a term rather than a variable.
+  -> rawTerm
+  -- ^ Raw term.
+  -> Either (UnresolvedName rawIdent) (AST binder sig n)
+tryConvertToASTWith toSig fromRawPattern getScopedTerm = go
   where
     go :: forall x. Foil.Distinct x
-       => Foil.Scope x -> Map rawIdent (Foil.Name x) -> rawTerm
+       => Foil.Scope x -> Map rawIdent (Foil.Name x)
+       -> Map rawIdent (AST binder sig x) -> rawTerm
        -> Either (UnresolvedName rawIdent) (AST binder sig x)
-    go scope names t = case toSig t of
+    go scope names terms t = case toSig t of
       Left x -> case Map.lookup x names of
-        Nothing   -> Left (UnresolvedName x (Map.keys names))
         Just name -> Right (Var name)
-      Right node -> Node <$> bitraverse (goScoped scope names) (go scope names) node
+        Nothing   -> case Map.lookup x terms of
+          Just term -> Right term
+          Nothing   -> Left (UnresolvedName x (Map.keys names <> Map.keys terms))
+      Right node ->
+        Node <$> bitraverse (goScoped scope names terms) (go scope names terms) node
 
     goScoped :: forall x. Foil.Distinct x
              => Foil.Scope x -> Map rawIdent (Foil.Name x)
+             -> Map rawIdent (AST binder sig x)
              -> (rawPattern, rawScopedTerm)
              -> Either (UnresolvedName rawIdent) (ScopedAST binder sig x)
-    goScoped scope names (pat, scopedTerm) =
+    goScoped scope names terms (pat, scopedTerm) =
       fromRawPattern scope names pat $ \binder' names' ->
         ScopedAST binder'
-          <$> go (Foil.extendScopePattern binder' scope) names' (getScopedTerm scopedTerm)
+          <$> go (Foil.extendScopePattern binder' scope) names'
+                 (Foil.sinkContainer terms) (getScopedTerm scopedTerm)
 
 -- | Convert a raw term into a scope-safe term, calling 'error' on an
 -- identifier that does not resolve.

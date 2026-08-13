@@ -65,6 +65,7 @@ import Control.Monad.Foil.Internal.ValidNameBinders
 -- >>> :set -XFlexibleContexts
 -- >>> :set -Wno-simplifiable-class-constraints
 -- >>> import qualified Data.Map as Map
+-- >>> import qualified Data.IntSet as IntSet
 
 -- * Safe types and operations
 
@@ -187,6 +188,47 @@ withFresh
   :: Distinct n => Scope n
   -> (forall l. DExt n l => NameBinder n l -> r) -> r
 withFresh scope cont = withFreshBinder scope (`unsafeAssertFresh` cont)
+
+-- | Safely produce a fresh name binder, allocated within a given range.
+--
+-- The binder is fresh with respect to the whole ambient scope, not merely to
+-- its part inside the range. Indeed, the allocated name lies in the range and
+-- is greater than every scope member there, while a scope member outside the
+-- range cannot be equal to a name inside it (see 'rawFreshNameIn'). Thus the
+-- usual freshness evidence applies, and no invariant beyond the scope itself
+-- is required.
+--
+-- This is the primitive behind allocation policies such as per-module name
+-- blocks: reserve disjoint ranges for independently checked units, and the
+-- names allocated for them can never collide.
+--
+-- Fails with 'error' when the range is exhausted; use 'tryWithFreshIn' to
+-- handle exhaustion instead.
+--
+-- >>> withFreshIn (NameRange 100 199) emptyScope (nameId . nameOf)
+-- 100
+withFreshIn
+  :: Distinct n
+  => NameRange  -- ^ The reservation to allocate from.
+  -> Scope n    -- ^ The ambient scope.
+  -> (forall l. DExt n l => NameBinder n l -> r) -> r
+withFreshIn range scope cont =
+  case tryWithFreshIn range scope cont of
+    Just r  -> r
+    Nothing -> error ("withFreshIn: exhausted " <> show range)
+
+-- | A version of 'withFreshIn' that reports an exhausted range with 'Nothing'
+-- instead of failing. A driver that hands out ranges can then report which
+-- unit ran out of its reservation.
+tryWithFreshIn
+  :: Distinct n
+  => NameRange  -- ^ The reservation to allocate from.
+  -> Scope n    -- ^ The ambient scope.
+  -> (forall l. DExt n l => NameBinder n l -> r) -> Maybe r
+tryWithFreshIn range (UnsafeScope rawScope) cont =
+  case rawFreshNameIn range rawScope of
+    Nothing   -> Nothing
+    Just name -> Just (unsafeAssertFresh (UnsafeNameBinder (UnsafeName name)) cont)
 
 -- | Rename a given pattern into a fresh version of it to extend a given scope.
 --
@@ -1249,7 +1291,24 @@ withFreshNameBinderList
   -> NameMap n a          -- ^ The map to extend.
   -> (forall l. DExt n l => Scope l -> NameBinderList n l -> NameMap l a -> r)
   -> r
-withFreshNameBinderList xs0 scope0 nameMap0 cont =
+withFreshNameBinderList = withFreshNameBinderListIn fullNameRange
+
+-- | A version of 'withFreshNameBinderList' that allocates within a given
+-- range (see 'withFreshIn'). This is the bulk form of range-guarded
+-- allocation: pre-allocating the names of a whole unit at once and
+-- allocating them one at a time are the same operation at different
+-- granularity, so both extend the scope index faithfully.
+--
+-- Fails with 'error' when the range is exhausted.
+withFreshNameBinderListIn
+  :: forall n a r. Distinct n
+  => NameRange            -- ^ The reservation to allocate from.
+  -> [a]                  -- ^ A value to bind to each fresh binder.
+  -> Scope n              -- ^ The ambient scope.
+  -> NameMap n a          -- ^ The map to extend.
+  -> (forall l. DExt n l => Scope l -> NameBinderList n l -> NameMap l a -> r)
+  -> r
+withFreshNameBinderListIn range xs0 scope0 nameMap0 cont =
     go xs0 scope0 NameBinderListEmpty nameMap0 cont
   where
     go :: forall i r'. Distinct i
@@ -1260,7 +1319,7 @@ withFreshNameBinderList xs0 scope0 nameMap0 cont =
       case (assertDistinct binders, assertExt binders) of
         (Distinct, Ext) -> cont' scope binders nameMap
     go (x:xs) scope binders nameMap cont' =
-      withFresh scope $ \binder ->
+      withFreshIn range scope $ \binder ->
         go xs
            (extendScope binder scope)
            (snocNameBinderList binders binder)
@@ -1284,6 +1343,52 @@ type RawScope = IntSet
 rawFreshName :: RawScope -> RawName
 rawFreshName scope | IntSet.null scope = 0
                    | otherwise = IntSet.findMax scope + 1
+
+-- | An inclusive reservation of a contiguous range of raw names.
+--
+-- A range is a bound on an allocator (see 'withFreshIn'), not a set of names:
+-- its runtime content is two 'Int's. A range with @lo > hi@ is empty.
+data NameRange = NameRange
+  { nameRangeLo :: !RawName  -- ^ The smallest name of the reservation.
+  , nameRangeHi :: !RawName  -- ^ The largest name of the reservation (inclusive).
+  } deriving (Eq, Show)
+
+-- | The range of all non-negative names.
+--
+-- On a scope without negative members, allocation within 'fullNameRange'
+-- agrees with 'rawFreshName'. The two diverge on a scope with negative
+-- members: 'rawFreshName' allocates right above the maximum, wherever that
+-- lands, while 'fullNameRange' clamps allocation to non-negative names.
+fullNameRange :: NameRange
+fullNameRange = NameRange 0 maxBound
+
+-- | \(O(\min(n, W))\).
+-- Generate a fresh raw name within a given range: the successor of the
+-- largest scope member inside the range, or the range's low end when no
+-- scope member lies inside the range. Returns 'Nothing' when the range is
+-- exhausted (or empty to begin with).
+--
+-- The resulting name is fresh with respect to the /whole/ scope: it differs
+-- from scope members inside the range by being greater, and from members
+-- outside the range by being inside it.
+--
+-- >>> rawFreshNameIn (NameRange 10 19) (IntSet.fromList [-5, 3, 12, 100])
+-- Just 13
+-- >>> rawFreshNameIn (NameRange 10 19) (IntSet.fromList [42])
+-- Just 10
+-- >>> rawFreshNameIn (NameRange 10 19) (IntSet.fromList [3, 19])
+-- Nothing
+--
+-- Note that the implementation must not increment either bound of the range:
+-- @'IntSet.lookupLT' (hi + 1)@ would wrap around at @hi = maxBound@, and
+-- @x + 1@ would wrap around at @x = hi = maxBound@. Both are guarded here,
+-- and the property tests pin both cases.
+rawFreshNameIn :: NameRange -> RawScope -> Maybe RawName
+rawFreshNameIn (NameRange lo hi) scope
+  | lo > hi   = Nothing
+  | otherwise = case IntSet.lookupLE hi scope of
+      Just x | x >= lo -> if x < hi then Just (x + 1) else Nothing
+      _                -> Just lo
 
 -- | Check if a raw name is contained in a raw scope.
 rawMember :: RawName -> RawScope -> Bool
