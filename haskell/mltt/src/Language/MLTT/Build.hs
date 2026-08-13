@@ -31,6 +31,8 @@
 -- allocates from the first stripe the build left free.
 module Language.MLTT.Build (
   BuildMode (..),
+  BuildOptions (..),
+  SessionMode (..),
   buildModules,
   buildModulesWith,
   buildSources,
@@ -61,7 +63,7 @@ import           System.IO                (hFlush, isEOF, stdout)
 
 import           Language.MLTT.Artifact
 import           Language.MLTT.Impl
-import           Language.MLTT.Impl.Generated (parseProgram)
+import           Language.MLTT.Impl.Generated (SourceText (..), parseProgram)
 import           Language.MLTT.Resolve    (prettyVarIdent)
 import qualified Language.MLTT.Syntax.Abs as Raw
 import qualified Language.MLTT.Syntax.Print as Raw
@@ -79,32 +81,47 @@ buildMain :: [String] -> IO ()
 buildMain args =
   case parseArgs args of
     Left err -> putStrLn err >> exitFailure
-    Right (mode, cacheDir, interactive, paths) -> do
-      sources <- case paths of
-        [] | not interactive -> (\input -> [("<stdin>", input)]) <$> getContents
-        _  -> mapM (\path -> (,) path <$> readFile path) paths
-      result <- buildSourcesWith mode cacheDir sources $ \registry env results -> do
-        mapM_ (putStrLn . renderResult) results
-        if interactive
-          then True <$ runRepl (sessionOver registry env)
-          else pure (succeeded results)
+    Right opts -> do
+      sources <- case optFiles opts of
+        [] | optSession opts == BatchOnly ->
+          (\input -> [("<stdin>", SourceText input)]) <$> getContents
+        paths -> mapM (\path -> (,) path . SourceText <$> readFile path) paths
+      result <- buildSourcesWith (optMode opts) (optCache opts) sources $
+        \registry env results -> do
+          mapM_ (putStrLn . renderResult) results
+          case optSession opts of
+            Interactive -> True <$ runRepl (sessionOver registry env)
+            BatchOnly   -> pure (succeeded results)
       case result of
         Left err -> putStrLn err >> exitFailure
         Right ok -> unless ok exitFailure
 
-parseArgs :: [String] -> Either String (BuildMode, Maybe FilePath, Bool, [FilePath])
-parseArgs = fmap done . foldM step (Sequential, Nothing, False, [])
+-- | Whether the build is followed by an interactive session (@--repl@).
+data SessionMode = BatchOnly | Interactive
+  deriving (Eq, Show)
+
+-- | What the command line asked for.
+data BuildOptions = BuildOptions
+  { optMode    :: BuildMode
+  , optCache   :: Maybe FilePath
+  , optSession :: SessionMode
+  , optFiles   :: [FilePath]
+  }
+  deriving (Eq, Show)
+
+parseArgs :: [String] -> Either ErrorMessage BuildOptions
+parseArgs = fmap done . foldM step (BuildOptions Sequential Nothing BatchOnly [])
   where
-    done (m, c, i, ps) = (m, c, i, reverse ps)
-    step (m, c, i, ps) = \case
-      "--mode=sequential" -> Right (Sequential, c, i, ps)
-      "--mode=linked"     -> Right (Linked, c, i, ps)
-      "--mode=parallel"   -> Right (Parallel, c, i, ps)
-      "--repl"            -> Right (m, c, True, ps)
+    done opts = opts { optFiles = reverse (optFiles opts) }
+    step opts = \case
+      "--mode=sequential" -> Right opts { optMode = Sequential }
+      "--mode=linked"     -> Right opts { optMode = Linked }
+      "--mode=parallel"   -> Right opts { optMode = Parallel }
+      "--repl"            -> Right opts { optSession = Interactive }
       arg
-        | Just dir <- stripPrefix "--cache=" arg -> Right (m, Just dir, i, ps)
+        | Just dir <- stripPrefix "--cache=" arg -> Right opts { optCache = Just dir }
         | "--" `isPrefixOf` arg -> Left ("unknown option: " <> arg <> usage)
-        | otherwise -> Right (m, c, i, arg : ps)
+        | otherwise -> Right opts { optFiles = arg : optFiles opts }
     usage = "\nusage: mltt [--mode=sequential|linked|parallel] [--cache=DIR] [--repl] [FILES...]"
 
 -- | Begin a session over a build. Every built module's exports are in scope,
@@ -132,7 +149,7 @@ runRepl = loop
           if all isSpace line
             then loop s
             else do
-              let (s', results) = replStep line s
+              let (s', results) = replStep (SourceText line) s
               mapM_ (putStrLn . renderResult) results
               loop s'
 
@@ -142,17 +159,17 @@ data BuildMode = Sequential | Linked | Parallel
 
 -- | Parse several named sources and build them; see 'buildModules'.
 buildSources
-  :: BuildMode -> Maybe FilePath -> [(FilePath, String)]
-  -> IO (Either String [CommandResult])
+  :: BuildMode -> Maybe FilePath -> [(FilePath, SourceText)]
+  -> IO (Either BuildError [CommandResult])
 buildSources mode cacheDir sources =
   buildSourcesWith mode cacheDir sources (\_ _ results -> pure results)
 
 -- | 'buildSources', handing the continuation the outcome; see
 -- 'buildModulesWith'.
 buildSourcesWith
-  :: BuildMode -> Maybe FilePath -> [(FilePath, String)]
+  :: BuildMode -> Maybe FilePath -> [(FilePath, SourceText)]
   -> (forall c. Foil.Distinct c => Registry -> Env c -> [CommandResult] -> IO r)
-  -> IO (Either String r)
+  -> IO (Either BuildError r)
 buildSourcesWith mode cacheDir sources k =
   case traverse parseSource sources of
     Left err -> pure (Left err)
@@ -169,7 +186,7 @@ data BuiltEnv where
 -- | Build a set of modules.
 buildModules
   :: BuildMode -> Maybe FilePath -> [Raw.Module]
-  -> IO (Either String [CommandResult])
+  -> IO (Either BuildError [CommandResult])
 buildModules mode cacheDir modules =
   buildModulesWith mode cacheDir modules (\_ _ results -> pure results)
 
@@ -179,7 +196,7 @@ buildModules mode cacheDir modules =
 buildModulesWith
   :: BuildMode -> Maybe FilePath -> [Raw.Module]
   -> (forall c. Foil.Distinct c => Registry -> Env c -> [CommandResult] -> IO r)
-  -> IO (Either String r)
+  -> IO (Either BuildError r)
 buildModulesWith mode cacheDir modules k =
   case buildOrder modules of
     Left err -> pure (Left err)
@@ -203,7 +220,7 @@ buildModulesWith mode cacheDir modules k =
   where
     go :: Foil.Distinct c
        => Registry -> Env c -> Map Raw.VarIdent ContentHash -> [NonEmpty Raw.Module]
-       -> IO (Either String ([(Raw.VarIdent, [CommandResult])], BuiltEnv))
+       -> IO (Either BuildError ([(Raw.VarIdent, [CommandResult])], BuiltEnv))
     go _ env _ [] = pure (Right ([], BuiltEnv env))
     go registry env hashes (wave : rest) = do
       units <- produceWave registry env hashes wave
@@ -262,7 +279,7 @@ buildModulesWith mode cacheDir modules k =
         Just a
           | artifactSource a == source
           , Right cm <- loadArtifact hashes range env a
-          -> pure (cm, a, [LoadedModule (prettyVarIdent name)])
+          -> pure (cm, a, [LoadedModule (renderVarIdent name)])
         _ -> do
           let cm = checkModule range env m
               a  = makeArtifact name idx source importHashes cm

@@ -9,11 +9,12 @@ module Language.MLTT.ParametersSpec (spec) where
 
 import           Data.List          (isInfixOf)
 import           Language.MLTT.Impl
+import           Language.MLTT.Impl.Generated (SourceText (..))
 import           Test.Hspec
 
 -- | Interpret a program, reporting a parse error as a failed command.
 run :: String -> [CommandResult]
-run input = case interpret input of
+run input = case interpret (SourceText input) of
   Left err      -> [Failed ("parse error: " <> err)]
   Right results -> results
 
@@ -22,7 +23,7 @@ failures :: [CommandResult] -> [String]
 failures results = [err | Failed err <- results]
 
 -- | The normal forms every @compute@ produced.
-computed :: [CommandResult] -> [String]
+computed :: [CommandResult] -> [RenderedTerm]
 computed results = [term | Computed term <- results]
 
 -- | A monoid-shaped parameter block, and whatever declarations are given.
