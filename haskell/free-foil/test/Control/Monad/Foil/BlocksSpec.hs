@@ -1,0 +1,111 @@
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+
+-- | Blocks: extension-within-a-range evidence, disjoint union, re-attachment.
+module Control.Monad.Foil.BlocksSpec (spec) where
+
+import           Data.Maybe                  (isJust)
+import           Test.Hspec
+
+import qualified Control.Monad.Foil          as Foil
+import           Control.Monad.Foil.Blocks
+import           Control.Monad.Foil.Internal (NameRange (..),
+                                              rawNameBinderList)
+
+-- | The raw names of a scope, in ascending order.
+scopeIds :: Foil.Scope n -> [Int]
+scopeIds = map Foil.nameId . Foil.nameSetToList . Foil.scopeToNameSet
+
+ra, rb :: NameRange
+ra = NameRange 100 199
+rb = NameRange 200 299
+
+spec :: Spec
+spec = do
+  describe "extWithinStep" $ do
+    it "accepts a binder allocated inside the range" $
+      Foil.withFreshIn ra Foil.emptyScope $ \b ->
+        fmap extWithinRange (extWithinStep b (extWithinRefl ra))
+          `shouldBe` Just ra
+
+    it "rejects a binder allocated outside the range" $
+      Foil.withFresh Foil.emptyScope $ \b ->  -- allocates the name 0
+        case extWithinStep b (extWithinRefl ra) of
+          Nothing -> pure () :: IO ()
+          Just _  -> expectationFailure "a name escaped the reservation"
+
+  describe "withExtendScopeRange" $ do
+    it "hands back consecutive binders, the scope, and the evidence" $
+      case withExtendScopeRange Foil.emptyScope ra 3 $ \scope binders ext ->
+             (scopeIds scope, rawNameBinderList binders, extWithinRange ext) of
+        Just result -> result `shouldBe` ([100, 101, 102], [100, 101, 102], ra)
+        Nothing     -> expectationFailure "the range was refused"
+
+    it "refuses a range the scope already touches" $
+      Foil.withFreshIn ra Foil.emptyScope $ \b ->
+        let scope = Foil.extendScope b Foil.emptyScope
+         in withExtendScopeRange scope ra 1 (\_ _ _ -> ()) `shouldBe` Nothing
+
+    it "refuses more names than the range holds" $
+      withExtendScopeRange Foil.emptyScope (NameRange 0 1) 3 (\_ _ _ -> ())
+        `shouldBe` Nothing
+
+  describe "withDisjointUnion" $ do
+    it "links two units over a shared import scope" $
+      Foil.withFresh Foil.emptyScope $ \bi ->  -- the shared import, name 0
+        let c = Foil.extendScope bi Foil.emptyScope
+            linked =
+              withExtendScopeRange c ra 2 $ \sa _ ea ->
+                withExtendScopeRange c rb 1 $ \sb _ eb ->
+                  withDisjointUnion ea eb sa sb (\s _ -> scopeIds s)
+         in linked `shouldBe` Just (Just (Just [0, 100, 101, 200]))
+
+    it "refuses overlapping reservations" $
+      let linked =
+            withExtendScopeRange Foil.emptyScope ra 2 $ \sa _ ea ->
+              withExtendScopeRange Foil.emptyScope ra 1 $ \sb _ eb ->
+                withDisjointUnion ea eb sa sb (\s _ -> scopeIds s)
+       in linked `shouldBe` Just (Just Nothing)
+
+    it "extends both sides' maps to the union" $
+      let looked =
+            withExtendScopeRange Foil.emptyScope ra 1 $ \sa bsa ea ->
+              withExtendScopeRange Foil.emptyScope rb 1 $ \sb bsb eb ->
+                let m1 = Foil.addNameBinderList bsa ["a"] Foil.emptyNameMap
+                    m2 = Foil.addNameBinderList bsb ["b"] Foil.emptyNameMap
+                 in case (Foil.namesOfPattern bsa, Foil.namesOfPattern bsb) of
+                      ([x1], [x2]) ->
+                        withDisjointUnion ea eb sa sb $ \_scope union ->
+                          let u = unionNameMaps union m1 m2
+                           in ( Foil.lookupName (Foil.sink x1) u
+                              , Foil.lookupName (Foil.sink x2) u
+                              )
+                      _ -> Nothing
+       in looked `shouldBe` Just (Just (Just ("a", "b")))
+
+  describe "checkScopeUnion" $ do
+    it "witnesses the union and nothing else" $
+      let checked =
+            withExtendScopeRange Foil.emptyScope ra 1 $ \sa _ ea ->
+              withExtendScopeRange Foil.emptyScope rb 1 $ \sb _ eb ->
+                withDisjointUnion ea eb sa sb $ \scope _ ->
+                  ( isJust (checkScopeUnion sa sb scope)
+                  , isJust (checkScopeUnion sa sa scope)  -- misses b's delta
+                  )
+       in checked `shouldBe` Just (Just (Just (True, False)))
+
+  describe "checkExtScope" $ do
+    it "mints evidence for a subset" $
+      case withExtendScopeRange Foil.emptyScope ra 2 $ \sa _ _ ->
+             isJust (checkExtScope Foil.emptyScope sa) of
+        Just ok -> ok `shouldBe` True
+        Nothing -> expectationFailure "the range was refused"
+
+    it "refuses a non-extension" $
+      let checked =
+            withExtendScopeRange Foil.emptyScope ra 1 $ \sa _ _ ->
+              withExtendScopeRange Foil.emptyScope rb 1 $ \sb _ _ ->
+                isJust (checkExtScope sa sb)
+       in checked `shouldBe` Just (Just False)

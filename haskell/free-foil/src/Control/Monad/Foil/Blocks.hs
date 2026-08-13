@@ -1,0 +1,256 @@
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
+
+-- | Reserved name blocks, and linking of independently checked scopes.
+--
+-- A module system wants each unit to allocate its global names inside its own
+-- reservation (a 'NameRange', via 'withFreshIn'), so that units checked
+-- independently — in either order, or in parallel — can later be /linked/
+-- without renaming. The evidence this module tracks is 'ExtWithin': scope @l@
+-- extends scope @n@ only within a given range. Note that the range bounds the
+-- /extension/ and not the scope: the names of @n@ itself (typically, a unit's
+-- imports) lie wherever they lie.
+--
+-- Two units that extend a common scope @c@ within disjoint ranges have
+-- disjoint deltas, so their union is again a scope with distinct names.
+-- 'withDisjointUnion' produces that union with a range comparison rather
+-- than a set operation, handing the continuation the extension evidence for
+-- both sides and a 'ScopeUnion' witness that the result is the union and
+-- nothing more. For linking more than two units, or for re-attaching a unit
+-- loaded from a cache, rebuild the union scope and re-mint the evidence with
+-- 'checkExtScope' and 'checkScopeUnion'.
+--
+-- 'ExtWithin' deliberately has no composition operator. The composite of two
+-- extensions is an extension within the convex hull of the two ranges, and
+-- the hull may swallow an unrelated reservation, making a later disjointness
+-- test fail spuriously. Should linking many units at once prove common, the
+-- shape to add is an n-ary 'withDisjointUnion' over a list of deltas —
+-- pairwise range checks and one union, minting per-unit evidence in a single
+-- step — rather than a fold of the binary one.
+--
+-- One kind of function here is a trust boundary, and its documentation says
+-- so: 'checkExtScope' and 'checkScopeUnion' compare raw names across
+-- independently built scopes, which is meaningful only under a deterministic
+-- reservation policy. Everything else either tests what it claims or
+-- constructs it.
+module Control.Monad.Foil.Blocks (
+  -- * Extension-within-a-range evidence
+  ExtWithin,
+  extWithinRange,
+  extWithinRefl,
+  extWithinStep,
+  -- * Bulk extension of a scope by a range
+  withExtendScopeRange,
+  -- * Linking
+  ScopeUnion,
+  withDisjointUnion,
+  checkScopeUnion,
+  checkExtScope,
+  unionNameMaps,
+) where
+
+import qualified Data.IntMap                 as IntMap
+import qualified Data.IntSet                 as IntSet
+import           Unsafe.Coerce               (unsafeCoerce)
+
+import           Control.Monad.Foil.Internal
+
+-- $setup
+-- >>> :set -XDataKinds
+-- >>> :set -XFlexibleContexts
+-- >>> import Control.Monad.Foil.Internal
+
+-- | Evidence that scope @l@ extends scope @n@ only within a reserved range:
+-- every name of @l@ that is not a name of @n@ lies inside the range.
+--
+-- The runtime content is the range itself, two 'Int's. The evidence is built
+-- alongside allocation — 'extWithinRefl' at the start of a unit,
+-- 'extWithinStep' at each binder — so each step is a range test and nothing
+-- is ever traversed.
+data ExtWithin (n :: S) (l :: S) = UnsafeExtWithin NameRange
+
+-- | The reservation an 'ExtWithin' is evidence about.
+extWithinRange :: ExtWithin n l -> NameRange
+extWithinRange (UnsafeExtWithin range) = range
+
+-- | A scope extends itself within any range: the extension is empty.
+--
+-- Note that this does /not/ say the range is disjoint from the scope; it is
+-- 'withExtendScopeRange' that checks that, because it allocates blindly.
+extWithinRefl :: NameRange -> ExtWithin n n
+extWithinRefl = UnsafeExtWithin
+
+-- | Extend the evidence across one more binder, if its name lies inside the
+-- range. \(O(1)\).
+--
+-- A binder allocated by 'withFreshIn' at this range always passes. A binder
+-- allocated elsewhere — 'withFresh', 'withRefreshed' — is rejected with
+-- 'Nothing' unless it happens to land inside the range, which is the point:
+-- the evidence cannot be extended past a name that would escape the
+-- reservation.
+--
+-- >>> let range = NameRange 100 199
+-- >>> withFreshIn range emptyScope (\b -> fmap extWithinRange (extWithinStep b (extWithinRefl range)))
+-- Just (NameRange {nameRangeLo = 100, nameRangeHi = 199})
+extWithinStep :: NameBinder l l' -> ExtWithin n l -> Maybe (ExtWithin n l')
+extWithinStep binder (UnsafeExtWithin range@(NameRange lo hi))
+  | lo <= x && x <= hi = Just (UnsafeExtWithin range)
+  | otherwise          = Nothing
+  where
+    x = nameId (nameOf binder)
+
+-- | Extend a scope with the first @k@ names of a range, in one step.
+--
+-- This is the bulk form of a unit's allocation — loading a cached unit whose
+-- delta is known to be @k@ consecutive names, or pre-allocating a unit's
+-- names before checking its bodies. The range part of the scope must be
+-- empty, which is checked (one 'IntSet.lookupGE'), so the extension is fresh
+-- by construction; 'Nothing' also reports a range with fewer than @k@ names.
+--
+-- The continuation receives the extended scope, the binders in ascending
+-- order (for extending a 'NameMap' in the same step), and the 'ExtWithin'
+-- evidence. The scope extension is a dense 'IntSet.fromRange', \(O(k/W)\).
+--
+-- >>> withExtendScopeRange emptyScope (NameRange 100 199) 3 (\_ binders _ -> rawNameBinderList binders)
+-- Just [100,101,102]
+withExtendScopeRange
+  :: forall c r. Distinct c
+  => Scope c      -- ^ The scope to extend (typically, a unit's imports).
+  -> NameRange    -- ^ The unit's reservation.
+  -> Int          -- ^ How many names to allocate.
+  -> (forall n. DExt c n => Scope n -> NameBinderList c n -> ExtWithin c n -> r)
+  -> Maybe r
+withExtendScopeRange (UnsafeScope scope) range@(NameRange lo hi) k cont
+  | k < 0                        = Nothing
+  | rangeOccupied                = Nothing
+  | toInteger k > rangeCapacity  = Nothing
+  | otherwise =
+      Just (unsafeExtendedWithin (UnsafeScope scope') binders (UnsafeExtWithin range) cont)
+  where
+    rangeOccupied = case IntSet.lookupGE lo scope of
+      Just y  -> y <= hi
+      Nothing -> False
+    rangeCapacity = max 0 (toInteger hi - toInteger lo + 1)
+    scope'
+      | k == 0    = scope
+      | otherwise = IntSet.union scope (IntSet.fromRange (lo, lo + (k - 1)))
+    binders :: forall n. NameBinderList c n
+    binders = go (if k == 0 then [] else [lo .. lo + (k - 1)])
+      where
+        go :: forall m m'. [RawName] -> NameBinderList m m'
+        go []       = unsafeCoerce NameBinderListEmpty
+        go (x : xs) = NameBinderListCons (UnsafeNameBinder (UnsafeName x)) (go xs)
+
+-- | Unsafely mint the evidence for an extension built by this module.
+--
+-- Sound when the scope really is the given base extended by the binders, and
+-- the binders' names lie inside the evidence's range and are fresh in the
+-- base — which is what the callers here check or construct.
+unsafeExtendedWithin
+  :: forall c n r
+   . Scope n -> NameBinderList c n -> ExtWithin c n
+  -> (DExt c n => Scope n -> NameBinderList c n -> ExtWithin c n -> r)
+  -> r
+unsafeExtendedWithin scope binders ext cont =
+  case unsafeDistinct @n of
+    Distinct -> case unsafeExt @c @n of
+      Ext -> cont scope binders ext
+
+-- | Link two scopes that extend a common scope @c@ within their respective
+-- reservations. \(O(1)\) in evidence; the scope union is one 'IntSet.union'.
+--
+-- 'Nothing' when the two ranges overlap. The overlap test is soundness, not
+-- an optimisation: the deltas @n \\ c@ and @m \\ c@ lie inside their
+-- respective ranges, so disjoint ranges are what guarantees that no raw name
+-- denotes two different variables in the union. The names the two scopes
+-- share are exactly the names of @c@, identified rather than renamed apart,
+-- which is what linking two units over a common import must do. With
+-- overlapping ranges one raw name could stand for a variable of each side,
+-- and the union would conflate them — hence no evidence is produced.
+--
+-- Both extension facts are handed to the continuation at once, as
+-- 'withThinnedNameBinderList' does, together with a 'ScopeUnion' witness:
+-- the constraints say that @k@ contains @n@ and @m@, and the witness says
+-- that it contains nothing else, which is what a total map on the union
+-- needs ('unionNameMaps').
+withDisjointUnion
+  :: forall c n m r. (Distinct n, Distinct m)
+  => ExtWithin c n  -- ^ Evidence for the first unit.
+  -> ExtWithin c m  -- ^ Evidence for the second unit.
+  -> Scope n        -- ^ The first unit's scope.
+  -> Scope m        -- ^ The second unit's scope.
+  -> (forall k. (Ext n k, Ext m k, Distinct k) => Scope k -> ScopeUnion n m k -> r)
+  -> Maybe r
+withDisjointUnion (UnsafeExtWithin r1) (UnsafeExtWithin r2) (UnsafeScope s1) (UnsafeScope s2) cont
+  | rangesOverlap r1 r2 = Nothing
+  | otherwise           = Just (unsafeUnion (UnsafeScope (IntSet.union s1 s2)))
+  where
+    unsafeUnion :: forall k. Scope k -> r
+    unsafeUnion scope =
+      case unsafeDistinct @k of
+        Distinct -> case unsafeExt @n @k of
+          Ext -> case unsafeExt @m @k of
+            Ext -> cont scope UnsafeScopeUnion
+
+-- | Evidence that scope @k@ is /precisely/ the union of scopes @n@ and @m@:
+-- every name of @n@ and of @m@ is a name of @k@, and nothing else is.
+--
+-- The extension constraints @('Ext' n k, 'Ext' m k)@ state only the first
+-- half; a strict superset of the union satisfies them too. The second half
+-- is what totality of a merged 'NameMap' rests on, so 'unionNameMaps'
+-- demands this witness. It is obtained from 'withDisjointUnion', which
+-- builds the union, or from 'checkScopeUnion', which tests for it.
+data ScopeUnion (n :: S) (m :: S) (k :: S) = UnsafeScopeUnion
+
+-- | Test that a scope is precisely the union of two others, and produce the
+-- witness if so. \(O(n+m)\).
+--
+-- Like 'checkExtScope', this compares raw names across independently built
+-- scopes and is meaningful only under a deterministic reservation policy;
+-- it is the union witness for the re-attachment path, where the union scope
+-- was rebuilt rather than handed down by 'withDisjointUnion'.
+checkScopeUnion :: Scope n -> Scope m -> Scope k -> Maybe (ScopeUnion n m k)
+checkScopeUnion (UnsafeScope s1) (UnsafeScope s2) (UnsafeScope s3)
+  | IntSet.union s1 s2 == s3 = Just UnsafeScopeUnion
+  | otherwise                = Nothing
+
+-- | Whether two ranges share a name. An empty range overlaps nothing.
+rangesOverlap :: NameRange -> NameRange -> Bool
+rangesOverlap (NameRange lo1 hi1) (NameRange lo2 hi2)
+  | lo1 > hi1 || lo2 > hi2 = False
+  | otherwise              = lo1 <= hi2 && lo2 <= hi1
+
+-- | Test that every name of one scope is a name of another, and mint the
+-- extension evidence if so. \(O(n+m)\) ('IntSet.isSubsetOf').
+--
+-- __This is a trust boundary.__ The test compares raw names, and raw names
+-- from independently built scopes need not mean the same variable: the type
+-- system tracks meaning through binders, and this function deliberately goes
+-- around it to re-attach a scope built elsewhere — in an earlier run, in a
+-- cache, in a parallel session. It is sound only under the external
+-- discipline that a raw name has one global meaning, which is exactly what a
+-- deterministic reservation policy (each unit allocating inside its own
+-- range, ranges handed out by a persistent registry) provides. Nothing here
+-- checks that discipline; the caller's allocator does.
+checkExtScope :: Scope n -> Scope l -> Maybe (ExtEvidence n l)
+checkExtScope (UnsafeScope s1) (UnsafeScope s2)
+  | s1 `IntSet.isSubsetOf` s2 = Just unsafeExt
+  | otherwise                 = Nothing
+
+-- | Union of two total maps into a map on the union of their scopes.
+-- Left-biased, like 'IntMap.union'.
+--
+-- The witness is what makes the result total on @k@: the inputs are total on
+-- @n@ and @m@, and 'ScopeUnion' says @k@ holds their names and no others.
+-- (It also determines @k@, which an extension constraint alone would leave
+-- open.) What no witness can say is that the two maps agree on the names
+-- their scopes share; linked units agree there because the shared part comes
+-- from the same checked imports, and the left bias only ever chooses between
+-- equal entries.
+unionNameMaps :: ScopeUnion n m k -> NameMap n a -> NameMap m a -> NameMap k a
+unionNameMaps UnsafeScopeUnion (NameMap m1) (NameMap m2) = NameMap (IntMap.union m1 m2)
