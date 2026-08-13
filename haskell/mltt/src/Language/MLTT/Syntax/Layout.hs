@@ -27,8 +27,8 @@ data LayoutDelimiters
     }
 
 layoutWords :: [(TokSymbol, LayoutDelimiters)]
-layoutWords = [( TokSymbol "where" 23
-               , LayoutDelimiters (TokSymbol ";" 6) (Just (TokSymbol "{" 24)) (Just (TokSymbol "}" 25))
+layoutWords = [( TokSymbol "where" 24
+               , LayoutDelimiters (TokSymbol ";" 6) (Just (TokSymbol "{" 25)) (Just (TokSymbol "}" 26))
                )]
 
 layoutStopWords :: [TokSymbol]

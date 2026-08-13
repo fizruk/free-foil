@@ -44,8 +44,9 @@ module Language.MLTT.Impl where
 import           Control.Monad                (foldM)
 import qualified Control.Monad.Foil           as Foil
 import           Data.Functor.Identity        (Identity (..))
-import           Control.Monad.Free.Foil      (UnresolvedName (..))
-import           Data.List                    (intercalate)
+import           Control.Monad.Free.Foil      (AST (Var), UnresolvedName (..),
+                                               substitute)
+import           Data.List                    (foldl', intercalate)
 import           Data.Map                     (Map)
 import qualified Data.Map                     as Map
 import qualified Data.Set                     as Set
@@ -54,6 +55,7 @@ import           Language.MLTT.FreeFoilConfig (intToVarIdent)
 import           Language.MLTT.Impl.Generated
 import           Language.MLTT.Resolve
 import qualified Language.MLTT.Syntax.Abs     as Raw
+import           Language.MLTT.Telescope
 import           Language.MLTT.Typecheck
 import           System.Exit                  (exitFailure)
 
@@ -88,11 +90,20 @@ data Env n = Env
     -- ^ What each module checked so far exports.
   , envDisplay  :: Display n Raw.VarIdent
     -- ^ What each top-level name is called.
+  , envClosedOver :: Table (Foil.Name n, [Raw.VarIdent])
+    -- ^ For each declaration of the module being checked, its name and the
+    -- parameters it was closed over. A reference to one of them from inside the
+    -- same module is put back together with those parameters; see 'reinstate'.
+    -- It is emptied at a module boundary, since a client sees the closed
+    -- constant and applies it itself.
+    --
+    -- The declaration's own 'Foil.Name' is recorded here, rather than looked up
+    -- by spelling later, because a module parameter may shadow the spelling.
   }
 
 -- | An empty environment, before any module is checked.
 emptyEnv :: Env Foil.VoidS
-emptyEnv = Env emptyCtx Map.empty Map.empty Map.empty Foil.emptyNameMap
+emptyEnv = Env emptyCtx Map.empty Map.empty Map.empty Foil.emptyNameMap Map.empty
 
 -- | Extend an environment with one top-level definition.
 --
@@ -112,6 +123,7 @@ extendEnv ctx binder full visibility env = Env
   , envExports  = export visibility full name (Foil.sinkContainer (envExports env))
   , envModules  = fmap Foil.sinkContainer (envModules env)
   , envDisplay  = Foil.addNameBinder binder full (envDisplay env)
+  , envClosedOver = Map.map (\(x, ps) -> (Foil.sink x, ps)) (envClosedOver env)
   }
   where
     name = Foil.nameOf binder
@@ -126,7 +138,8 @@ display env = showTermWith intToVarIdent (envDisplay env)
 -- | What interpreting one declaration produced.
 data CommandResult
   = EnteredModule String      -- ^ A module was reached in build order.
-  | Defined String            -- ^ @def@ succeeded, for the fully qualified name.
+  | Defined String [String]   -- ^ @def@ succeeded, for the fully qualified name
+                              -- and the module parameters it was discharged over.
   | Checked String String     -- ^ @check@ succeeded, for a term and its type.
   | Computed String           -- ^ @compute@ succeeded, with the normal form.
   | Failed String             -- ^ The declaration was rejected.
@@ -142,7 +155,9 @@ succeeded = all $ \case
 renderResult :: CommandResult -> String
 renderResult = \case
   EnteredModule name -> "module " <> name
-  Defined name       -> "  ✓ defined " <> name
+  Defined name []    -> "  ✓ defined " <> name
+  Defined name used  -> "  ✓ defined " <> name
+                          <> " over (" <> intercalate ", " used <> ")"
   Checked term ty    -> "  ✓ " <> term <> " : " <> ty
   Computed term      -> "  ↦ " <> term
   Failed err         -> "  ✗ " <> err
@@ -176,15 +191,19 @@ buildOrder modules
 
 -- | The name of a module.
 moduleName :: Raw.Module -> Raw.VarIdent
-moduleName (Raw.AModule _ name _ _) = name
+moduleName (Raw.AModule _ name _ _ _) = name
+
+-- | The parameters of a module.
+moduleParams :: Raw.Module -> [Raw.Param]
+moduleParams (Raw.AModule _ _ params _ _) = params
 
 -- | The imports of a module.
 moduleImports :: Raw.Module -> [Raw.Import]
-moduleImports (Raw.AModule _ _ imports _) = imports
+moduleImports (Raw.AModule _ _ _ imports _) = imports
 
 -- | The declarations of a module.
 moduleDecls :: Raw.Module -> [Raw.Decl]
-moduleDecls (Raw.AModule _ _ _ decls) = decls
+moduleDecls (Raw.AModule _ _ _ _ decls) = decls
 
 -- * Interpreting a program
 
@@ -202,13 +221,18 @@ interpretModules modules = case buildOrder modules of
   Right ordered -> goModules emptyEnv ordered
 
 -- | Check each module in turn, in the growing top-level scope.
+--
+-- A module's parameters are elaborated once here, before its declarations, so
+-- that a parameter block that does not resolve is reported once rather than
+-- against every declaration that would have been checked under it.
 goModules :: Foil.Distinct n => Env n -> [Raw.Module] -> [CommandResult]
 goModules _env [] = []
-goModules env (m : ms) =
-    withDecls env' [] (moduleDecls m) $ \env'' results ->
-      EnteredModule (prettyVarIdent (moduleName m))
-        : results
-        <> goModules (finishModule (moduleName m) env'') ms
+goModules env (m : ms) = EnteredModule (prettyVarIdent (moduleName m)) :
+    case validateParams env' (moduleParams m) of
+      Just err -> Failed err : goModules env ms
+      Nothing ->
+        withDecls env' (moduleParams m) [] (moduleDecls m) $ \env'' results ->
+          results <> goModules (finishModule (moduleName m) env'') ms
   where
     -- An import contributes the exporting module's public names, under the
     -- spellings it exported them with. Nothing else crosses a module boundary.
@@ -217,6 +241,7 @@ goModules env (m : ms) =
           [ Map.findWithDefault Map.empty x (envModules env)
           | Raw.AnImport _ x <- moduleImports m ]
       , envExports = Map.empty
+      , envClosedOver = Map.empty
       }
 
 -- | Record what a module exported, once it is checked.
@@ -233,54 +258,147 @@ finishModule name env =
 data Two a = Two a a
   deriving (Functor, Foldable, Traversable)
 
+-- | Allocate a module's parameters, extending the environment with them.
+--
+-- Parameters are allocated afresh for each declaration rather than once for the
+-- module, because a declaration is added to the module's own scope after being
+-- discharged, and a name allocated there would otherwise collide with a
+-- parameter allocated before it. Re-elaborating a parameter block costs a few
+-- small terms and buys a scope that grows only by definitions.
+--
+-- A parameter is nameable by its bare spelling and is not exported, which is
+-- exactly what 'extendEnv' does for a private declaration.
+withParams
+  :: forall n r. Foil.Distinct n
+  => Env n
+  -> [Raw.Param]
+  -> (String -> r)        -- ^ A parameter's type did not resolve.
+  -> (forall p. Foil.DExt n p
+        => Telescope Raw.BNFC'Position n p -> Env p -> r)
+  -> r
+withParams env [] _onErr cont = cont TelescopeEmpty env
+withParams env (Raw.AParam _loc name rawTy : rest) onErr cont =
+  case tryToTerm' (ctxScope ctx) (visibleAt [] (envDeclared env)) rawTy of
+    Left err -> onErr (notInScope err)
+    Right raw ->
+      let ty = desugar raw
+       in withVarBinder ctx ty $ \ctx' binder ->
+            withParams (extendEnv ctx' binder name Private env) rest onErr $
+              \tele envP -> cont (TelescopeCons name ty binder tele) envP
+  where
+    ctx = envCtx env
+
+-- | Elaborate a module's parameter types, reporting the first that fails.
+validateParams :: Foil.Distinct n => Env n -> [Raw.Param] -> Maybe String
+validateParams env params = withParams env params Just (\_tele _envP -> Nothing)
+
+-- | Put the module's parameters back into references to its own declarations.
+--
+-- A declaration is closed at the point it is defined, so a later one in the
+-- same module refers to a constant that expects the parameters it was closed
+-- over. Rather than making the source apply them, elaboration expands each such
+-- reference into that application.
+--
+-- It is a substitution, so the library sees to it that a local binder shadowing
+-- a declaration is left alone, and that nothing is captured. Outside the
+-- declaring module the table is empty and this is the identity, which is right:
+-- a client is handed a closed constant and instantiates it as it likes.
+--
+-- The substitution is built by mapping over 'envDisplay', which is total on the
+-- scope because every binder that extends the scope enters it. Nothing is ever
+-- inserted into a substitution by name, which would be a way to undo the
+-- shadowing that 'Foil.addRename' performs under a binder.
+reinstate
+  :: Foil.Distinct p
+  => Env p
+  -> Term p
+  -> Term p
+reinstate envP term
+  | Map.null closedOver = term
+  | otherwise = substitute (ctxScope (envCtx envP)) subst term
+  where
+    closedOver = envClosedOver envP
+    subst = Foil.nameMapToSubstitution (Foil.mapWithName expand (envDisplay envP))
+
+    expand name _spelling
+      | Just ps <- lookup name (Map.elems closedOver)
+      , Just args <- traverse (`Map.lookup` envDeclared envP) ps
+      = foldl' apply (Var name) args
+      | otherwise = Var name
+
+    apply f x = App Raw.BNFC'NoPosition f (Var x)
+
+-- | Report parameters a declaration needs that it is not being closed over.
+--
+-- With the computed set this cannot arise, since that set is closed. It is the
+-- answer for a caller that supplies a set of its own.
+needsParameters :: [Raw.VarIdent] -> String
+needsParameters names =
+  "declaration needs module parameters it is not closed over: "
+    <> intercalate ", " (map prettyVarIdent names)
+
+-- | Report an identifier that did not resolve, with any near spellings.
+notInScope :: UnresolvedName Raw.VarIdent -> String
+notInScope (UnresolvedName x inScope) =
+  case suggestions x inScope of
+    []    -> "not in scope: " <> prettyVarIdent x
+    hints -> "not in scope: " <> prettyVarIdent x
+               <> "; did you mean " <> intercalate ", " (map prettyVarIdent hints) <> "?"
+
 -- | Check a block of declarations at a namespace path.
 --
 -- The path is lexical, so a nested @namespace@ is just a recursive call with a
 -- longer path, and leaving it needs no bookkeeping: the qualified names stay in
 -- 'envDeclared' and the bare spellings were never stored, only computed by
 -- 'visibleAt'.
+--
+-- Every declaration is checked with the module's parameters in scope, and a
+-- @def@ is then discharged over the ones it uses, so that what is added to the
+-- environment lives in the parameter-free scope the module started in.
 withDecls
   :: forall n r. Foil.Distinct n
   => Env n
+  -> [Raw.Param]          -- ^ The parameters of the enclosing module.
   -> Path                 -- ^ The namespace path these declarations sit at.
   -> [Raw.Decl]
   -> (forall l. Foil.DExt n l => Env l -> [CommandResult] -> r)
   -> r
-withDecls env _path [] cont = cont env []
-withDecls env path (decl : decls) cont = case decl of
+withDecls env _params _path [] cont = cont env []
+withDecls env params path (decl : decls) cont = case decl of
 
-  Raw.DeclDef _loc name ty value        -> define Public name ty value
-  Raw.DeclPrivateDef _loc name ty value -> define Private name ty value
+  Raw.DeclDef loc name over ty value        -> define loc Public name over ty value
+  Raw.DeclPrivateDef loc name over ty value -> define loc Private name over ty value
 
   Raw.DeclNamespace _loc name inner ->
-    withDecls env (path <> segments name) inner $ \envInner innerResults ->
-      withDecls envInner path decls $ \envAfter rest ->
+    withDecls env params (path <> segments name) inner $ \envInner innerResults ->
+      withDecls envInner params path decls $ \envAfter rest ->
         cont envAfter (innerResults <> rest)
 
   Raw.DeclOpen _loc name ->
     withDecls (env { envDeclared = openNamespace (qualify path name) (envDeclared env) })
-              path decls cont
+              params path decls cont
 
   Raw.DeclCheck _loc rawTerm rawType ->
-    withElaborated (Two rawTerm rawType) $ \(Two term ty) ->
-      case check ctx ty universe >> check ctx term ty of
-        Left err -> continue (Failed err)
-        Right () -> continue (Checked (display' term) (display' ty))
+    withParams env params (continue . Failed) $ \_tele envP ->
+      withElaborated envP (Two rawTerm rawType) $ \(Two term ty) ->
+        case check (envCtx envP) ty universe >> check (envCtx envP) term ty of
+          Left err -> continue (Failed err)
+          Right () -> continue (Checked (display envP term) (display envP ty))
 
   Raw.DeclCompute _loc rawTerm ->
-    withElaborated (Identity rawTerm) $ \(Identity term) ->
-      case infer ctx term of
-        Left err  -> continue (Failed err)
-        Right _ty -> continue (Computed (display' (nf (ctxScope ctx) (ctxDefs ctx) term)))
+    withParams env params (continue . Failed) $ \_tele envP ->
+      withElaborated envP (Identity rawTerm) $ \(Identity term) ->
+        let ctxP = envCtx envP
+         in case infer ctxP term of
+              Left err  -> continue (Failed err)
+              Right _ty -> continue
+                (Computed (display envP (nf (ctxScope ctxP) (ctxDefs ctxP) term)))
 
   where
-    ctx = envCtx env
     universe = Universe Raw.BNFC'NoPosition
-    display' = display env
-    visible = visibleAt path (envDeclared env)
 
     -- Continue with the remaining declarations, with one result in front.
-    continue result = withDecls env path decls $ \env' rest -> cont env' (result : rest)
+    continue result = withDecls env params path decls $ \env' rest -> cont env' (result : rest)
 
     -- Convert some raw terms, or report the identifiers that do not resolve.
     --
@@ -288,34 +406,49 @@ withDecls env path (decl : decls) cont = case decl of
     -- declaration that needs two of them asks with 'Two' and is handed back a
     -- 'Two'.
     withElaborated
-      :: Traversable f => f Raw.Term -> (f (Term n) -> r) -> r
-    withElaborated raws k =
-      case traverse (tryToTerm' (ctxScope ctx) visible) raws of
+      :: forall p f. (Foil.Distinct p, Traversable f)
+      => Env p -> f Raw.Term -> (f (Term p) -> r) -> r
+    withElaborated envP raws k =
+      case traverse (tryToTerm' (ctxScope (envCtx envP)) (visibleAt path (envDeclared envP))) raws of
         Left err -> continue (Failed (notInScope err))
-        Right ts  -> k (fmap desugar ts)
+        Right ts -> k (fmap (reinstate envP . desugar) ts)
 
-    notInScope (UnresolvedName x inScope) =
-      case suggestions x inScope of
-        []    -> "not in scope: " <> prettyVarIdent x
-        hints -> "not in scope: " <> prettyVarIdent x
-                   <> "; did you mean " <> intercalate ", " (map prettyVarIdent hints) <> "?"
-
-    define visibility name rawType rawValue =
-      withElaborated (Two rawType rawValue) $ \(Two ty value) ->
-        case check ctx ty universe >> check ctx value ty of
-          Left err -> continue (Failed err)
-          Right () ->
-            withDefinition ctx ty value $ \ctx' binder ->
-              let full = qualify path name
-                  env' = extendEnv ctx' binder full visibility env
-               in withDecls env' path decls $ \env'' rest ->
-                    cont env'' (Defined (prettyVarIdent full) : rest)
-
--- | Show a raw identifier as it was written.
-prettyVarIdent :: Raw.VarIdent -> String
-prettyVarIdent (Raw.VarIdent x) = x
+    define loc visibility name over rawType rawValue =
+      withParams env params (continue . Failed) $ \tele envP ->
+        withElaborated envP (Two rawType rawValue) $ \(Two ty value) ->
+          case check (envCtx envP) ty universe >> check (envCtx envP) value ty of
+            Left err -> continue (Failed err)
+            Right () ->
+              -- The discharged pair is well-typed by construction: abstracting a
+              -- checked term over a variable of a checked type is Π- and
+              -- λ-introduction, so it is not checked again here.
+              case discharge loc (ctxScope (envCtx env)) tele Nothing ty value of
+                Left missing -> continue (Failed (needsParameters missing))
+                Right (Discharged ty' value' over') ->
+                  case checkDischarge over over' of
+                    Left err -> continue (Failed err)
+                    Right () ->
+                      withDefinition (envCtx env) ty' value' $ \ctx' binder ->
+                        let full = qualify path name
+                            env' = (extendEnv ctx' binder full visibility env)
+                              { envClosedOver = Map.insert full
+                                  (Foil.nameOf binder, over')
+                                  (Map.map (\(x, ps) -> (Foil.sink x, ps))
+                                           (envClosedOver env)) }
+                         in withDecls env' params path decls $ \env'' rest ->
+                              cont env''
+                                (Defined (prettyVarIdent full) (map prettyVarIdent over') : rest)
 
 -- | Parse and interpret one source.
+--
+-- >>> let report = mapM_ (putStrLn . renderResult) . either error id . interpret
+-- >>> report (unlines ["module M (A : 𝕌) (x : A)", "def k : A → A := λ y ⇒ y", "def one : A := x"])
+-- module M
+--   ✓ defined k over (A)
+--   ✓ defined one over (A, x)
+--
+-- Each declaration is discharged over the parameters it uses and no others, so
+-- what a client sees is a closed definition it applies for itself.
 interpret :: String -> Either String [CommandResult]
 interpret input = interpretProgram <$> parseProgram input
 

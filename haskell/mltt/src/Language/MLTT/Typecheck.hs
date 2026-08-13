@@ -96,8 +96,22 @@ withVar
   -> Term' a n            -- ^ The type of the new variable.
   -> (forall l. Foil.DExt n l => Ctx a l -> Foil.Name l -> r)
   -> r
-withVar ctx ty cont = Foil.withFresh (ctxScope ctx) $ \binder ->
-  cont (extend ctx binder ty Nothing) (Foil.nameOf binder)
+withVar ctx ty cont = withVarBinder ctx ty $ \ctx' binder ->
+  cont ctx' (Foil.nameOf binder)
+
+-- | Extend a context with a fresh variable, handing back its /binder/.
+--
+-- A caller that intends to abstract over the variable again later needs the
+-- binder and not just the name, since a binder is what a @Π@ or a @λ@ is built
+-- from. See "Language.MLTT.Telescope".
+withVarBinder
+  :: Foil.Distinct n
+  => Ctx a n
+  -> Term' a n            -- ^ The type of the new variable.
+  -> (forall l. Foil.DExt n l => Ctx a l -> Foil.NameBinder n l -> r)
+  -> r
+withVarBinder ctx ty cont = Foil.withFresh (ctxScope ctx) $ \binder ->
+  cont (extend ctx binder ty Nothing) binder
 
 -- | Add one binder to a context. Sinking the two maps is \(O(1)\); only the
 -- new entry is inserted.

@@ -464,6 +464,14 @@ nameSetToList (UnsafeNameSet names) = Prelude.map UnsafeName (IntSet.toAscList n
 nameSetFromList :: [Name n] -> NameSet n
 nameSetFromList names = UnsafeNameSet (IntSet.fromList (Prelude.map nameId names))
 
+-- | A set of names sinks like anything else: rename each of its names.
+--
+-- As always, the proof is what makes 'sink' a coercion here, and a coercion is
+-- what it has to be for a support computed under a binder to be usable in the
+-- scope outside it without rebuilding the set.
+instance Sinkable NameSet where
+  sinkabilityProof rename = nameSetFromList . Prelude.map rename . nameSetToList
+
 -- | All the names in a scope.
 scopeToNameSet :: Scope n -> NameSet n
 scopeToNameSet (UnsafeScope names) = UnsafeNameSet names
@@ -681,6 +689,60 @@ nameBindersList (UnsafeNameBinders names) = go (IntSet.toList names)
   where
     go []     = unsafeCoerce NameBinderListEmpty
     go (x:xs) = NameBinderListCons (UnsafeNameBinder (UnsafeName x)) (go xs)
+
+-- | The raw names a list of binders binds, outermost first.
+rawNameBinderList :: NameBinderList n l -> [RawName]
+rawNameBinderList NameBinderListEmpty = []
+rawNameBinderList (NameBinderListCons binder binders) =
+  nameId (nameOf binder) : rawNameBinderList binders
+
+-- | Keep only those binders of a list whose names are in a given set.
+--
+-- This is the /thinning/ of a chain of binders, and it is what turns a support
+-- into a smaller chain in one step. The alternative — asking 'unsinkAST' at
+-- every binder whether the term can do without it — walks the term once per
+-- binder, whereas a caller can compute the support once and thin against it.
+--
+-- The thinned scope @m@ is produced rather than given, because there is nothing
+-- to give: a term\'s relevant scope (see @withRelevantScope@) is a subset of
+-- @l@ and generally not an extension of @n@, since a term need not use
+-- everything already in scope. What comes back is @n@ extended by the binders
+-- that survived, with @Ext n m@ and @Ext m l@ to place it between the two.
+--
+-- The set is taken as given. For a chain whose binders carry types, or anything
+-- else living in the intermediate scopes, the caller has to close the set under
+-- whatever those mention before thinning by it, since dropping a binder that a
+-- surviving binder\'s type refers to would leave that type unplaceable. The
+-- library cannot do that closure, having no view of what a binder carries.
+withThinnedNameBinderList
+  :: forall n l r. Distinct n
+  => NameSet l            -- ^ Names to keep, closed under whatever the binders carry.
+  -> NameBinderList n l   -- ^ The chain to thin.
+  -> (forall m. (Ext n m, Ext m l, Distinct m) => NameBinderList n m -> r)
+  -> r
+withThinnedNameBinderList (UnsafeNameSet keep) binders cont =
+    unsafeAssertThinned @n @l
+      (go (Prelude.filter (`IntSet.member` keep) (rawNameBinderList binders))) cont
+  where
+    go :: forall m m'. [RawName] -> NameBinderList m m'
+    go []       = unsafeCoerce NameBinderListEmpty
+    go (x : xs) = NameBinderListCons (UnsafeNameBinder (UnsafeName x)) (go xs)
+
+-- | Unsafely place a chain of binders between two scopes.
+--
+-- Sound for a chain thinned out of @n@ to @l@: its names are those of @n@ plus
+-- some of the binders between @n@ and @l@, so it extends @n@, is extended by
+-- @l@, and is distinct because @l@ was.
+unsafeAssertThinned
+  :: forall n l m r
+   . NameBinderList n m
+  -> ((Ext n m, Ext m l, Distinct m) => NameBinderList n m -> r)
+  -> r
+unsafeAssertThinned binders cont =
+  case unsafeDistinct @m of
+    Distinct -> case unsafeExt @n @m of
+      Ext -> case unsafeExt @m @l of
+        Ext -> cont binders
 
 -- | Add a binder to the end of an (ordered) list of binders.
 --
@@ -1114,6 +1176,15 @@ newtype NameMap (n :: S) a = NameMap { getNameMap :: IntMap a } deriving (Functo
 -- | An empty map belongs in the empty scope.
 emptyNameMap :: NameMap VoidS a
 emptyNameMap = NameMap IntMap.empty
+
+-- | Map over a 'NameMap', with the name each value belongs to.
+--
+-- This is the keyed version of the derived 'Functor' instance. It cannot change
+-- which names the map is defined on, so a map that was total stays total, which
+-- is what makes it a safe way to build a 'Substitution' out of one: see
+-- 'nameMapToSubstitution'.
+mapWithName :: (Name n -> a -> b) -> NameMap n a -> NameMap n b
+mapWithName f (NameMap m) = NameMap (IntMap.mapWithKey (f . UnsafeName) m)
 
 -- | Convert a 'NameMap' of expressions into a 'Substitution'.
 nameMapToSubstitution :: NameMap i (e o) -> Substitution e i o

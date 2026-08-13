@@ -23,16 +23,16 @@ The set of reserved words is the set of terminals appearing in the grammar. Thos
 The reserved words used in Syntax are the following:
   | ``Id`` | ``J`` | ``check`` | ``compute``
   | ``def`` | ``import`` | ``in`` | ``let``
-  | ``module`` | ``namespace`` | ``open`` | ``private``
-  | ``refl`` | ``tt`` | ``where`` | ``Π``
-  | ``Σ`` | ``λ`` | ``π₁`` | ``π₂``
-  | ``𝕌`` |  |  |
+  | ``module`` | ``namespace`` | ``open`` | ``over``
+  | ``private`` | ``refl`` | ``tt`` | ``where``
+  | ``Π`` | ``Σ`` | ``λ`` | ``π₁``
+  | ``π₂`` | ``𝕌`` |  |
 
 The symbols used in Syntax are the following:
-  | ; | : | := | {
-  | } | ( | ) | →
-  | × | ⇒ | = | 𝟙
-  | , | _ |  |
+  | ; | ( | : | )
+  | := | { | } | ,
+  | → | × | ⇒ | =
+  | 𝟙 | _ |  |
 
 ===Comments===
 Single-line comments begin with --.Multiple-line comments are  enclosed with {- and -}.
@@ -46,12 +46,15 @@ All other symbols are terminals.
   | //Program// | -> | //[Module]//
   | //[Module]// | -> | **eps**
   |  |  **|**  | //Module// //[Module]//
-  | //Module// | -> | ``module`` //VarIdent// ``;`` //[Import]// //[Decl]//
+  | //Module// | -> | ``module`` //VarIdent// //[Param]// ``;`` //[Import]// //[Decl]//
+  | //Param// | -> | ``(`` //VarIdent// ``:`` //Term// ``)``
+  | //[Param]// | -> | **eps**
+  |  |  **|**  | //Param// //[Param]//
   | //Import// | -> | ``import`` //VarIdent//
   | //[Import]// | -> | **eps**
   |  |  **|**  | //Import// ``;`` //[Import]//
-  | //Decl// | -> | ``def`` //VarIdent// ``:`` //Term// ``:=`` //Term//
-  |  |  **|**  | ``private`` ``def`` //VarIdent// ``:`` //Term// ``:=`` //Term//
+  | //Decl// | -> | ``def`` //VarIdent// //Discharge// ``:`` //Term// ``:=`` //Term//
+  |  |  **|**  | ``private`` ``def`` //VarIdent// //Discharge// ``:`` //Term// ``:=`` //Term//
   |  |  **|**  | ``namespace`` //VarIdent// ``where`` ``{`` //[Decl]// ``}``
   |  |  **|**  | ``open`` //VarIdent//
   |  |  **|**  | ``check`` //Term// ``:`` //Term//
@@ -59,6 +62,11 @@ All other symbols are terminals.
   | //[Decl]// | -> | **eps**
   |  |  **|**  | //Decl//
   |  |  **|**  | //Decl// ``;`` //[Decl]//
+  | //Discharge// | -> | **eps**
+  |  |  **|**  | ``over`` ``(`` //[VarIdent]// ``)``
+  | //[VarIdent]// | -> | **eps**
+  |  |  **|**  | //VarIdent//
+  |  |  **|**  | //VarIdent// ``,`` //[VarIdent]//
   | //Term// | -> | ``Π`` ``(`` //Pattern// ``:`` //Term// ``)`` ``→`` //ScopedTerm//
   |  |  **|**  | ``Σ`` ``(`` //Pattern// ``:`` //Term// ``)`` ``×`` //ScopedTerm//
   |  |  **|**  | ``λ`` //Pattern// ``⇒`` //ScopedTerm//

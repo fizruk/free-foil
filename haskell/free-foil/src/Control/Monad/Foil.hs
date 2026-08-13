@@ -85,6 +85,7 @@ module Control.Monad.Foil (
   -- * Name maps
   NameMap,
   emptyNameMap,
+  mapWithName,
   lookupName,
   addNameBinder,
   popNameBinder,
@@ -99,6 +100,7 @@ module Control.Monad.Foil (
   fromNameBindersList,
   snocNameBinderList,
   concatNameBinderLists,
+  withThinnedNameBinderList,
   -- * Constraints
   Ext,
   ExtEvidence(..),
