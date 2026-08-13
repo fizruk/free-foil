@@ -38,8 +38,8 @@ spec = do
         `shouldSatisfy` (Defined "square" ["A", "mul"] `elem`)
 
     it "leaves a declaration that uses no parameter a plain constant" $
-      run (inMonoid ["def flip : 𝟙 → 𝟙 := λ x ⇒ x"])
-        `shouldSatisfy` (Defined "flip" [] `elem`)
+      run (inMonoid ["def id : 𝟙 → 𝟙 := λ x ⇒ x"])
+        `shouldSatisfy` (Defined "id" [] `elem`)
 
     it "keeps a parameter that only the value mentions, in the type as well" $
       -- The type `A` does not mention `unit`, the value does, and the two have
@@ -68,7 +68,7 @@ spec = do
                                   && "actual: over (A, mul)" `isInfixOf` err)
 
     it "rejects a clause that names a parameter the declaration does not use" $
-      failures (run (inMonoid ["def flip over (A) : 𝟙 → 𝟙 := λ x ⇒ x"]))
+      failures (run (inMonoid ["def id over (A) : 𝟙 → 𝟙 := λ x ⇒ x"]))
         `shouldSatisfy` any ("actual: over ()" `isInfixOf`)
 
     it "rejects a clause that omits what the closure adds" $

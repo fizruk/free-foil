@@ -140,17 +140,17 @@ module Monoid (A : 𝕌) (unit : A) (mul : A → A → A)
 
 def square over (A, mul) : A → A := λ x ⇒ mul x x
 def neutral over (A, unit) : A := unit
-def flip : 𝟙 → 𝟙 := λ x ⇒ x
+def id : 𝟙 → 𝟙 := λ x ⇒ x
 ```
 
 ```
 module Monoid
   ✓ defined square over (A, mul)
   ✓ defined neutral over (A, unit)
-  ✓ defined flip
+  ✓ defined id
 ```
 
-`flip` uses no parameter, so it is discharged over nothing and stays an
+`id` uses no parameter, so it is discharged over nothing and stays an
 ordinary constant. `neutral` is discharged over `A` even though its body
 mentions only `unit`: keeping `unit` puts `unit`'s type into the discharged
 type, and that type is `A`. Relevance is upward closed in the telescope.
