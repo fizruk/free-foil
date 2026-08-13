@@ -57,6 +57,8 @@ tests:
       - hspec
       - hspec-discover
       - kind-generics-th
+      - QuickCheck
+      - containers
 
   doctests:
     source-dirs:

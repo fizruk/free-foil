@@ -36,6 +36,10 @@ New:
 
 - `Control.Monad.Foil` exports `nameBinderListOf`. It already exported `nameBindersList` and `getNameBinders`, so the list of a pattern's binders was reachable only by composing them.
 
+- `withFreshIn` allocates a fresh name inside a reserved range. A `NameRange` is two `Int`s bounding the allocator, not a set of names. The allocated name is the successor of the largest scope member inside the range, or the range's low end, and it is fresh in the whole scope: a member inside the range is smaller, and a member outside the range cannot be equal to a name inside it. So nothing beyond the scope has to be consulted, and units that allocate from disjoint reservations can never collide, which is what separate checking of modules needs. `tryWithFreshIn` returns `Nothing` on an exhausted range, so a driver can report which unit ran out. `withFreshNameBinderListIn` is the list-shaped form, and `withFreshNameBinderList` is now the special case of the full non-negative range; on a scope without negative names it behaves exactly as before.
+
+  Allocation is what `sink` rests on, so the same change adds property tests: `rawFreshNameIn` over scopes with negative names and `minBound`/`maxBound`, `Data.IntSet` against a `Data.Set` model across the sign bit, and `NameMap` over negative names. The tests caught two overflow bugs in the first formulation of the allocator (`lookupLT (hi + 1)` wraps around at `hi = maxBound`, and so does the successor of a taken `maxBound`); both are kept as regression tests.
+
 Changed:
 
 - `convertToAST` and `convertToScopedAST` are deprecated in favour of `unsafeConvertToAST` and `unsafeConvertToScopedAST`, which are the same functions under names that admit they call `error`. The old names still work.
