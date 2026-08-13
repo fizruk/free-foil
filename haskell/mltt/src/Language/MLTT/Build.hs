@@ -41,13 +41,16 @@ module Language.MLTT.Build (
 
 import           Control.Concurrent       (forkIO, newEmptyMVar, putMVar,
                                            takeMVar)
+import           Control.DeepSeq          (force)
 import           Control.Exception        (evaluate)
 import           Control.Monad            (foldM, forM, forM_, unless, when)
 import qualified Control.Monad.Foil       as Foil
 import           Data.Char                (isSpace)
 import           Data.Function            (on)
-import           Data.List                (foldl', groupBy, isPrefixOf, sortOn,
+import           Data.List                (foldl', isPrefixOf, sortOn,
                                            stripPrefix)
+import           Data.List.NonEmpty       (NonEmpty (..))
+import qualified Data.List.NonEmpty       as NonEmpty
 import           Data.Map                 (Map)
 import qualified Data.Map                 as Map
 import           System.Directory         (createDirectoryIfMissing,
@@ -185,7 +188,7 @@ buildModulesWith mode cacheDir modules k =
       let registry = foldl' (\r m -> fst (registerModule (moduleName m) r))
                             emptyRegistry ordered
           waves = case mode of
-            Sequential -> [[m] | m <- ordered]
+            Sequential -> [m :| [] | m <- ordered]
             _          -> wavesOf ordered
           -- Results are reported in topological order whatever the
           -- schedule, so the three modes are comparable verbatim.
@@ -199,37 +202,35 @@ buildModulesWith mode cacheDir modules k =
           Right <$> k registry env (assemble perModule)
   where
     go :: Foil.Distinct c
-       => Registry -> Env c -> Map Raw.VarIdent ContentHash -> [[Raw.Module]]
+       => Registry -> Env c -> Map Raw.VarIdent ContentHash -> [NonEmpty Raw.Module]
        -> IO (Either String ([(Raw.VarIdent, [CommandResult])], BuiltEnv))
     go _ env _ [] = pure (Right ([], BuiltEnv env))
     go registry env hashes (wave : rest) = do
       units <- produceWave registry env hashes wave
       let hashes' = foldr (\(_, a, _) -> Map.insert (artifactModule a) (artifactHash a))
                           hashes units
-          results = [(artifactModule a, rs) | (_, a, rs) <- units]
-      case foldM1 linkChecked [cm | (cm, _, _) <- units] of
+          results = [(artifactModule a, rs) | (_, a, rs) <- NonEmpty.toList units]
+          first :| more = fmap (\(cm, _, _) -> cm) units
+      case foldM linkChecked first more of
         Left err     -> pure (Left err)
         Right linked ->
           withCheckedModule linked $ \_ env' _ ->
-            fmap (\(more, built) -> (results <> more, built))
+            fmap (\(later, built) -> (results <> later, built))
               <$> go registry env' hashes' rest
-
-    foldM1 f (x : xs) = foldM f x xs
-    foldM1 _ []       = error "impossible: an empty wave"
 
     -- Check (or load) each module of a wave against the same base
     -- environment; under 'Parallel', each on its own thread.
     produceWave
       :: Foil.Distinct c
-      => Registry -> Env c -> Map Raw.VarIdent ContentHash -> [Raw.Module]
-      -> IO [(CheckedModule c, ModuleArtifact, [CommandResult])]
+      => Registry -> Env c -> Map Raw.VarIdent ContentHash -> NonEmpty Raw.Module
+      -> IO (NonEmpty (CheckedModule c, ModuleArtifact, [CommandResult]))
     produceWave registry env hashes wave
       | mode == Parallel = do
           vars <- forM wave $ \m -> do
             var <- newEmptyMVar
             _ <- forkIO $ do
               unit@(_, _, rs) <- produce registry env hashes m
-              _ <- evaluate (length (show rs))   -- do the work on this thread
+              _ <- evaluate (force rs)   -- do the work on this thread
               putMVar var unit
             pure var
           mapM takeMVar vars
@@ -274,8 +275,8 @@ buildModulesWith mode cacheDir modules k =
 -- | Group modules, already in topological order, into dependency waves: a
 -- module's wave is one past the deepest wave among its imports, so the
 -- members of a wave are mutually independent.
-wavesOf :: [Raw.Module] -> [[Raw.Module]]
-wavesOf ordered = map (map snd) (groupBy ((==) `on` fst) (sortOn fst levelled))
+wavesOf :: [Raw.Module] -> [NonEmpty Raw.Module]
+wavesOf ordered = map (fmap snd) (NonEmpty.groupBy ((==) `on` fst) (sortOn fst levelled))
   where
     levelled = [(levelOf m, m) | m <- ordered]
     levels :: Map Raw.VarIdent Int

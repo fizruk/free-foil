@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveFoldable      #-}
 {-# LANGUAGE DeriveFunctor       #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE DeriveTraversable   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -41,6 +42,7 @@
 -- narrowing belongs above the library rather than inside it.
 module Language.MLTT.Impl where
 
+import           Control.DeepSeq              (NFData)
 import           Control.Monad                (foldM)
 import qualified Control.Monad.Foil           as Foil
 import qualified Control.Monad.Foil.Blocks    as Blocks
@@ -52,6 +54,7 @@ import           Data.Map                     (Map)
 import           Data.Maybe                   (listToMaybe)
 import qualified Data.Map                     as Map
 import qualified Data.Set                     as Set
+import           GHC.Generics                 (Generic)
 import           Language.MLTT.Eval
 import           Language.MLTT.FreeFoilConfig (intToVarIdent)
 import           Language.MLTT.Impl.Generated
@@ -152,7 +155,11 @@ data CommandResult
   | Checked String String     -- ^ @check@ succeeded, for a term and its type.
   | Computed String           -- ^ @compute@ succeeded, with the normal form.
   | Failed String             -- ^ The declaration was rejected.
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
+
+-- | Forcing a result forces the checking that produced it; the parallel
+-- builder relies on this to keep each module's work on its own thread.
+instance NFData CommandResult
 
 -- | Did everything succeed?
 succeeded :: [CommandResult] -> Bool
