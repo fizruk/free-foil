@@ -110,8 +110,8 @@ spec = do
     it "numbers a stripe's declarations from its base, in order" $
       withCheckedModule (checkModule (stripeRange (StripeIndex 0)) emptyEnv mI) $ \_ envI _ ->
         declaredIds (checkModule (stripeRange (StripeIndex 1)) envI mA) `shouldBe`
-          [ (Raw.VarIdent "a", firstStripeBase + stripeSize)
-          , (Raw.VarIdent "base", firstStripeBase)
+          [ (Raw.VarIdent "a", Foil.nameRangeLo (stripeRange (StripeIndex 1)))
+          , (Raw.VarIdent "base", Foil.nameRangeLo (stripeRange (StripeIndex 0)))
           ]
 
     it "gives a module the same names whatever else was checked before" $
