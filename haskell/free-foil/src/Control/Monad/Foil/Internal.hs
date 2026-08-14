@@ -896,12 +896,41 @@ class CoSinkable pattern => UnifiablePattern pattern where
   -- also lets you deliberately ignore some of them (as
   -- @Language.LambdaPi.Impl.FreeFoilTH@ does for BNFC source positions).
   --
+  -- A field that is /scope-indexed/ — a telescope step's type, say — cannot be
+  -- compared here at all, since comparing it up to α needs the ambient scope
+  -- and this method is given only 'Distinct'. Write 'unifyPatternsIn' for that,
+  -- and leave this one as the binder-only approximation.
+  --
   -- The behaviour described here is pinned down in
   -- @Control.Monad.Foil.UnifiablePatternSpec@.
   default unifyPatterns
     :: (CoSinkable pattern, Distinct n)
     => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
   unifyPatterns l r = coerce (unifyPatterns (nameBinderListOf l) (nameBinderListOf r))
+
+  -- | Unify two patterns with the ambient scope at hand.
+  --
+  -- Everything in the library that compares patterns and holds a scope goes
+  -- through this method, α-equivalence included, so this is the one to
+  -- implement when the comparison needs a scope. Comparing the payloads of a
+  -- pattern that carries them does: 'alphaEquivIn' asks for a 'Scope'.
+  --
+  -- Note that the verdict speaks about binders, so an instance comparing
+  -- payloads has to apply the renaming the verdict prescribes before it
+  -- compares them — exactly as 'Control.Monad.Free.Foil.alphaEquivScoped'
+  -- applies it to the body of a scoped term. Two telescopes @(A : 𝕌) (x : A)@
+  -- and @(B : 𝕌) (y : B)@ are α-equivalent, and their second payloads are only
+  -- equal once the first binders have been identified.
+  --
+  -- The default ignores the scope and answers with 'unifyPatterns'. An instance
+  -- that overrides this one should leave 'unifyPatterns' as the binder-only
+  -- approximation rather than remove it: that is what 'unsafeEqPattern' and any
+  -- caller without a scope will get, and it may be more permissive than this
+  -- one, never less.
+  unifyPatternsIn
+    :: Distinct n
+    => Scope n -> pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
+  unifyPatternsIn _scope = unifyPatterns
 
 instance UnifiablePattern NameBinderList where
   unifyPatterns NameBinderListEmpty NameBinderListEmpty = SameNameBinders emptyNameBinders
@@ -914,6 +943,19 @@ instance UnifiablePattern NameBinderList where
   -- flattens every pattern to a 'NameBinderList'. Note that this module sets
   -- @-Wno-incomplete-patterns@, so its absence was not reported.
   unifyPatterns _ _ = NotUnifiable
+
+-- | Comparison of scope-indexed values up to α, in a known scope.
+--
+-- 'unifyPatterns' is given only 'Distinct', which is enough to line up binders
+-- and not enough to compare anything living in a scope. A pattern that carries
+-- a payload needs this to compare its payloads against another's, which is what
+-- 'unifyPatternsIn' is for.
+class AlphaEquiv (e :: S -> Type) where
+  alphaEquivIn :: Distinct n => Scope n -> e n -> e n -> Bool
+
+-- | A name is α-equivalent only to itself.
+instance AlphaEquiv Name where
+  alphaEquivIn _scope = (==)
 
 -- | Unification of values in patterns.
 -- By default, 'Eq' instance is used, but it may be useful to ignore

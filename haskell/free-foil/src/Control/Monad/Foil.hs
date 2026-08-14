@@ -92,6 +92,7 @@ module Control.Monad.Foil (
   andThenUnifyNameBinders,
   UnifiablePattern(..),
   UnifiableInPattern(..),
+  AlphaEquiv(..),
   NameBinders,
   emptyNameBinders,
   mergeNameBinders,

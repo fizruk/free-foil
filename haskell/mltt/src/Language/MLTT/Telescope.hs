@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE InstanceSigs        #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -49,6 +50,7 @@
 module Language.MLTT.Telescope where
 
 import qualified Control.Monad.Foil           as Foil
+import           Control.Monad.Foil.Relative  (RelMonad, liftRM)
 import           Control.Monad.Free.Foil      (supportOf, unsinkAST)
 import           Data.List                    (intercalate, sort)
 import           Language.MLTT.Impl.Generated
@@ -133,17 +135,17 @@ instance Foil.Sinkable e => Foil.CoSinkable (Telescope label e) where
             cont (comp fbinder frest)
               (TelescopeCons label (Foil.transportPayload transport payload) binder' rest')
 
--- | Telescopes unify exactly when their binders do, as for a
--- 'Foil.NameBinderList'.
+-- | Two telescopes unify when their binders line up and their payloads agree.
 --
--- Labels and payloads are ignored, which is the library's documented default
--- for non-binding fields, and is what α-equivalence should do with a label: a
+-- Labels are ignored, which is what α-equivalence should do with a label: a
 -- parameter's spelling is no more relevant than a bound variable's. Payloads
--- are a different matter, since two telescopes agreeing on binders may well
--- disagree on types. Unfortunately 'Foil.unifyPatterns' has only
--- 'Foil.Distinct' to work with, and comparing terms up to α needs the scope, so
--- the caller has to compare the payloads itself.
-instance Foil.Sinkable e => Foil.UnifiablePattern (Telescope label e) where
+-- are not, since two telescopes agreeing on binders may well disagree on types.
+--
+-- 'Foil.unifyPatterns' is the binder-only approximation, which is all a caller
+-- without a scope can be given. 'Foil.unifyPatternsIn' is the real answer, and
+-- it is what the library's α-equivalence calls.
+instance (Foil.Sinkable e, Foil.AlphaEquiv e, RelMonad Foil.Name e)
+    => Foil.UnifiablePattern (Telescope label e) where
   unifyPatterns TelescopeEmpty TelescopeEmpty =
     Foil.SameNameBinders Foil.emptyNameBinders
   unifyPatterns (TelescopeCons _ _ x xs) (TelescopeCons _ _ y ys) =
@@ -152,6 +154,74 @@ instance Foil.Sinkable e => Foil.UnifiablePattern (Telescope label e) where
         Foil.unifyNameBinders x y `Foil.andThenUnifyPatterns` (xs, ys)
   -- Telescopes of different lengths bind different numbers of names.
   unifyPatterns _ _ = Foil.NotUnifiable
+
+  unifyPatternsIn scope tele1 tele2
+    | payloadsAgree scope tele1 tele2 verdict = verdict
+    | otherwise                               = Foil.NotUnifiable
+    where
+      verdict = Foil.unifyPatterns tele1 tele2
+
+-- | The payloads of a telescope, each moved into its innermost scope.
+--
+-- Sinking is free, so putting them all in one scope costs nothing and lets a
+-- renaming be applied to the whole block at once.
+telescopePayloads
+  :: (Foil.Sinkable e, Foil.Distinct l) => Telescope label e n l -> [e l]
+telescopePayloads = map paramType . telescopeParams
+
+-- | Do the payloads of two telescopes agree, under the way their binders were
+-- unified?
+--
+-- The verdict speaks about binders only, so the renaming it prescribes has to
+-- be applied before the payloads are compared, which is exactly what
+-- 'Control.Monad.Free.Foil.alphaEquivScoped' does to the body of a scoped term.
+-- Comparing them as they stand would report @(A : 𝕌) (x : A)@ and
+-- @(B : 𝕌) (y : B)@ as different, since the second payloads name different
+-- binders until the first ones have been identified.
+payloadsAgree
+  :: forall label e n l r.
+     (Foil.Sinkable e, Foil.AlphaEquiv e, RelMonad Foil.Name e, Foil.Distinct n)
+  => Foil.Scope n
+  -> Telescope label e n l
+  -> Telescope label e n r
+  -> Foil.UnifyNameBinders (Telescope label e) n l r
+  -> Bool
+payloadsAgree scope tele1 tele2 verdict =
+  case (Foil.assertDistinct tele1, Foil.assertDistinct tele2) of
+    (Foil.Distinct, Foil.Distinct) ->
+      let payloads1 = telescopePayloads tele1
+          payloads2 = telescopePayloads tele2
+       in case verdict of
+            Foil.NotUnifiable -> False
+            -- The binders are the same, so the payloads already compare.
+            Foil.SameNameBinders{} ->
+              agree (Foil.extendScopePattern tele1 scope) payloads1 payloads2
+            -- The left telescope's binders become the right's, so its payloads
+            -- have to follow them before they can be compared.
+            Foil.RenameLeftNameBinder _ renameL ->
+              let scope' = Foil.extendScopePattern tele2 scope
+               in agree scope' (map (rename scope' renameL) payloads1) payloads2
+            Foil.RenameRightNameBinder _ renameR ->
+              let scope' = Foil.extendScopePattern tele1 scope
+               in agree scope' payloads1 (map (rename scope' renameR) payloads2)
+            -- Neither side's binders survive, so both blocks move to the
+            -- unified ones.
+            Foil.RenameBothBinders binders renameL renameR ->
+              case Foil.assertDistinct binders of
+                Foil.Distinct ->
+                  let scope' = Foil.extendScopePattern binders scope
+                   in agree scope' (map (rename scope' renameL) payloads1)
+                                   (map (rename scope' renameR) payloads2)
+  where
+    -- Lengths cannot disagree here: a verdict other than 'Foil.NotUnifiable'
+    -- says the two telescopes bind the same number of names.
+    agree :: forall m. Foil.Distinct m => Foil.Scope m -> [e m] -> [e m] -> Bool
+    agree scope' xs ys = and (zipWith (Foil.alphaEquivIn scope') xs ys)
+
+    rename
+      :: forall i m. Foil.Distinct m
+      => Foil.Scope m -> (Foil.NameBinder n i -> Foil.NameBinder n m) -> e i -> e m
+    rename scope' f = liftRM scope' (Foil.fromNameBinderRenaming f)
 
 -- | One step of a telescope, with everything about it moved into the innermost
 -- scope.
