@@ -1,0 +1,87 @@
+-- A small library of theories, one instance, and a lemma applied at it.
+--
+-- This is the demo the module layer was built for. A theory is a named
+-- telescope: its fields are a carrier, the operations on it, and the laws they
+-- satisfy, all in one dependent block. A module includes the theory to work in
+-- it, and every declaration leaves that module discharged over the fields it
+-- used. An instance is then nothing but a module that supplies values for those
+-- fields, and using a theory's lemma at an instance is application. There is no
+-- `interpretation` command here, and nothing for one to do.
+
+telescope Monoid
+  (A : 𝕌)
+  (unit : A)
+  (mul : A → A → A)
+  (assoc : Π (x : A) → Π (y : A) → Π (z : A) → Id(A, mul (mul x y) z, mul x (mul y z)))
+
+-- The unit laws are missing on purpose, and it is worth saying why. Stating
+-- `Π (x : A) → Id(A, mul unit x, x)` is fine; what no instance below could then
+-- do is prove it. Conversion here normalises both sides and compares them, with
+-- no η, so `plus zero n` reduces to `λ A ⇒ λ f ⇒ λ x ⇒ n A f x` and stops one
+-- η-contraction short of `n`. Associativity needs no η and holds on the nose,
+-- which is why it is the law the demo carries. This is a limitation of the demo
+-- language's conversion, not of telescopes.
+
+-- Two theories over the same block, declared once. `Group` adds a field of its
+-- own, and its type may mention the included ones.
+module CommMonoid include Monoid
+def swapped : A → A → A := λ x ⇒ λ y ⇒ mul y x
+
+module Group include Monoid (inv : A → A)
+def undo : A → A := λ x ⇒ mul x (inv x)
+
+-- * A lemma, proved once in the theory
+
+-- Everything here is checked with the fields in scope, so it reads as ordinary
+-- mathematics, and leaves the module closed over what it used and no more.
+module MonoidTheory include Monoid
+
+-- Uses `A` and `mul`. Not `assoc`, and not `unit`.
+def square over (A, mul) : A → A := λ x ⇒ mul x x
+
+-- Uses the law, so it is discharged over `assoc` as well. Note that the
+-- statement is about `square`, and the proof is the law at one argument
+-- repeated: `square x` unfolds to `mul x x`, so `assoc x x x` already has the
+-- type wanted.
+def squareAssoc over (A, mul, assoc)
+  : Π (x : A) → Id(A, mul (square x) x, mul x (square x))
+  := λ x ⇒ assoc x x x
+
+-- * An instance
+
+-- The naturals as Church numerals, which is as much data as a type theory with
+-- no data declarations can offer.
+module Church
+def Nat : 𝕌 := Π (A : 𝕌) → (A → A) → A → A
+def zero : Nat := λ A ⇒ λ f ⇒ λ x ⇒ x
+def succ : Nat → Nat := λ n ⇒ λ A ⇒ λ f ⇒ λ x ⇒ f (n A f x)
+def plus : Nat → Nat → Nat := λ m ⇒ λ n ⇒ λ A ⇒ λ f ⇒ λ x ⇒ m A f (n A f x)
+
+def one : Nat := succ zero
+def two : Nat := succ one
+def three : Nat := succ two
+
+-- Both sides of associativity normalise to the same term, for variables and
+-- not merely for closed numerals, so the instance discharges the law by `refl`.
+def plusAssoc
+  : Π (a : Nat) → Π (b : Nat) → Π (c : Nat) → Id(Nat, plus (plus a b) c, plus a (plus b c))
+  := λ a ⇒ λ b ⇒ λ c ⇒ refl (plus (plus a b) c)
+
+-- * Using the theory at the instance
+
+module Client
+import MonoidTheory
+import Church
+
+-- Instantiation is application: `square` was closed over `(A, mul)`, so it is
+-- applied to a carrier and an operation, and nothing had to be registered
+-- anywhere for this to be allowed.
+compute square Nat plus two
+
+-- `squareAssoc` was closed over `(A, mul, assoc)`, so the instance's own proof
+-- is the third argument. What comes back is the lemma at the naturals.
+check squareAssoc Nat plus plusAssoc
+  : Π (x : Nat) → Id(Nat, plus (plus x x) x, plus x (plus x x))
+
+-- A theory's lemma is a term like any other, so it applies at an element.
+compute squareAssoc Nat plus plusAssoc three

@@ -4858,7 +4858,7 @@ eitherResIdent tv s = treeFind resWords
 -- | The keywords and symbols of the language organized as binary search tree.
 resWords :: BTree
 resWords =
-  b "open" 19
+  b "open" 20
     (b "_" 10
        (b ":=" 5
           (b "," 3 (b ")" 2 (b "(" 1 N N) N) (b ":" 4 N N))
@@ -4866,15 +4866,17 @@ resWords =
        (b "in" 15
           (b "def" 13
              (b "compute" 12 (b "check" 11 N N) N) (b "import" 14 N N))
-          (b "module" 17 (b "let" 16 N N) (b "namespace" 18 N N))))
-    (b "\928" 28
-       (b "where" 24
-          (b "refl" 22 (b "private" 21 (b "over" 20 N N) N) (b "tt" 23 N N))
-          (b "}" 26 (b "{" 25 N N) (b "\215" 27 N N)))
-       (b "\8594" 33
-          (b "\960\8321" 31
-             (b "\955" 30 (b "\931" 29 N N) N) (b "\960\8322" 32 N N))
-          (b "\120140" 35 (b "\8658" 34 N N) (b "\120793" 36 N N))))
+          (b "module" 18
+             (b "let" 17 (b "include" 16 N N) N) (b "namespace" 19 N N))))
+    (b "\928" 30
+       (b "tt" 25
+          (b "refl" 23
+             (b "private" 22 (b "over" 21 N N) N) (b "telescope" 24 N N))
+          (b "}" 28 (b "{" 27 (b "where" 26 N N) N) (b "\215" 29 N N)))
+       (b "\8594" 35
+          (b "\960\8321" 33
+             (b "\955" 32 (b "\931" 31 N N) N) (b "\960\8322" 34 N N))
+          (b "\120140" 37 (b "\8658" 36 N N) (b "\120793" 38 N N))))
   where
   b s n = B bs (TS bs n)
     where

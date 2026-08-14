@@ -26,7 +26,9 @@ srcQ  = sourceLines ["module Q", "import P", "def q : 𝟙 := base"]
 srcR  = sourceLines ["module R", "import Q", "def r : 𝟙 := q"]
 
 modsOf :: [SourceText] -> [Raw.Module]
-modsOf srcs = concat [ms | Right (Raw.AProgram _ ms) <- map parseProgram srcs]
+modsOf srcs =
+  either error id . resolveUnits $
+    concat [units | Right (Raw.AProgram _ units) <- map parseProgram srcs]
 
 -- | A session over an empty world, on a stripe clear of the cached ones.
 bareSession :: Repl Foil.VoidS

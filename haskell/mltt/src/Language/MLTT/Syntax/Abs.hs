@@ -24,12 +24,25 @@ import qualified Data.Data    as C (Data, Typeable)
 import qualified GHC.Generics as C (Generic)
 
 type Program = Program' BNFC'Position
-data Program' a = AProgram a [Module' a]
+data Program' a = AProgram a [Unit' a]
+  deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
+
+type Unit = Unit' BNFC'Position
+data Unit' a
+    = UnitModule a (Module' a) | UnitTelescope a (TelescopeDecl' a)
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
 
 type Module = Module' BNFC'Position
 data Module' a
-    = AModule a VarIdent [Param' a] [Import' a] [Decl' a]
+    = AModule a VarIdent [Include' a] [Param' a] [Import' a] [Decl' a]
+  deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
+
+type Include = Include' BNFC'Position
+data Include' a = AnInclude a VarIdent
+  deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
+
+type TelescopeDecl = TelescopeDecl' BNFC'Position
+data TelescopeDecl' a = ATelescope a VarIdent [Param' a]
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
 
 type Param = Param' BNFC'Position
@@ -109,9 +122,22 @@ instance HasPosition Program where
   hasPosition = \case
     AProgram p _ -> p
 
+instance HasPosition Unit where
+  hasPosition = \case
+    UnitModule p _ -> p
+    UnitTelescope p _ -> p
+
 instance HasPosition Module where
   hasPosition = \case
-    AModule p _ _ _ _ -> p
+    AModule p _ _ _ _ _ -> p
+
+instance HasPosition Include where
+  hasPosition = \case
+    AnInclude p _ -> p
+
+instance HasPosition TelescopeDecl where
+  hasPosition = \case
+    ATelescope p _ _ -> p
 
 instance HasPosition Param where
   hasPosition = \case

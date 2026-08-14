@@ -141,11 +141,13 @@ test-suite spec
       Language.MLTT.ArtifactSpec
       Language.MLTT.BuildSpec
       Language.MLTT.ImplSpec
+      Language.MLTT.IncludeSpec
       Language.MLTT.LinkSpec
       Language.MLTT.ModulesSpec
       Language.MLTT.ParametersSpec
       Language.MLTT.ReplImportSpec
       Language.MLTT.ReplSpec
+      Language.MLTT.TelescopeSpec
       SpecHook
       Paths_mltt
   hs-source-dirs:

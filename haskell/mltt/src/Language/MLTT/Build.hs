@@ -330,13 +330,13 @@ buildSourcesWith
   -> (forall c. Foil.Distinct c => Registry -> Env c -> [CommandResult] -> IO r)
   -> IO (Either BuildError r)
 buildSourcesWith mode cacheDir sources k =
-  case traverse parseSource sources of
-    Left err -> pure (Left err)
-    Right ms -> buildModulesWith mode cacheDir (concat ms) k
+  case resolveUnits . concat =<< traverse parseSource sources of
+    Left err      -> pure (Left err)
+    Right modules -> buildModulesWith mode cacheDir modules k
   where
     parseSource (path, input) = case parseProgram input of
-      Left err                    -> Left (path <> ":" <> err)
-      Right (Raw.AProgram _ms ms) -> Right ms
+      Left err                        -> Left (path <> ":" <> err)
+      Right (Raw.AProgram _loc units) -> Right units
 
 -- | The environment a build ends in, its scope index hidden.
 data BuiltEnv where
