@@ -33,6 +33,33 @@ withMonoid :: [String] -> String
 withMonoid units = unlines
   ("telescope Monoid (A : 𝕌) (unit : A) (mul : A → A → A)" : units)
 
+-- | A theory carrying a law, a lemma proved once in it, and an instance: the
+-- Church numerals under addition, whose associativity holds on the nose.
+theoryAndInstance :: String
+theoryAndInstance = unlines
+  [ "telescope Monoid (A : 𝕌) (mul : A → A → A)"
+  , "  (assoc : Π (x : A) → Π (y : A) → Π (z : A)"
+  , "         → Id(A, mul (mul x y) z, mul x (mul y z)))"
+  , ""
+  , "module Theory include Monoid"
+  , "def square : A → A := λ x ⇒ mul x x"
+  , "def squareAssoc : Π (x : A) → Id(A, mul (square x) x, mul x (square x))"
+  , "  := λ x ⇒ assoc x x x"
+  , ""
+  , "module Church"
+  , "def Nat : 𝕌 := Π (A : 𝕌) → (A → A) → A → A"
+  , "def plus : Nat → Nat → Nat := λ m ⇒ λ n ⇒ λ A ⇒ λ f ⇒ λ x ⇒ m A f (n A f x)"
+  , "def plusAssoc : Π (a : Nat) → Π (b : Nat) → Π (c : Nat)"
+  , "              → Id(Nat, plus (plus a b) c, plus a (plus b c))"
+  , "  := λ a ⇒ λ b ⇒ λ c ⇒ refl (plus (plus a b) c)"
+  , ""
+  , "module Client"
+  , "import Theory"
+  , "import Church"
+  , "check squareAssoc Nat plus plusAssoc"
+  , "    : Π (x : Nat) → Id(Nat, plus (plus x x) x, plus x (plus x x))"
+  ]
+
 spec :: Spec
 spec = do
   describe "a module that includes a telescope" $ do
@@ -82,6 +109,19 @@ spec = do
             , "compute dup 𝟙 (λ x ⇒ λ y ⇒ x) tt" ])
         `shouldSatisfy` ([Computed "tt", Computed "tt"] ==)
           . filter isComputed
+
+  describe "a theory and an instance" $ do
+    it "discharges a lemma over the law field it uses, and not otherwise" $
+      -- `square` needs the operation; `squareAssoc` needs the law as well.
+      -- Nothing declares this, and nothing has to: it is what discharge finds.
+      run theoryAndInstance `shouldSatisfy` \results ->
+        Defined "square" ["A", "mul"] `elem` results
+          && Defined "squareAssoc" ["A", "mul", "assoc"] `elem` results
+
+    it "applies the theory's lemma at the instance, which is application" $
+      -- The instance supplies the carrier, the operation and its own proof of
+      -- the law, in telescope order. There is no interpretation step.
+      failures (run theoryAndInstance) `shouldBe` []
 
   describe "a telescope that is not there" $ do
     it "is reported, naming it" $

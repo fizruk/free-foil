@@ -133,7 +133,8 @@ spec = do
 
   describe "the example programs" $
     forM_ [ "examples/core.mltt", "examples/modules.mltt"
-          , "examples/parameters.mltt", "examples/telescopes.mltt" ] $ \path ->
+          , "examples/parameters.mltt", "examples/telescopes.mltt"
+          , "examples/theories.mltt" ] $ \path ->
       it (path <> " is accepted in full") $ do
         input <- readFile path
         let results = run input

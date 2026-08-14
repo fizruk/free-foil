@@ -246,6 +246,15 @@ come from the library rather than from the demo. Its Haddock records what those
 instances need that the pattern interface does not offer — a payload has to be
 carried into the ambient scope, and `withPattern` exposes no renaming for it.
 
+`examples/theories.mltt` puts the layer to work: a `Monoid` telescope carrying
+its associativity law, a lemma proved once from that law, and the Church
+numerals under addition as an instance that discharges the law by `refl`, since
+both sides of associativity normalise to the same term. Using the lemma at the
+instance is then application, and no command registers anything anywhere. The
+unit laws are left out of the telescope deliberately: `plus zero n` normalises
+to `λ A ⇒ λ f ⇒ λ x ⇒ n A f x` and stops one η-contraction short of `n`, and
+conversion here has no η, so no instance could prove one.
+
 The idea is not new here. The framing followed is Jon Sterling's, in the
 [Pterodactyl worklog](https://www.jonmsterling.com/01HC/), where a theory
 expression denotes a telescope and refining a field leaves the remaining fields
