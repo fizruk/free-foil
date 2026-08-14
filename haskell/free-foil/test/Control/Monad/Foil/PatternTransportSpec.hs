@@ -18,8 +18,20 @@
 --
 -- The two halves are: a payload naming something the pattern does not bind is
 -- left alone, and a payload naming one of the pattern's own binders follows
--- that binder when it is refreshed. Taking the default implementation of
--- 'Foil.withPattern' would get the second half wrong.
+-- that binder when it is refreshed.
+--
+-- The second half is what the generic implementation of 'Foil.withPattern'
+-- cannot do, since it replaces the binders and leaves the other fields as they
+-- stand. That is now refused rather than answered wrongly: deriving the
+-- instances for 'Chain' below — @deriveGenericK ''Chain@ and then an empty
+-- @HasNameBinders@ instance — is a type error naming the offending field,
+--
+-- > A field of the binder/pattern is indexed by a Foil scope
+-- >   Foil.Name outerScope : S
+--
+-- so the refusal cannot be tested here, only recorded. Before it, the derived
+-- route compiled and gave the binders @[3,4]@ with the payloads left at
+-- @[0,1]@.
 module Control.Monad.Foil.PatternTransportSpec (spec) where
 
 import           Test.Hspec

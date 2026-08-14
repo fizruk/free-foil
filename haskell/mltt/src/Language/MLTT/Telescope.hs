@@ -86,12 +86,13 @@ type ParamTelescope a = Telescope Raw.VarIdent (Term' a)
 -- has to typecheck, and it only does because a payload is sunk by the renaming
 -- of the scope /before/ its binder rather than by the extended one.
 --
--- 'Foil.withPattern' is written out rather than derived, because a telescope
--- carries payloads and the generic default would leave a payload naming a
--- refreshed binder pointing at the name that binder used to have. It follows
--- the recipe in 'Foil.transportPayload': a 'Foil.PatternTransport' threaded
--- through the traversal, each payload moved by the transport accumulated
--- /before/ its own binder, since that is the scope the payload lives in.
+-- 'Foil.withPattern' is written out rather than derived, and has to be: the
+-- generic implementation refuses a pattern with a field indexed by a scope,
+-- since it would leave a payload naming a refreshed binder pointing at the name
+-- that binder used to have. This follows the recipe in 'Foil.transportPayload':
+-- a 'Foil.PatternTransport' threaded through the traversal, each payload moved
+-- by the transport accumulated /before/ its own binder, since that is the scope
+-- the payload lives in.
 instance Foil.Sinkable e => Foil.CoSinkable (Telescope label e) where
   coSinkabilityProof rename TelescopeEmpty cont = cont rename TelescopeEmpty
   coSinkabilityProof rename (TelescopeCons label payload binder rest) cont =

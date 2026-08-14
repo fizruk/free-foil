@@ -1193,10 +1193,12 @@ class CoSinkable (pattern :: S -> S -> Type) where
   -- a pattern should implement 'withPattern' by hand, threading one through the
   -- traversal. See 'transportPayload' for the whole recipe.
   --
-  -- The default implementation is /wrong/ for such a pattern. It goes through
+  -- The default implementation cannot do this, since it goes through
   -- 'unsafeSetNameBinders', which replaces the binders and leaves every other
-  -- field as it stands, so a payload mentioning a refreshed binder keeps the
-  -- name that binder used to have.
+  -- field as it stands: a payload mentioning a refreshed binder would keep the
+  -- name that binder used to have. Rather than answer wrongly, it refuses: a
+  -- field indexed by a scope is a type error in the generic implementation,
+  -- naming the field and pointing here.
   withPattern
     :: Distinct o
     => (forall x y z r'. Distinct z => Scope z -> NameBinder x y -> (forall z'. DExt z z' => f x y z z' -> NameBinder z z' -> r') -> r')
