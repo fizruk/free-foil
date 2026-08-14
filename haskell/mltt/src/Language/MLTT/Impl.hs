@@ -45,6 +45,7 @@
 module Language.MLTT.Impl where
 
 import           Control.DeepSeq              (NFData)
+import           Data.Binary                  (Binary)
 import           Control.Monad                (foldM)
 import qualified Control.Monad.Foil           as Foil
 import qualified Control.Monad.Foil.Blocks    as Blocks
@@ -155,8 +156,8 @@ newtype RenderedName = RenderedName { renderedName :: String }
   deriving newtype (Eq, Show, IsString, NFData)
 
 -- | A term as shown to the user, printed by 'display'. Distinct from
--- 'StoredTerm' in "Language.MLTT.Artifact", which is printed for reading
--- back rather than for the user.
+-- 'StoredTerm' in "Language.MLTT.Artifact", which keeps the term's bytes
+-- for loading rather than prose for the user.
 newtype RenderedTerm = RenderedTerm { renderedTerm :: String }
   deriving newtype (Eq, Show, IsString, NFData)
 
@@ -258,44 +259,46 @@ moduleDecls :: Raw.Module -> [Raw.Decl]
 moduleDecls (Raw.AModule _ _ _ _ decls) = decls
 
 -- * Name layout
+--
+-- $namelayout
+-- The allocators never cross zero. Module declarations, the interned
+-- constants, live in stripes /below/ zero; everything term-internal lives
+-- at or above it; and a constant is recognised by its sign. Thus the two
+-- halves can never collide, by construction, which is what the wire
+-- format's verbatim locals and the linker's disjointness both rest on.
+-- On the other side, free-foil's successor allocator is guarded to never
+-- dip below zero, so a transient name minted against a scope of constants
+-- stays out of their region.
 
 -- | How many top-level names a module may declare.
 stripeSize :: Int
 stripeSize = 0x100000
 
--- | Where the first stripe starts. Below it lies 'localRegion'.
-firstStripeBase :: Foil.RawName
-firstStripeBase = stripeSize
-
--- | The region module parameters and elaboration-time binders live in.
+-- | The region module parameters and elaboration-time binders live in: every
+-- non-negative name, now that the stripes lie below zero.
 --
--- It lies below every stripe, so nothing here can collide with a
--- declaration's name, and the indices stay small — a discharged type prints
--- as @Π (x0 : 𝕌) → …@ however many declarations precede it. More
--- importantly, allocation inside the region depends only on the region's own
--- content, so elaborating a declaration produces the same term whatever else
--- the ambient scope holds: elaborated terms, and hence artifacts and their
--- hashes, are canonical across worlds.
+-- Nothing here can collide with a declaration's name, and the indices stay
+-- small: a discharged type prints as @Π (x0 : 𝕌) → …@ however many
+-- declarations precede it. More importantly, allocation inside the region
+-- depends only on the region's own content, so elaborating a declaration
+-- produces the same term whatever else the ambient scope holds. Thus
+-- elaborated terms, and hence artifacts and their hashes, are canonical
+-- across worlds.
 --
--- The region's budget is spent on syntax, not on computation. Evaluation and
--- type checking allocate their transient names at the whole scope's
--- successor, above every stripe, and nothing rests on those; what lands here
--- is one name per binder /written/ in the declaration being elaborated, plus
--- the parameters, and the region resets between declarations, since
--- elaboration binders live inside terms and never enter the module's scope.
--- So the occupancy bound is the source size of one declaration against a
--- budget of \(2^{20}\). Were it ever exhausted, 'Foil.withFreshIn' fails
--- loudly rather than colliding: the size is a liveness constant, not a
--- soundness assumption, and widening the region relative to the stripes is a
--- policy change confined to these constants.
+-- What lands here is one name per binder /written/ in the declaration being
+-- elaborated, plus the parameters, and the region resets between
+-- declarations, since elaboration binders live inside terms and never enter
+-- the module's scope. Evaluation and type checking also mint their
+-- transient names here (the guarded successor allocates at the region's
+-- occupied top), and nothing rests on those.
 localRegion :: Foil.NameRange
-localRegion = Foil.NameRange 0 (firstStripeBase - 1)
+localRegion = Foil.NameRange 0 maxBound
 
 -- | A stripe's position in the registry: which run of 'stripeSize' names a
 -- module draws from. Its own type, so that a stripe index cannot be confused
 -- with a name, a count, or an offset.
 newtype StripeIndex = StripeIndex Int
-  deriving (Eq, Ord, Show, Read)
+  deriving newtype (Eq, Ord, Show, Read, Binary)
 
 -- | Which stripe each module's declarations live in.
 --
@@ -320,11 +323,13 @@ registerModule name registry = case Map.lookup name registry of
   Nothing -> let i = StripeIndex (Map.size registry)
               in (Map.insert name i registry, stripeRange i)
 
--- | Stripe @i@ is the @i@-th run of 'stripeSize' names above 'firstStripeBase'.
+-- | Stripe @i@ is the @i@-th run of 'stripeSize' names below zero, counting
+-- downwards, so stripe 0 is @[-stripeSize .. -1]@. Within a stripe,
+-- allocation still ascends, so declaration order is ascending name order.
 stripeRange :: StripeIndex -> Foil.NameRange
-stripeRange (StripeIndex i) = Foil.NameRange lo (lo + stripeSize - 1)
+stripeRange (StripeIndex i) = Foil.NameRange (hi - stripeSize + 1) hi
   where
-    lo = firstStripeBase + i * stripeSize
+    hi = negate (i * stripeSize) - 1
 
 -- * Interpreting a program
 

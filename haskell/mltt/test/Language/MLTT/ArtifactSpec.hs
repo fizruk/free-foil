@@ -13,6 +13,8 @@ import           Data.Map                     (Map)
 import qualified Data.Map                     as Map
 import           Test.Hspec
 
+import qualified Data.ByteString.Lazy.Char8   as BSL8
+
 import           Language.MLTT.Artifact
 import           Language.MLTT.Impl
 import           Language.MLTT.Impl.Generated (SourceText,
@@ -61,7 +63,7 @@ artifactsOf = go (0 :: Int) Map.empty emptyEnv
             [ (x, artifactHash (acc Map.! x))
             | Raw.AnImport _ x <- moduleImports m ]
           cm = checkModule (stripeRange (StripeIndex i)) env m
-          a  = makeArtifact (moduleName m) (StripeIndex i)
+          a  = makeArtifact (moduleName m) (stripeRange (StripeIndex i))
                  (contentHash (Raw.printTree m)) importHashes cm
        in withCheckedModule cm $ \_ env' results ->
             if succeeded results
@@ -86,11 +88,25 @@ declaredIds cm = withCheckedModule cm $ \_ env _ ->
 spec :: Spec
 spec = do
   describe "the wire format" $ do
-    it "round-trips through render and read" $
-      readArtifact (renderArtifact (art "S")) `shouldBe` Right (art "S")
+    it "round-trips through encode and decode" $
+      decodeArtifact (encodeArtifact (art "S")) `shouldBe` Right (art "S")
 
     it "stores fully qualified spellings, not names" $
       map adSpelling (artifactDecls (art "S")) `shouldBe` ["s", "sbase"]
+
+    it "rejects bytes that are not an artifact" $
+      case decodeArtifact (BSL8.pack "garbage, not an artifact") of
+        Left err -> err `shouldContain` "not an MLTT artifact"
+        Right _  -> expectationFailure "decoded garbage"
+
+    it "rejects an artifact from another format version" $
+      -- The version is the 8-byte word after the 5-byte magic; bump its
+      -- last byte.
+      let bytes = encodeArtifact (art "P")
+          bumped = BSL8.concat [BSL8.take 12 bytes, "\STX", BSL8.drop 13 bytes]
+       in case decodeArtifact bumped of
+            Left err -> err `shouldContain` "version 2"
+            Right _  -> expectationFailure "decoded a mislabelled version" 
 
   describe "loading" $ do
     it "reconstructs the very names the check allocated" $
@@ -137,7 +153,7 @@ spec = do
       -- artifacts, and hence hashes, are what let a cache survive changes
       -- elsewhere in the module graph.
       withCheckedModule (checkModule (stripeRange (StripeIndex 0)) emptyEnv mP) $ \_ envP _ ->
-        makeArtifact (moduleName mS) (StripeIndex 3)
+        makeArtifact (moduleName mS) (stripeRange (StripeIndex 3))
             (contentHash (Raw.printTree mS))
             [(moduleName mP, artifactHash (art "P"))]
             (checkModule (stripeRange (StripeIndex 3)) envP mS)
@@ -148,7 +164,7 @@ spec = do
             cmP <- loadArtifact Map.empty (stripeRange (StripeIndex 0)) emptyEnv (art "P")
             withCheckedModule cmP $ \_ envP _ -> do
               cmS <- loadArtifact (hashesOf ["P"]) (stripeRange (StripeIndex 3)) envP (art "S")
-              Right (makeArtifact (moduleName mS) (StripeIndex 3)
+              Right (makeArtifact (moduleName mS) (stripeRange (StripeIndex 3))
                        (contentHash (Raw.printTree mS))
                        [(moduleName mP, artifactHash (art "P"))] cmS)
        in roundTrip `shouldBe` Right (art "S")

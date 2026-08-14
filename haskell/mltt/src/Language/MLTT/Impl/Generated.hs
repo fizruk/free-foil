@@ -26,10 +26,13 @@
 module Language.MLTT.Impl.Generated where
 
 import           Control.Monad.Free.Foil                 (convertFromASTWith)
+import           Control.Monad.Free.Foil.Binary          ()
+import           Control.Monad.Free.Foil.Binary.TH       (deriveBinaryPattern)
 import           Control.Monad.Free.Foil.TH.MkFreeFoil
 import qualified Control.Monad.Foil                    as Foil
 import           Data.Bifunctor.TH
 import qualified Data.Map                              as Map
+import           Data.Binary                           (Binary (..))
 import           Data.String                           (IsString (..))
 import           Data.ZipMatchK
 import           Data.ZipMatchK.TH                     (deriveZipMatchK2)
@@ -57,6 +60,7 @@ mkFreeFoil mlttConfig
 deriveGenericK ''Term'Sig
 deriveGenericK ''Pattern'
 
+
 deriveBifunctor ''Term'Sig
 deriveBifoldable ''Term'Sig
 deriveBitraversable ''Term'Sig
@@ -74,6 +78,19 @@ instance ZipMatchK Raw.BNFC'Position where zipMatchWithK = zipMatchViaChooseLeft
 -- matching terms is most of what a type checker does, and the generic instance
 -- reflects a node into its "Generics.Kind" representation on every comparison.
 deriveZipMatchK2 ''Term'Sig
+
+-- | A spelling on the wire is its string.
+instance Binary Raw.VarIdent
+
+-- | The signature's own 'Binary': tags and field order from 'GHC.Generics.Generic',
+-- which 'mkFreeFoil' derives for every signature.
+instance (Binary a, Binary s, Binary t) => Binary (Term'Sig a s t)
+
+-- | Tags, positions, binders. The scope indices are fabricated on
+-- decoding, which is why this is derived by the library's own deriver
+-- rather than by "GHC.Generics"; the artifact layer checks the ranges the
+-- names lie in on the way in.
+deriveBinaryPattern ''Pattern'
 
 -- | Two patterns are unified by their binders, in order.
 --

@@ -66,6 +66,10 @@ New:
 
 - `Control.Monad.Foil` exports the `Id` and `RawName` synonyms, so a client can type its raw-name arithmetic (stripe bases, interned identifiers) the way `nameId`'s result already means.
 
+- `Control.Monad.Free.Foil.Binary`: `Binary` instances for `Name`, `NameBinder`, `AST` and `ScopedAST` — the wire view of a term is the term itself, raw ids and all. The instances are opt-in orphans in a module of their own (importing it is what brings them into scope), and the dependency this costs is `binary`, a GHC boot library. Decoding mints scope evidence — the existential index under a binder is chosen arbitrarily — so the instances are a trust boundary in the sense of `checkExtScope`, and the module documentation says what a serialising layer is expected to validate on the way in; `mltt`'s artifact module is the worked example. `Control.Monad.Free.Foil.Binary.TH.deriveBinaryPattern` writes the one instance a client must supply itself — its pattern type is a GADT, out of `GHC.Generics`' reach — decoding at the scope diagonal, which any chain of binder indices admits, then coercing once.
+
+- The successor allocator never dips below zero: `rawFreshName` over a scope whose maximum is negative now allocates `0`, not the successor of a negative name. This is the local half of the never-cross-zero layout from the design notes — names below zero are reserved for interned constants, allocated by explicit policy (`withFreshIn` at a negative range, which needed no change) — and `mltt` now assigns its module stripes below zero on the strength of it. A spec pins allocation around the sign boundary, since `sink` rests on the allocator.
+
 - `Control.Monad.Foil.Blocks.resumeBlock` resumes allocating from a range once the evidence has grown past what a `Block` tracked by itself — after composing in a loaded unit's evidence, say. The invariant `withFreshInBlock` rests on is checked (the allocation range must lie inside the evidence's ranges), and this is what lets an interactive unit keep allocating in its own reservation after an import enlarges its scope.
 
 Changed:
