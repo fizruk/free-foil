@@ -77,6 +77,20 @@ type family GInnerScopeOfAtom msg icon ifield pattern atom oo n ll where
       :$$: 'Text "  " :<>: ShowKindedScope oo n ll
       :$$: ShowLocalizeError msg icon ifield pattern oo ll
       )
+  GInnerScopeOfAtom msg icon ifield pattern (Kon f :@: (i :: Atom d s)) oo n ll =
+    TypeError
+      ('Text "A field of the binder/pattern is indexed by a Foil scope"
+      :$$: 'Text "  " :<>: 'ShowType f :<>: 'Text " " :<>: ShowKindedScope oo i ll
+      :$$: 'Text "A field like this is a payload and not a binder: it does not extend"
+      :$$: 'Text "the scope, it lives in one. The generic implementation of withPattern"
+      :$$: 'Text "cannot rebuild it, because it replaces the binders and leaves every"
+      :$$: 'Text "other field as it stands, so a payload naming one of the pattern's own"
+      :$$: 'Text "binders would keep the name that binder had before it was refreshed."
+      :$$: 'Text "Write the CoSinkable instance by hand for this type, threading a"
+      :$$: 'Text "PatternTransport through withPattern; see the recipe in the"
+      :$$: 'Text "documentation of Control.Monad.Foil.transportPayload."
+      :$$: ShowLocalizeError msg icon ifield pattern oo ll
+      )
   GInnerScopeOfAtom msg icon ifield pattern atom oo n ll = n
 
 type SameInnerScope :: ErrorMessage -> Nat -> (s -> s -> Type) -> Atom k s -> Atom k s -> Atom k s

@@ -59,6 +59,12 @@ module Control.Monad.Foil (
   SinkableK(..),
   Sinkable(..),
   CoSinkable(..),
+  -- ** Transporting a pattern's payloads
+  PatternTransport,
+  verbatimTransport,
+  transportUnderBinder,
+  transportPayload,
+  transportName,
   HasNameBinders(getNameBinders),
   sink,
   sink1,
