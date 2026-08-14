@@ -158,11 +158,25 @@ instance Print (Language.MLTT.Syntax.Abs.Module' a) where
 
 instance Print (Language.MLTT.Syntax.Abs.Include' a) where
   prt i = \case
-    Language.MLTT.Syntax.Abs.AnInclude _ varident -> prPrec i 0 (concatD [doc (showString "include"), prt 0 varident])
+    Language.MLTT.Syntax.Abs.AnInclude _ varident refinement -> prPrec i 0 (concatD [doc (showString "include"), prt 0 varident, prt 0 refinement])
 
 instance Print [Language.MLTT.Syntax.Abs.Include' a] where
   prt _ [] = concatD []
   prt _ (x:xs) = concatD [prt 0 x, prt 0 xs]
+
+instance Print (Language.MLTT.Syntax.Abs.Refinement' a) where
+  prt i = \case
+    Language.MLTT.Syntax.Abs.NoRefinement _ -> prPrec i 0 (concatD [])
+    Language.MLTT.Syntax.Abs.ARefinement _ fixeds -> prPrec i 0 (concatD [doc (showString "/"), doc (showString "{"), prt 0 fixeds, doc (showString "}")])
+
+instance Print (Language.MLTT.Syntax.Abs.Fixed' a) where
+  prt i = \case
+    Language.MLTT.Syntax.Abs.AFixed _ varident term -> prPrec i 0 (concatD [prt 0 varident, doc (showString ":="), prt 0 term])
+
+instance Print [Language.MLTT.Syntax.Abs.Fixed' a] where
+  prt _ [] = concatD []
+  prt _ [x] = concatD [prt 0 x]
+  prt _ (x:xs) = concatD [prt 0 x, doc (showString ","), prt 0 xs]
 
 instance Print (Language.MLTT.Syntax.Abs.TelescopeDecl' a) where
   prt i = \case
@@ -171,6 +185,7 @@ instance Print (Language.MLTT.Syntax.Abs.TelescopeDecl' a) where
 instance Print (Language.MLTT.Syntax.Abs.Param' a) where
   prt i = \case
     Language.MLTT.Syntax.Abs.AParam _ varident term -> prPrec i 0 (concatD [doc (showString "("), prt 0 varident, doc (showString ":"), prt 0 term, doc (showString ")")])
+    Language.MLTT.Syntax.Abs.AManifest _ varident term1 term2 -> prPrec i 0 (concatD [doc (showString "("), prt 0 varident, doc (showString ":"), prt 0 term1, doc (showString ":="), prt 0 term2, doc (showString ")")])
 
 instance Print [Language.MLTT.Syntax.Abs.Param' a] where
   prt _ [] = concatD []

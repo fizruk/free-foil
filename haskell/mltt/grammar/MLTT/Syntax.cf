@@ -45,15 +45,31 @@ UnitTelescope. Unit ::= TelescopeDecl ;
 -- first, in order, and the module's own parameters follow them.
 AModule.  Module ::= "module" VarIdent [Include] [Param] ";" [Import] [Decl] ;
 
-AnInclude. Include ::= "include" VarIdent ;
+-- An include may /refine/ the telescope it takes, fixing some of its fields to
+-- values. The residual is again a telescope: the fixed fields become manifest
+-- and the rest are unchanged. A supplied value is elaborated in the including
+-- module's own scope, before any of the telescope's binders, so it cannot
+-- mention a field — which is the admissibility condition, enforced by scoping
+-- rather than tested.
+AnInclude. Include ::= "include" VarIdent Refinement ;
 terminator Include "" ;
+
+NoRefinement. Refinement ::= ;
+ARefinement.  Refinement ::= "/" "{" [Fixed] "}" ;
+AFixed.       Fixed ::= VarIdent ":=" Term ;
+separator Fixed "," ;
 
 -- A telescope declaration names a block of parameters and binds nothing else.
 -- It is a unit of its own rather than a declaration inside a module, since
 -- what it names is a module header and not a term.
 ATelescope. TelescopeDecl ::= "telescope" VarIdent [Param] ";" ;
 
-AParam.   Param ::= "(" VarIdent ":" Term ")" ;
+-- A parameter is either bound, given a type, or /manifest/, given a value. A
+-- manifest field is an abbreviation and not a variable: it is not discharged
+-- over, and a declaration that uses it needs nothing from a client. This is
+-- Luo's manifest field, and it is what a refined include elaborates to.
+AParam.    Param ::= "(" VarIdent ":" Term ")" ;
+AManifest. Param ::= "(" VarIdent ":" Term ":=" Term ")" ;
 terminator Param "" ;
 
 AnImport. Import ::= "import" VarIdent ;

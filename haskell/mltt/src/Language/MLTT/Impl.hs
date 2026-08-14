@@ -99,6 +99,12 @@ data Env n = Env
     -- ^ What each module checked so far exports.
   , envDisplay  :: Display n Raw.VarIdent
     -- ^ What each top-level name is called.
+  , envManifest :: Table (Term n)
+    -- ^ Spellings that stand for a /term/ rather than a name: the manifest
+    -- fields of the module's parameter block. A manifest field is an
+    -- abbreviation, so it is never a variable, never discharged over, and
+    -- resolved by putting its value in place. Emptied at a module boundary,
+    -- since a parameter block belongs to one module.
   , envClosedOver :: Table ([Raw.VarIdent], Foil.Name n)
     -- ^ For each declaration of the module being checked, the parameters it
     -- was closed over and its name. A reference to one of them from inside the
@@ -114,7 +120,7 @@ data Env n = Env
 
 -- | An empty environment, before any module is checked.
 emptyEnv :: Env Foil.VoidS
-emptyEnv = Env emptyCtx Map.empty Map.empty Map.empty Foil.emptyNameMap Map.empty
+emptyEnv = Env emptyCtx Map.empty Map.empty Map.empty Foil.emptyNameMap Map.empty Map.empty
 
 -- | Extend an environment with one top-level definition.
 --
@@ -137,6 +143,7 @@ extendEnv ctx binder full visibility env = Env
   , envExports  = export visibility full name (Foil.sink1 (envExports env))
   , envModules  = getCompose (Foil.sink1 (Compose (envModules env)))
   , envDisplay  = Foil.addNameBinder binder full (envDisplay env)
+  , envManifest = Foil.sink1 (envManifest env)
   , envClosedOver = getCompose (Foil.sink1 (Compose (envClosedOver env)))
   }
   where
@@ -297,9 +304,37 @@ resolveUnits units
       included <- concat <$> traverse include includes
       return (Raw.AModule loc name [] (included <> params) imports decls)
 
-    include (Raw.AnInclude _loc name) = case Map.lookup name telescopes of
-      Just params -> Right params
-      Nothing     -> Left ("no telescope named " <> prettyVarIdent name <> " is declared")
+    include (Raw.AnInclude _loc name refinement) = case Map.lookup name telescopes of
+      Nothing -> Left ("no telescope named " <> prettyVarIdent name <> " is declared")
+      Just params -> do
+        fixed <- refinementOf name params refinement
+        return (map (fixParam fixed) params)
+
+    -- A refined field keeps its place in the telescope and becomes manifest,
+    -- so the residual is the same block with fewer variables in it.
+    fixParam fixed param@(Raw.AParam loc field ty) = case Map.lookup field fixed of
+      -- The field keeps its declared type, so the supplied value is checked
+      -- against it exactly as the field would have been used.
+      Just value -> Raw.AManifest loc field ty value
+      Nothing    -> param
+    fixParam _ param@Raw.AManifest{} = param
+
+    refinementOf _name _params (Raw.NoRefinement _loc) = Right Map.empty
+    refinementOf name params (Raw.ARefinement _loc fixes)
+      | (dup : _) <- repeated =
+          Left ("field fixed twice: " <> prettyVarIdent dup)
+      | (already : _) <- [x | x <- fixedNames, x `elem` manifest] =
+          Left ("field " <> prettyVarIdent already <> " of telescope "
+                 <> prettyVarIdent name <> " is already fixed")
+      | (unknown : _) <- [x | x <- fixedNames, x `notElem` bound] =
+          Left ("telescope " <> prettyVarIdent name <> " has no field "
+                 <> prettyVarIdent unknown)
+      | otherwise = Right (Map.fromList [(x, value) | Raw.AFixed _ x value <- fixes])
+      where
+        fixedNames = [x | Raw.AFixed _ x _ <- fixes]
+        repeated   = [x | x : _ : _ <- group (sort fixedNames)]
+        bound      = [x | Raw.AParam _ x _ <- params]
+        manifest   = [x | Raw.AManifest _ x _ _ <- params]
 
 -- * Name layout
 --
@@ -543,6 +578,7 @@ mergeEnvs union scope envA envB = Env
       (getCompose (sunkTo scope (Compose (envModules envA))))
       (getCompose (sunkTo scope (Compose (envModules envB))))
   , envDisplay  = Blocks.unionNameMaps union (envDisplay envA) (envDisplay envB)
+  , envManifest = Map.empty
   , envClosedOver = Map.empty
   }
 
@@ -578,25 +614,85 @@ data Two a = Two a a
 --
 -- A parameter is nameable by its bare spelling and is not exported, which is
 -- exactly what 'extendEnv' does for a private declaration.
+--
+-- A /manifest/ parameter binds nothing. Its value is elaborated in the module's
+-- own scope, before any of the block's binders, and recorded in 'envManifest',
+-- so the spelling stands for that term wherever it is used. Two things follow,
+-- and both are the point of the arrangement. A value cannot mention a bound
+-- field of the block, since no such name is in scope where it is elaborated,
+-- which is the admissibility condition for a refinement enforced by scoping
+-- rather than tested. And nothing is ever discharged over a manifest field,
+-- since 'discharge' only ever sees the telescope, which such a field is not in.
 withParams
   :: forall n r. Foil.Distinct n
   => Env n
   -> [Raw.Param]
-  -> (String -> r)        -- ^ A parameter's type did not resolve.
+  -> (String -> r)        -- ^ A parameter's type or value did not resolve.
   -> (forall p. Foil.DExt n p
         => ParamTelescope Raw.BNFC'Position n p -> Env p -> r)
   -> r
-withParams env [] _onErr cont = cont TelescopeEmpty env
-withParams env (Raw.AParam _loc name rawTy : rest) onErr cont =
-  case tryToTerm'In localRegion (ctxScope ctx) (visibleAt [] (envDeclared env)) rawTy of
-    Left err -> onErr (notInScope err)
-    Right raw ->
-      let ty = desugar raw
-       in withVarBinder localRegion ctx ty $ \ctx' binder ->
-            withParams (extendEnv ctx' binder name Private env) rest onErr $
-              \tele envP -> cont (TelescopeCons name ty binder tele) envP
+withParams env0 params onErr cont =
+  case foldM manifest (envManifest env0)
+         [(loc, x, ty, v) | Raw.AManifest loc x ty v <- params] of
+    Left err    -> onErr err
+    Right table -> go env0 { envManifest = table } params cont
   where
-    ctx = envCtx env
+    -- The manifest values, in order, each elaborated with the ones before it in
+    -- scope: an earlier manifest field is an abbreviation for an ambient term,
+    -- so naming it is naming that term and is no dependence on the block.
+    manifest table (loc, name, rawTy, rawValue) =
+      let ctx = envCtx env0
+          elaborate = tryToTerm'WithIn localRegion (ctxScope ctx)
+                        (visibleAt [] (envDeclared env0)) table
+       in case (elaborate rawTy, elaborate rawValue) of
+            (Left err, _) -> Left (dependsOnUnfixed name err)
+            (_, Left err) -> Left (dependsOnUnfixed name err)
+            (Right rawTy', Right raw) ->
+              let ty = desugar rawTy'
+                  value = desugar raw
+               in case check ctx ty (Universe Raw.BNFC'NoPosition)
+                       >> check ctx value ty of
+                    Left err -> Left err
+                    Right () -> Right (Map.insert name (inferable loc ty value) table)
+
+    -- Resolution puts a manifest value wherever its spelling occurs, which may
+    -- be the head of an application, and the checker is bidirectional: 'infer'
+    -- has nothing to say about a bare λ. Such a value goes in ascribed, and the
+    -- ascription is stripped by 'whnf', so nothing but 'infer' notices. Every
+    -- other form infers as it stands and is left alone, so that a value reads
+    -- unchanged when a message shows it.
+    inferable loc ty value@Lam{} = Ann loc value ty
+    inferable _loc _ty value     = value
+
+    -- A field can only be fixed when everything its type and value mention is
+    -- fixed too, since both are elaborated before any of the block's binders.
+    -- That is the admissibility condition, and this is what it looks like when
+    -- it fails: the name that did not resolve is a field of this very block.
+    dependsOnUnfixed name err@(UnresolvedName x _)
+      | x `elem` [f | Raw.AParam _ f _ <- params] =
+          "cannot fix " <> prettyVarIdent name <> ": it depends on "
+            <> prettyVarIdent x <> ", which is not fixed"
+      | otherwise = notInScope err
+
+    go :: forall p. Foil.Distinct p
+       => Env p
+       -> [Raw.Param]
+       -> (forall q. Foil.DExt p q
+             => ParamTelescope Raw.BNFC'Position p q -> Env q -> r)
+       -> r
+    go env [] k = k TelescopeEmpty env
+    go env (Raw.AManifest{} : rest) k = go env rest k
+    go env (Raw.AParam _loc name rawTy : rest) k =
+      case tryToTerm'WithIn localRegion (ctxScope ctx)
+             (visibleAt [] (envDeclared env)) (envManifest env) rawTy of
+        Left err -> onErr (notInScope err)
+        Right raw ->
+          let ty = desugar raw
+           in withVarBinder localRegion ctx ty $ \ctx' binder ->
+                go (extendEnv ctx' binder name Private env) rest $ \tele envQ ->
+                  k (TelescopeCons name ty binder tele) envQ
+      where
+        ctx = envCtx env
 
 -- | Elaborate a module's parameter types, reporting the first that fails.
 validateParams :: Foil.Distinct n => Env n -> [Raw.Param] -> Maybe TypeError
@@ -623,8 +719,11 @@ splitVisible
   -> Table (Foil.Name p)
   -> (Table (Foil.Name p), Table (Term p))
 splitVisible envP visible =
-    (Map.difference visible parametrised, parametrised)
+    (Map.difference visible expanded, expanded)
   where
+    -- A manifest field wins over a declaration of the same spelling, exactly as
+    -- a bound parameter does.
+    expanded = Map.union (envManifest envP) parametrised
     parametrised = Map.mapMaybe expand visible
     closedOver = Map.elems (envClosedOver envP)
 

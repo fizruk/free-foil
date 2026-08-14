@@ -77,11 +77,39 @@ def plusAssoc
 def plusUnitL : Π (a : Nat) → Id(Nat, plus zero a, a) := λ a ⇒ refl (a)
 def plusUnitR : Π (a : Nat) → Id(Nat, plus a zero, a) := λ a ⇒ refl (a)
 
+-- * Refinement: fixing a field
+
+-- `Monoid / {A := Nat}` is the residual telescope, the same block with `A` no
+-- longer a variable. A fixed field is *manifest*: it is an abbreviation, so it
+-- is not discharged over, and `twice` below takes only the operation.
+--
+-- A supplied value is elaborated in the including module's own scope, before
+-- any of the block's binders, so it cannot mention a field of the telescope.
+-- That is the admissibility condition, and it holds by scoping rather than by
+-- a test: writing `Monoid / {unit := mul}` is simply `mul` not in scope.
+module NatMonoid include Monoid / {A := Nat}
+import Church
+def twice : A → A := λ x ⇒ mul x x
+
+-- Fixing every field leaves nothing to abstract over, which is what an
+-- instance is. `Nat` under addition is a monoid, and saying so is an include.
+module NatAdd
+  include Monoid / {A := Nat, unit := zero, mul := plus,
+                    assoc := plusAssoc, unitL := plusUnitL, unitR := plusUnitR}
+import Church
+def sum4 : Nat → Nat := λ x ⇒ mul (mul x x) (mul x x)
+
 -- * Using the theory at the instance
 
 module Client
 import MonoidTheory
 import Church
+import NatAdd
+
+-- What leaves an instance is a plain constant. Every field of `NatAdd` was
+-- fixed, so `sum4` was discharged over nothing and applies to its argument
+-- alone: `2 + 2 + (2 + 2)` is 8.
+compute sum4 two
 
 -- Instantiation is application: `square` was closed over `(A, mul)`, so it is
 -- applied to a carrier and an operation, and nothing had to be registered

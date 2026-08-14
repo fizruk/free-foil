@@ -240,6 +240,29 @@ nothing but the source they were written in. Instantiation is application: what
 leaves an including module is a closed constant, and there is no `interpretation`
 command because there is nothing for one to do.
 
+An include may **refine** the telescope, fixing fields to values. The residual is
+again a telescope, the same block with fewer variables in it:
+
+```
+module NatMonoid include Monoid / {A := Nat}
+def twice : A → A := λ x ⇒ mul x x        -- discharged over (mul), not (A, mul)
+
+module NatAdd include Monoid / {A := Nat, unit := zero, mul := plus}
+def sum4 : Nat → Nat := λ x ⇒ mul (mul x x) (mul x x)   -- over nothing
+```
+
+A fixed field is *manifest*: an abbreviation rather than a variable, so nothing
+is discharged over it, and fixing every field is what an instance is — `sum4`
+above is a plain constant a client applies to its argument alone.
+
+A supplied value is elaborated in the including module's own scope, before any of
+the block's binders, so it cannot mention a field that is still a variable. That
+is the admissibility condition, and it holds by scoping rather than by a test:
+`Monoid / {A := Nat, unit := mul}` reports that `unit` depends on `mul`, which is
+not fixed. It also means the fixed fields have to be closed under what they
+depend on — fixing `unit` while `A` is a variable is refused, since `unit : A`.
+Values are checked against the fields' declared types.
+
 Internally the parameters of a module are a labelled telescope, which is a
 free-foil *pattern* with a label and a payload per binder. It is written out in
 `Language.MLTT.Telescope`, with `CoSinkable` and `UnifiablePattern` by hand, so

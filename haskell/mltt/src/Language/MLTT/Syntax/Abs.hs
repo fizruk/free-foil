@@ -38,7 +38,15 @@ data Module' a
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
 
 type Include = Include' BNFC'Position
-data Include' a = AnInclude a VarIdent
+data Include' a = AnInclude a VarIdent (Refinement' a)
+  deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
+
+type Refinement = Refinement' BNFC'Position
+data Refinement' a = NoRefinement a | ARefinement a [Fixed' a]
+  deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
+
+type Fixed = Fixed' BNFC'Position
+data Fixed' a = AFixed a VarIdent (Term' a)
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
 
 type TelescopeDecl = TelescopeDecl' BNFC'Position
@@ -46,7 +54,9 @@ data TelescopeDecl' a = ATelescope a VarIdent [Param' a]
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
 
 type Param = Param' BNFC'Position
-data Param' a = AParam a VarIdent (Term' a)
+data Param' a
+    = AParam a VarIdent (Term' a)
+    | AManifest a VarIdent (Term' a) (Term' a)
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
 
 type Import = Import' BNFC'Position
@@ -133,7 +143,16 @@ instance HasPosition Module where
 
 instance HasPosition Include where
   hasPosition = \case
-    AnInclude p _ -> p
+    AnInclude p _ _ -> p
+
+instance HasPosition Refinement where
+  hasPosition = \case
+    NoRefinement p -> p
+    ARefinement p _ -> p
+
+instance HasPosition Fixed where
+  hasPosition = \case
+    AFixed p _ _ -> p
 
 instance HasPosition TelescopeDecl where
   hasPosition = \case
@@ -142,6 +161,7 @@ instance HasPosition TelescopeDecl where
 instance HasPosition Param where
   hasPosition = \case
     AParam p _ _ -> p
+    AManifest p _ _ _ -> p
 
 instance HasPosition Import where
   hasPosition = \case
