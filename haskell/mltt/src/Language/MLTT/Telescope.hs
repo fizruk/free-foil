@@ -51,8 +51,6 @@ module Language.MLTT.Telescope where
 import qualified Control.Monad.Foil           as Foil
 import           Control.Monad.Free.Foil      (supportOf, unsinkAST)
 import           Data.List                    (intercalate, sort)
-import           Unsafe.Coerce                (unsafeCoerce)
-
 import           Language.MLTT.Impl.Generated
 import           Language.MLTT.Resolve        (prettyVarIdent)
 import qualified Language.MLTT.Syntax.Abs     as Raw
@@ -81,56 +79,19 @@ data Telescope label e n l where
 -- | A module's parameters: the labels are spellings, the payloads are types.
 type ParamTelescope a = Telescope Raw.VarIdent (Term' a)
 
--- | How a payload is moved from a telescope's own scope into the ambient one.
---
--- 'Foil.withPattern' relates the two scopes only through the binders it hands
--- back, so this is accumulated as the telescope is walked: a step whose binder
--- came back unchanged leaves raw names alone, and only a step that renamed its
--- binder makes the transport a real renaming. Since 'Foil.extendScopePattern',
--- 'Foil.namesOfPattern' and 'Foil.nameBinderListOf' never rename, the payloads
--- are not walked on any of those paths.
-data Transport n o
-  = Verbatim
-    -- ^ No binder was renamed, so the payload can be taken over as it is.
-  | Renamed (Foil.Name n -> Foil.Name o)
-    -- ^ Some binder was renamed, so the payload has to be traversed.
-
--- | Move a payload along a 'Transport'.
-transportPayload :: Foil.Sinkable e => Transport n o -> e n -> e o
-transportPayload Verbatim         = unsafeCoerce
-transportPayload (Renamed rename) = Foil.sinkabilityProof rename
-
--- | Move a single name along a 'Transport'.
-transportName :: Transport n o -> Foil.Name n -> Foil.Name o
-transportName Verbatim         = unsafeCoerce
-transportName (Renamed rename) = rename
-
--- | Extend a transport by one step of the telescope.
---
--- The names of the inner scope are the binder's own name, which goes to the
--- name the refreshed binder introduces, and the names of the outer scope, which
--- the transport so far already answers for.
-extendTransport
-  :: Transport n o
-  -> Foil.NameBinder n i    -- ^ The binder as the telescope has it.
-  -> Foil.NameBinder o o'   -- ^ The binder 'Foil.withPattern' handed back.
-  -> Transport i o'
-extendTransport transport binder binder'
-  | Verbatim <- transport, unchanged = Verbatim
-  | otherwise = Renamed $ \name ->
-      if Foil.nameId name == Foil.nameId (Foil.nameOf binder)
-        then Foil.nameOf binder'
-        else unsafeCoerce (transportName transport (unsafeCoerce name))
-  where
-    unchanged =
-      Foil.nameId (Foil.nameOf binder) == Foil.nameId (Foil.nameOf binder')
-
 -- | A telescope is a pattern, so the foil's own machinery walks it.
 --
 -- 'Foil.coSinkabilityProof' is the interesting half. It is proof code (every
 -- call site goes through 'Foil.extendRenaming', which is a coercion), but it
 -- has to typecheck, and it only does because a payload is sunk by the renaming
 -- of the scope /before/ its binder rather than by the extended one.
+--
+-- 'Foil.withPattern' is written out rather than derived, because a telescope
+-- carries payloads and the generic default would leave a payload naming a
+-- refreshed binder pointing at the name that binder used to have. It follows
+-- the recipe in 'Foil.transportPayload': a 'Foil.PatternTransport' threaded
+-- through the traversal, each payload moved by the transport accumulated
+-- /before/ its own binder, since that is the scope the payload lives in.
 instance Foil.Sinkable e => Foil.CoSinkable (Telescope label e) where
   coSinkabilityProof rename TelescopeEmpty cont = cont rename TelescopeEmpty
   coSinkabilityProof rename (TelescopeCons label payload binder rest) cont =
@@ -153,10 +114,10 @@ instance Foil.Sinkable e => Foil.CoSinkable (Telescope label e) where
     -> Telescope label e n l
     -> (forall o'. Foil.DExt o o' => f n l o o' -> Telescope label e o o' -> r)
     -> r
-  withPattern withBinder unit comp = go Verbatim
+  withPattern withBinder unit comp = go Foil.verbatimTransport
     where
       go :: forall n' l' o' r'. Foil.Distinct o'
-         => Transport n' o'
+         => Foil.PatternTransport n' o'
          -> Foil.Scope o'
          -> Telescope label e n' l'
          -> (forall o''. Foil.DExt o' o''
@@ -165,11 +126,11 @@ instance Foil.Sinkable e => Foil.CoSinkable (Telescope label e) where
       go _transport _scope TelescopeEmpty cont = cont unit TelescopeEmpty
       go transport scope (TelescopeCons label payload binder rest) cont =
         withBinder scope binder $ \fbinder binder' ->
-          go (extendTransport transport binder binder')
+          go (Foil.transportUnderBinder transport binder binder')
              (Foil.extendScope binder' scope)
              rest $ \frest rest' ->
             cont (comp fbinder frest)
-              (TelescopeCons label (transportPayload transport payload) binder' rest')
+              (TelescopeCons label (Foil.transportPayload transport payload) binder' rest')
 
 -- | Telescopes unify exactly when their binders do, as for a
 -- 'Foil.NameBinderList'.

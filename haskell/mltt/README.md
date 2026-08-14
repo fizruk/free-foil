@@ -242,9 +242,11 @@ Internally the parameters of a module are a labelled telescope, which is a
 free-foil *pattern* with a label and a payload per binder. It is written out in
 `Language.MLTT.Telescope`, with `CoSinkable` and `UnifiablePattern` by hand, so
 that scope extension, the names of a block and α-equivalence of two blocks all
-come from the library rather than from the demo. Its Haddock records what those
-instances need that the pattern interface does not offer — a payload has to be
-carried into the ambient scope, and `withPattern` exposes no renaming for it.
+come from the library rather than from the demo. `withPattern` is written out
+rather than derived, because the generic default replaces a pattern's binders
+and leaves its other fields alone, which is wrong once a field names one of
+those binders; the telescope threads a `PatternTransport` instead, which is the
+library's answer to exactly this.
 
 `examples/theories.mltt` puts the layer to work: a `Monoid` telescope carrying
 its associativity law, a lemma proved once from that law, and the Church

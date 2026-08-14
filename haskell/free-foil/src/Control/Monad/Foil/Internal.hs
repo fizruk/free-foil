@@ -1175,6 +1175,28 @@ class CoSinkable (pattern :: S -> S -> Type) where
   -- | Generalized processing of a pattern.
   --
   -- You can see 'withPattern' as a CPS-style traversal over the binders in a pattern.
+  --
+  -- == Patterns that carry scoped payloads
+  --
+  -- Note that the ambient scope @o@ and the pattern's own scope @n@ are
+  -- unrelated: 'nameBinderListOf' passes 'emptyScope' and 'namesOfPattern'
+  -- passes no scope at all. The only thing relating the two is the pair of
+  -- binders each step of the traversal produces, the one the pattern has and
+  -- the one the callback hands back.
+  --
+  -- A pattern whose fields are all binders and plain data does not notice this,
+  -- and can take the default implementation. A pattern carrying a field indexed
+  -- by /its own scope/, such as the type of a telescope's step, does notice: to
+  -- rebuild that field at @o@ it needs a renaming, and the only honest one is
+  -- the identity on the raw names the pattern does not bind, corrected at the
+  -- binders that were refreshed. That renaming is 'PatternTransport', and such
+  -- a pattern should implement 'withPattern' by hand, threading one through the
+  -- traversal. See 'transportPayload' for the whole recipe.
+  --
+  -- The default implementation is /wrong/ for such a pattern. It goes through
+  -- 'unsafeSetNameBinders', which replaces the binders and leaves every other
+  -- field as it stands, so a payload mentioning a refreshed binder keeps the
+  -- name that binder used to have.
   withPattern
     :: Distinct o
     => (forall x y z r'. Distinct z => Scope z -> NameBinder x y -> (forall z'. DExt z z' => f x y z z' -> NameBinder z z' -> r') -> r')
@@ -1200,6 +1222,89 @@ class CoSinkable (pattern :: S -> S -> Type) where
     -> (forall o'. DExt o o' => f n l o o' -> pattern o o' -> r)
     -> r
   withPattern = gunsafeWithPatternViaHasNameBinders
+
+-- ** Transporting a pattern's payloads
+
+-- | The renaming that carries a pattern's payloads into the ambient scope of
+-- 'withPattern'.
+--
+-- A pattern may carry fields indexed by its own scope, the standard example
+-- being a telescope, where each step has a type in the scope the steps before
+-- it extend to. Rebuilding such a pattern at the ambient scope means rebuilding
+-- those fields there too, and 'withPattern' hands the instance no renaming for
+-- it. This is that renaming, accumulated as the traversal goes.
+--
+-- It is abstract on purpose: the only ways to build one are 'verbatimTransport'
+-- and 'transportUnderBinder', which together are exactly what a correct
+-- 'withPattern' does.
+--
+-- Soundness rests on what 'withPattern' is allowed to do. It replaces binders
+-- and nothing else, so a raw name the pattern does not bind means in @o@ what
+-- it meant in @n@, and the identity on raw names is a renaming from the one to
+-- the other. That is the same coercion 'extendRenaming' and 'unsafeAssertFresh'
+-- already perform.
+data PatternTransport (n :: S) (o :: S)
+  = TransportVerbatim
+    -- ^ No binder was refreshed, so raw names are unchanged throughout.
+  | TransportRenamed (Name n -> Name o)
+    -- ^ Some binder was refreshed, so payloads have to be traversed.
+
+-- | The transport to start a 'withPattern' traversal with, before any binder
+-- has been seen.
+verbatimTransport :: PatternTransport n o
+verbatimTransport = TransportVerbatim
+
+-- | Extend a transport by one binder of the pattern.
+--
+-- The names of the inner scope are the binder's own, which goes to whatever the
+-- refreshed binder introduces, and the names of the outer scope, which the
+-- transport so far already answers for.
+transportUnderBinder
+  :: PatternTransport n o
+  -> NameBinder n i    -- ^ The binder as the pattern has it.
+  -> NameBinder o o'   -- ^ The binder 'withPattern' handed back.
+  -> PatternTransport i o'
+transportUnderBinder transport binder binder'
+  | TransportVerbatim <- transport, unchanged = TransportVerbatim
+  | otherwise = TransportRenamed $ \name ->
+      if nameId name == nameId (nameOf binder)
+        then nameOf binder'
+        else unsafeCoerce (transportName transport (unsafeCoerce name))
+  where
+    unchanged = nameId (nameOf binder) == nameId (nameOf binder')
+
+-- | Carry a payload along a transport.
+--
+-- The 'Sinkable' instance does the walking, and only when it has to: while no
+-- binder has been refreshed the payload is taken over as it stands, so the
+-- traversals that never rename — 'extendScopePattern', 'namesOfPattern',
+-- 'nameBinderListOf' — do not walk payloads at all.
+--
+-- The whole recipe for a payload-carrying pattern, at a telescope of labelled
+-- steps:
+--
+-- > instance Sinkable e => CoSinkable (Telescope label e) where
+-- >   withPattern withBinder unit comp = go verbatimTransport
+-- >     where
+-- >       go _transport _scope TelescopeEmpty cont = cont unit TelescopeEmpty
+-- >       go transport scope (TelescopeCons label payload binder rest) cont =
+-- >         withBinder scope binder $ \fbinder binder' ->
+-- >           go (transportUnderBinder transport binder binder')
+-- >              (extendScope binder' scope) rest $ \frest rest' ->
+-- >             cont (comp fbinder frest)
+-- >               (TelescopeCons label (transportPayload transport payload)
+-- >                              binder' rest')
+--
+-- Note which transport each payload takes: the one accumulated /before/ its own
+-- binder, since that is the scope the payload lives in.
+transportPayload :: Sinkable e => PatternTransport n o -> e n -> e o
+transportPayload TransportVerbatim         = unsafeCoerce
+transportPayload (TransportRenamed rename) = sinkabilityProof rename
+
+-- | Carry a single name along a transport.
+transportName :: PatternTransport n o -> Name n -> Name o
+transportName TransportVerbatim         = unsafeCoerce
+transportName (TransportRenamed rename) = rename
 
 -- | Auxiliary data structure for collecting name binders. Used in 'nameBinderListOf'.
 newtype WithNameBinderList r n l (o :: S) (o' :: S) = WithNameBinderList (NameBinderList l r -> NameBinderList n r)
