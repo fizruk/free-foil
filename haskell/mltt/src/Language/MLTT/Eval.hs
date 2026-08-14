@@ -155,17 +155,49 @@ whnf scope defs = go
 -- about consistency.
 --
 -- >>> nf Foil.emptyScope emptyDefs (desugar ("λ f ⇒ λ x ⇒ (λ y ⇒ f y) x" :: Term Foil.VoidS))
--- λ x0 ⇒ λ x1 ⇒ x0 x1
+-- λ x0 ⇒ x0
 nf :: forall a n. Foil.Distinct n => Foil.Scope n -> Defs a n -> Term' a n -> Term' a n
 nf scope defs term = case whnf scope defs term of
     Var x     -> Var x
-    Node node -> Node (bimap nfScoped (nf scope defs) node)
+    Node node -> etaReduce scope (Node (bimap nfScoped (nf scope defs) node))
   where
     nfScoped :: ScopedTerm' a n -> ScopedTerm' a n
     nfScoped (ScopedAST binder body) =
       case (Foil.assertExt binder, Foil.assertDistinct binder) of
         (Foil.Ext, Foil.Distinct) -> ScopedAST binder
           (nf (Foil.extendScopePattern binder scope) (extendDefs binder defs) body)
+
+-- | η-reduce a λ that does nothing but apply a term to the variable it binds.
+--
+-- @λ x ⇒ f x@ is @f@, provided @f@ does not use @x@ itself. That proviso is
+-- exactly what free-foil's /restriction/ answers: 'unsinkAST' succeeds when the
+-- function part of the body lives in the scope outside the binder, so the test
+-- is a subset check on the support and a term that passes is not rebuilt.
+--
+-- This is η as a reduction rather than as an expansion, which is why it can sit
+-- in 'nf': contracting needs no types, whereas expanding would need to know
+-- that the term is of a function type, and the evaluator here is untyped.
+--
+-- >>> nf Foil.emptyScope emptyDefs (desugar ("λ f ⇒ λ x ⇒ f x" :: Term Foil.VoidS))
+-- λ x0 ⇒ x0
+--
+-- The function part has to be free of the binder. Here it is not, so nothing
+-- happens:
+--
+-- >>> nf Foil.emptyScope emptyDefs (desugar ("λ x ⇒ x x" :: Term Foil.VoidS))
+-- λ x0 ⇒ x0 x0
+--
+-- Only a λ binding a single variable qualifies. A pair pattern would be
+-- surjective pairing, which is a different rule and not implemented.
+etaReduce :: Foil.Distinct n => Foil.Scope n -> Term' a n -> Term' a n
+etaReduce scope term = case term of
+  Lam _loc (PatternVar _pos binder) (App _appLoc f (Var x))
+    | x == Foil.nameOf binder ->
+        case Foil.assertDistinct binder of
+          Foil.Distinct -> case unsinkAST scope f of
+            Just f' -> f'
+            Nothing -> term
+  _ -> term
 
 -- | Conversion: are two terms equal up to reduction and renaming of bound
 -- variables?

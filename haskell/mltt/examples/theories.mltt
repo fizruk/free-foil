@@ -13,14 +13,14 @@ telescope Monoid
   (unit : A)
   (mul : A → A → A)
   (assoc : Π (x : A) → Π (y : A) → Π (z : A) → Id(A, mul (mul x y) z, mul x (mul y z)))
+  (unitL : Π (x : A) → Id(A, mul unit x, x))
+  (unitR : Π (x : A) → Id(A, mul x unit, x))
 
--- The unit laws are missing on purpose, and it is worth saying why. Stating
--- `Π (x : A) → Id(A, mul unit x, x)` is fine; what no instance below could then
--- do is prove it. Conversion here normalises both sides and compares them, with
--- no η, so `plus zero n` reduces to `λ A ⇒ λ f ⇒ λ x ⇒ n A f x` and stops one
--- η-contraction short of `n`. Associativity needs no η and holds on the nose,
--- which is why it is the law the demo carries. This is a limitation of the demo
--- language's conversion, not of telescopes.
+-- All three laws are fields like any other, and the instance below discharges
+-- every one of them by `refl`. The unit laws need η to do so: `plus zero n`
+-- reduces to `λ A ⇒ λ f ⇒ λ x ⇒ n A f x`, which is `n` only after three
+-- η-contractions. `nf` performs them, so conversion sees the two sides as
+-- equal.
 
 -- Two theories over the same block, declared once. `Group` adds a field of its
 -- own, and its type may mention the included ones.
@@ -47,6 +47,12 @@ def squareAssoc over (A, mul, assoc)
   : Π (x : A) → Id(A, mul (square x) x, mul x (square x))
   := λ x ⇒ assoc x x x
 
+-- A second lemma, over a different set of fields: this one needs the unit and
+-- its law, and not associativity. Each declaration takes what it uses.
+def unitSquare over (A, unit, mul, unitL)
+  : Π (x : A) → Id(A, mul unit (square x), square x)
+  := λ x ⇒ unitL (square x)
+
 -- * An instance
 
 -- The naturals as Church numerals, which is as much data as a type theory with
@@ -61,11 +67,15 @@ def one : Nat := succ zero
 def two : Nat := succ one
 def three : Nat := succ two
 
--- Both sides of associativity normalise to the same term, for variables and
--- not merely for closed numerals, so the instance discharges the law by `refl`.
+-- Every law holds on the nose here, for variables and not merely for closed
+-- numerals, so each one is discharged by `refl`. Associativity needs no η at
+-- all; the unit laws need it, and get it.
 def plusAssoc
   : Π (a : Nat) → Π (b : Nat) → Π (c : Nat) → Id(Nat, plus (plus a b) c, plus a (plus b c))
   := λ a ⇒ λ b ⇒ λ c ⇒ refl (plus (plus a b) c)
+
+def plusUnitL : Π (a : Nat) → Id(Nat, plus zero a, a) := λ a ⇒ refl (a)
+def plusUnitR : Π (a : Nat) → Id(Nat, plus a zero, a) := λ a ⇒ refl (a)
 
 -- * Using the theory at the instance
 
@@ -82,6 +92,11 @@ compute square Nat plus two
 -- is the third argument. What comes back is the lemma at the naturals.
 check squareAssoc Nat plus plusAssoc
   : Π (x : Nat) → Id(Nat, plus (plus x x) x, plus x (plus x x))
+
+-- The other lemma took a different set of fields, so it is applied to those,
+-- and to no others. There is no one telescope being reinstated.
+check unitSquare Nat zero plus plusUnitL
+  : Π (x : Nat) → Id(Nat, plus zero (plus x x), plus x x)
 
 -- A theory's lemma is a term like any other, so it applies at an element.
 compute squareAssoc Nat plus plusAssoc three
