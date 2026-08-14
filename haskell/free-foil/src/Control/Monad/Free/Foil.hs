@@ -197,6 +197,12 @@ alphaEquivRefreshed
   -> Bool
 alphaEquivRefreshed scope t1 t2 = refreshAST scope t1 `unsafeEqAST` refreshAST scope t2
 
+-- | A term is a scope-indexed value that can be compared up to α, which is what
+-- a pattern carrying terms as payloads needs of them.
+instance (Bitraversable sig, ZipMatchK sig, Foil.UnifiablePattern binder, Foil.SinkableK binder)
+    => Foil.AlphaEquiv (AST binder sig) where
+  alphaEquivIn = alphaEquiv
+
 -- | \(\alpha\)-equivalence check for two terms in one scope
 -- via unification of bound variables (via 'unifyNameBinders').
 --
@@ -229,7 +235,7 @@ alphaEquivScoped
 alphaEquivScoped scope
   (ScopedAST binder1 body1)
   (ScopedAST binder2 body2) =
-    case Foil.unifyPatterns binder1 binder2 of
+    case Foil.unifyPatternsIn scope binder1 binder2 of
       -- if binders are the same, then we can safely compare bodies
       Foil.SameNameBinders{} ->  -- after seeing this we know that body scopes are the same
         case Foil.assertDistinct binder1 of

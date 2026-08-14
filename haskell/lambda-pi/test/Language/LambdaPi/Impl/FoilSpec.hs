@@ -138,10 +138,10 @@ alterNames scope names = go
 instance Arbitrary (Expr VoidS) where
   arbitrary = genExpr emptyScope []
 
-data AlphaEquiv = AlphaEquiv Bool (Expr VoidS) (Expr VoidS)
+data AlphaEquivPair = AlphaEquivPair Bool (Expr VoidS) (Expr VoidS)
 
-instance Show AlphaEquiv where
-  show (AlphaEquiv equiv t1 t2) = unlines
+instance Show AlphaEquivPair where
+  show (AlphaEquivPair equiv t1 t2) = unlines
     [ "t1 = " <> show t1
     , "t2 = " <> show t2
     , if equiv
@@ -149,26 +149,26 @@ instance Show AlphaEquiv where
         else "t1 and t2 are not α-equivalent"
     ]
 
-instance Arbitrary AlphaEquiv where
+instance Arbitrary AlphaEquivPair where
   arbitrary = do
     (t, t') <- genAlphaEquivExprs withRefreshed emptyScope emptyScope []
     (n, alt) <- alterNames emptyScope [] 1 t
-    return (AlphaEquiv (n == 1) alt t')
+    return (AlphaEquivPair (n == 1) alt t')
 
   -- cannot shrink non-equivalent pair
   -- since we do not know which subterm contains non-equivalent part
-  shrink (AlphaEquiv False _ _) = []
+  shrink (AlphaEquivPair False _ _) = []
   -- if terms are equivalent, then we can shrink
-  shrink (AlphaEquiv True t t') =
-    [ AlphaEquiv True s s'
+  shrink (AlphaEquivPair True t t') =
+    [ AlphaEquivPair True s s'
     | (s, s') <- shrinkExprs (t, t')
     ]
 
-newtype AlphaEquivRefreshed = AlphaEquivRefreshed AlphaEquiv
+newtype AlphaEquivRefreshed = AlphaEquivRefreshed AlphaEquivPair
   deriving (Arbitrary)
 
 instance Show AlphaEquivRefreshed where
-  show (AlphaEquivRefreshed ae@(AlphaEquiv _equiv t1 t2)) = unlines
+  show (AlphaEquivRefreshed ae@(AlphaEquivPair _equiv t1 t2)) = unlines
     [  show ae
     , "refreshExpr _ t1 = " <> show (refreshExpr emptyScope t1)
     , "refreshExpr _ t2 = " <> show (refreshExpr emptyScope t2)
@@ -201,9 +201,9 @@ spec = do
   describe "α-equivalence" $ do
     it "refreshExpr is correct" $ property $ \(ExprWithFresh t t') ->
       refreshExpr emptyScope t `unsafeEqExpr` t'
-    it "alphaEquiv is correct" $ property $ \(AlphaEquiv equiv t t') ->
+    it "alphaEquiv is correct" $ property $ \(AlphaEquivPair equiv t t') ->
       alphaEquiv emptyScope t t' `shouldBe` equiv
-    it "alphaEquivRefreshed is correct" $ property $ \(AlphaEquivRefreshed (AlphaEquiv equiv t t')) ->
+    it "alphaEquivRefreshed is correct" $ property $ \(AlphaEquivRefreshed (AlphaEquivPair equiv t t')) ->
       alphaEquivRefreshed emptyScope t t' `shouldBe` equiv
   describe "weak head normal form (WHNF)" $ do
     it "whnf is idempotent (strictly, not just up to α-equivalence)" $ property $ forAll (genNonWHNF 10 emptyScope []) $ \t ->
