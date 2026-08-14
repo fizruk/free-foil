@@ -68,6 +68,7 @@ import           System.Exit              (exitFailure)
 import           System.FilePath          ((</>))
 import           System.IO                (hFlush, isEOF, stdout)
 
+import           Control.Monad.Free.Foil.Artifact (storedConstants)
 import           Language.MLTT.Artifact
 import           Language.MLTT.Impl
 import           Language.MLTT.Impl.Generated (SourceText (..), parseImports,
@@ -274,7 +275,7 @@ loadImports hashes artifacts name (Repl me) =
               <> [Imported (renderVarIdent name)] )
   where
     step (Importing block env view) a = do
-      cm <- loadArtifact hashes (artifactConstants a) env a
+      cm <- loadArtifact hashes (storedConstants (artifactLayout a)) env a
       withCheckedModule cm $ \ext env' _ ->
         case Blocks.resumeBlock (Blocks.blockRange block)
                (Blocks.composeExtWithin (Blocks.blockExt block) ext) of

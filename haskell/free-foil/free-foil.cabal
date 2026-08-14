@@ -42,6 +42,7 @@ library
       Control.Monad.Foil.TH.Util
       Control.Monad.Free.Foil
       Control.Monad.Free.Foil.Annotated
+      Control.Monad.Free.Foil.Artifact
       Control.Monad.Free.Foil.Binary
       Control.Monad.Free.Foil.Binary.TH
       Control.Monad.Free.Foil.Example
@@ -66,6 +67,7 @@ library
     , base >=4.19 && <5
     , bifunctors >=5.5 && <5.7
     , binary >=0.8
+    , bytestring >=0.11
     , containers >=0.6.8 && <0.9
     , deepseq >=1.4 && <1.6
     , kind-generics >=0.5.0 && <0.6
@@ -85,6 +87,7 @@ test-suite doctests
     , base >=4.19 && <5
     , bifunctors >=5.5 && <5.7
     , binary >=0.8
+    , bytestring >=0.11
     , containers >=0.6.8 && <0.9
     , deepseq >=1.4 && <1.6
     , doctest-parallel
@@ -121,6 +124,7 @@ test-suite spec
     , base >=4.19 && <5
     , bifunctors >=5.5 && <5.7
     , binary >=0.8
+    , bytestring >=0.11
     , containers
     , deepseq >=1.4 && <1.6
     , free-foil
@@ -145,6 +149,7 @@ benchmark normalize
     , base >=4.19 && <5
     , bifunctors >=5.5 && <5.7
     , binary >=0.8
+    , bytestring >=0.11
     , containers >=0.6.8 && <0.9
     , deepseq >=1.4 && <1.6
     , free-foil
@@ -168,6 +173,7 @@ benchmark zipmatchk
     , base >=4.19 && <5
     , bifunctors >=5.5 && <5.7
     , binary >=0.8
+    , bytestring >=0.11
     , containers >=0.6.8 && <0.9
     , deepseq >=1.4 && <1.6
     , free-foil

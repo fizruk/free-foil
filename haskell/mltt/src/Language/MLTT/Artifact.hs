@@ -4,7 +4,9 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
--- | Serialisation of checked modules.
+-- | Serialisation of checked modules, built from the parts in
+-- "Control.Monad.Free.Foil.Artifact"; what remains here is the artifact
+-- record, its envelope, and the driver logic.
 --
 -- A raw name of a /constant/ is a registry artefact. The artifact therefore
 -- records the constants' qualified spellings, and loading judges them once,
@@ -58,9 +60,8 @@ module Language.MLTT.Artifact (
 
 import           Control.Monad             (unless)
 import qualified Control.Monad.Foil        as Foil
-import qualified Control.Monad.Foil.Internal as Foil.Internal
-import           Control.Monad.Free.Foil   (AST (..), ScopedAST (..),
-                                            supportOf)
+import           Control.Monad.Free.Foil.Artifact hiding (ArtifactError)
+import qualified Control.Monad.Free.Foil.Artifact as Stored
 import           Control.Monad.Free.Foil.Binary ()
 import qualified Control.Monad.Foil.Blocks as Blocks
 import           Data.Binary               (Binary (..))
@@ -68,14 +69,10 @@ import           Data.Binary.Get           (runGetOrFail)
 import qualified Data.Binary.Get           as Get
 import           Data.Binary.Put           (runPut)
 import qualified Data.Binary.Put           as Put
-import           Data.Bifoldable           (bifoldMap)
-import           Data.Bifunctor            (bimap)
-import           Unsafe.Coerce             (unsafeCoerce)
 import           Data.Bits                 (xor, (.&.))
 import qualified Data.ByteString.Lazy       as BSL
 import qualified Data.ByteString.Lazy.Char8 as BSL8
 import           Data.List                 (foldl')
-import qualified Data.IntMap               as IntMap
 import           Data.Map                  (Map)
 import           GHC.Generics              (Generic)
 import qualified Data.Map                  as Map
@@ -92,19 +89,13 @@ import           Language.MLTT.Typecheck   (Ctx (..), extend)
 -- | A checked module, as written to disk.
 data ModuleArtifact = ModuleArtifact
   { artifactModule  :: Raw.VarIdent  -- ^ The module's qualified name.
-  , artifactConstants :: Foil.NameRange
-      -- ^ The actual names of the module's own constants: the used prefix
-      -- of its reservation, recorded as the range itself. Thus the
-      -- artifact depends neither on the loading build's stripe policy nor
-      -- on the writer's reservation size, and it loads anywhere its names
-      -- actually fit. Note that the range is exactly its declarations,
-      -- which decoding checks.
-  , artifactLocals  :: Foil.NameRange
-      -- ^ The actual range of the stored terms' locals: the names their
-      -- binders bind, not the writer's whole local region. It is recorded
-      -- so that the no-overlap assumption the verbatim terms rest on is a
-      -- checkable fact of the artifact, not a convention shared with the
-      -- writer. It is the actual range so that the check is tight.
+  , artifactLayout  :: StoredLayout
+      -- ^ The actual names of the module's own constants and of its
+      -- locals. Thus the artifact depends neither on the loading build's
+      -- stripe policy nor on the writer's reservation size, and it loads
+      -- anywhere its names actually fit; the no-overlap assumption the
+      -- verbatim terms rest on is a checkable fact of the artifact, and
+      -- the check is tight.
   , artifactSource  :: ContentHash   -- ^ Of the module's printed source:
                                      -- what an incremental rebuild compares.
   , artifactImports :: [(Raw.VarIdent, ContentHash)]
@@ -133,116 +124,6 @@ data ArtifactDecl = ArtifactDecl
 
 instance Binary ArtifactDecl
 
--- | A term as stored: the canonical bytes of the pair of its spelling table
--- and the term itself ('encodeTerm'). Equality of stored terms is byte
--- equality, which is what the canonical-artifact property tests.
-newtype StoredTerm = StoredTerm { storedBytes :: BSL.ByteString }
-  deriving (Eq, Show, Generic)
-
-instance Binary StoredTerm
-
--- | Encode a checked term, verbatim, through the @free-foil-binary@
--- instances.
---
--- The name layout's sign invariant is what makes verbatim enough. A name
--- below zero is an interned constant, whose spelling the artifact's table
--- records; note that a term's free variables are exactly its constants,
--- since a stored declaration is discharged. A non-negative name is a
--- local, and needs no table: it is canonical already, since elaboration
--- allocates locals in a region of their own.
-encodeTerm :: Term n -> BSL.ByteString
-encodeTerm t = runPut (put t)
-
--- | Decode a stored term's bytes: the instances alone, no meaning yet.
--- Meaning is given per artifact, not per term — see 'constantRelocation'.
-decodeStored :: StoredTerm -> Either ArtifactError (Term n)
-decodeStored (StoredTerm bytes) =
-  case runGetOrFail get bytes of
-    Left (_, _, err) -> Left ("malformed stored term: " <> err)
-    Right (rest, _, term)
-      | not (BSL.null rest) -> Left "malformed stored term: trailing bytes"
-      | otherwise -> Right term
-
--- | What an artifact's constants need in the loading world, judged once,
--- from the spelling table alone. 'Nothing' says every constant already has
--- the id its spelling means here; this is the fast path, on which no term
--- is walked at all. Otherwise the result is the renaming to apply. Its
--- domain is a scope of the artifact's world, which no longer exists, so
--- its index is the caller's phantom.
---
--- The module's own constants (table entries inside the recorded range) do
--- not consult the world: they are being loaded right now, in the same
--- order they were allocated, so their relocation is the affine shift
--- between the recorded range and the one this run assigned. Their new
--- names are thereby minted ahead of their allocation, which loading's
--- trust covers. An imported constant resolves by its spelling; one this
--- world does not know is reported.
-constantRelocation
-  :: Foil.NameRange                 -- ^ The recorded range of its own constants.
-  -> Foil.NameRange                 -- ^ The range this run assigned.
-  -> Foil.NameRange                 -- ^ The artifact's recorded locals region.
-  -> Map Foil.RawName Raw.VarIdent  -- ^ The artifact's spelling table.
-  -> Map Raw.VarIdent (Foil.Name n') -- ^ What each spelling means here.
-  -> Either ArtifactError (Maybe (Foil.NameMap old (Foil.Name n')))
-constantRelocation old@(Foil.NameRange oldLo _) (Foil.NameRange newLo _) locals table globals = do
-  entries <- Map.foldrWithKey step (Right []) table
-  pure $
-    if any (\(i, name) -> Foil.nameId name /= i) entries
-      then Just (Foil.Internal.NameMap (IntMap.fromList entries))
-      else Nothing
-  where
-    shift = newLo - oldLo
-    -- Every relocation target must stay out of the locals region: the
-    -- verbatim locals rest on the two never meeting, and this is where the
-    -- assumption is checked — per constant, at the artifact level, never
-    -- per term.
-    step i spelling acc = do
-      rest <- acc
-      name <-
-        if withinRange old i
-          then Right (Foil.Internal.UnsafeName (i + shift))
-          else case Map.lookup spelling globals of
-            Nothing   -> Left ("not in scope: " <> prettyVarIdent spelling)
-            Just name -> Right name
-      if withinRange locals (Foil.nameId name)
-        then Left ("constant " <> prettyVarIdent spelling
-                     <> " would land in the locals region")
-        else pure ((i, name) : rest)
-
--- | Whether a raw name lies in a range.
-withinRange :: Foil.NameRange -> Foil.RawName -> Bool
-withinRange (Foil.NameRange lo hi) i = lo <= i && i <= hi
-
--- | Rename every constant reference through the map, moving the term from
--- the artifact's world into the loading one. This is the restriction to
--- constants of a general renaming @'Foil.Name' n -> 'Foil.Name' n'@.
--- 'Foil.sinkabilityProof' embodies the general renaming, but its efficient
--- implementations degenerate the renaming to a coercion under binders,
--- which is sound only for inclusions; this walk carries an arbitrary map
--- through.
---
--- The invariant that lets the walk ignore the binders is the sign layout.
--- Constants live below zero, and a binder binds locals, at or above zero.
--- Thus no binder can shadow a name in the map's domain, and no local can
--- be in it, so the map never needs extending under a binder, and locals
--- and patterns cross by coercion. A constant outside the map (bytes
--- referencing something the spelling table does not cover) is re-minted
--- unchanged, trusted like everything else about the term. Note that a map
--- that is the identity on raw ids would make the whole walk a coercion,
--- which is why the caller skips it entirely then.
-relocateConstants :: Foil.NameMap n (Foil.Name n') -> Term n -> Term n'
-relocateConstants (Foil.Internal.NameMap moved) = walk
-  where
-    walk :: forall o o'. Term o -> Term o'
-    walk = \case
-      Var x -> case IntMap.lookup (Foil.nameId x) moved of
-        Just new -> Var (Foil.Internal.UnsafeName (Foil.nameId new))
-        Nothing  -> Var (Foil.Internal.UnsafeName (Foil.nameId x))
-      Node sig -> Node (bimap walkScoped walk sig)
-
-    walkScoped :: forall o o'. ScopedTerm o -> ScopedTerm o'
-    walkScoped (ScopedAST pat body) = ScopedAST (unsafeCoerce pat) (walk body)
-
 -- | The 64-bit FNV-1a of some rendered content; see 'contentHash'.
 newtype ContentHash = ContentHash Integer
   deriving (Eq, Show, Generic)
@@ -252,6 +133,10 @@ instance Binary ContentHash
 -- | What reading or loading an artifact can report: malformed wire bytes, a
 -- stale import hash, or a stored term that no longer resolves.
 type ArtifactError = String
+
+-- | Render a library-side error with mltt's spellings.
+renderArtifactError :: Stored.ArtifactError Raw.VarIdent -> String
+renderArtifactError = prettyArtifactError prettyVarIdent
 
 -- | FNV-1a over a string, 64 bits. A build-cache checksum, not a defence.
 contentHash :: String -> ContentHash
@@ -318,17 +203,11 @@ decodeArtifact input = case runGetOrFail get input of
   Left (_, _, err) -> Left ("malformed artifact: " <> err)
   Right (rest, _, (WireMagic, WireVersion, a))
     | not (BSL.null rest) -> Left "malformed artifact: trailing bytes"
-    | overlapping (artifactConstants a) (artifactLocals a) ->
-        Left "malformed artifact: the constants and locals regions overlap"
-    | any (withinRange (artifactLocals a)) (Map.keys (artifactSpellings a)) ->
-        Left "malformed artifact: a spelling for a local"
-    | rangeSize (artifactConstants a) /= length (artifactDecls a) ->
-        Left "malformed artifact: the constants range does not match the declarations"
-    | otherwise -> Right a
-  where
-    overlapping (Foil.NameRange lo1 hi1) (Foil.NameRange lo2 hi2) =
-      lo1 <= hi1 && lo2 <= hi2 && lo1 <= hi2 && lo2 <= hi1
-    rangeSize (Foil.NameRange lo hi) = max 0 (hi - lo + 1)
+    | otherwise ->
+        case checkStoredLayout (artifactLayout a)
+                               (artifactSpellings a) (length (artifactDecls a)) of
+          Left err -> Left ("malformed artifact: " <> renderArtifactError err)
+          Right () -> Right a
 
 -- * Writing
 
@@ -347,28 +226,24 @@ makeArtifact
   -> ModuleArtifact
 makeArtifact name reservation source imports cm = withCheckedModule cm $ \_ env _ ->
   let Foil.NameRange lo hi = reservation
-      constants = case map Foil.nameId own of
-        [] -> Foil.NameRange lo (lo - 1)   -- empty, by the lo > hi convention
-        ids -> Foil.NameRange (minimum ids) (maximum ids)
-      locals = case concat localIds of
-        [] -> Foil.NameRange 0 (-1)        -- empty likewise
-        ids -> Foil.NameRange (minimum ids) (maximum ids)
+      emptyAt base = Foil.NameRange base (base - 1)
+      layout = StoredLayout
+        { storedConstants =
+            maybe (emptyAt lo) id (spanOfNames (map Foil.nameId own))
+        , storedLocals =
+            maybe (emptyAt 0) id (spanOfNames (concat localIds))
+        }
       ctx = envCtx env
       own =
         [ x
         | x <- Foil.nameSetToList (Foil.scopeToNameSet (ctxScope ctx))
         , lo <= Foil.nameId x, Foil.nameId x <= hi
         ]
-      (decls, supports, localIds) = unzip3 (map declOf own)
-      -- The module's support: every constant its stored terms reference,
-      -- and only those. Only those, because the spelling table is hashed:
-      -- an unused import must not change the artifact, or content-defined
-      -- early cutoff dies — and a table of everything in scope would also
-      -- differ between build schedules, breaking canonicity.
-      spellings = Map.fromList
-        [ (Foil.nameId x, Foil.lookupName x (envDisplay env))
-        | x <- Foil.nameSetToList (mconcat supports)
-        ]
+      (decls, spellingsPer, localIds) = unzip3 (map declOf own)
+      -- Only the referenced constants enter the table: it is hashed, so an
+      -- unused import must not change the artifact, or content-defined
+      -- early cutoff dies. See 'termSpellings'.
+      spellings = Map.unions spellingsPer
       declOf x =
         let ty = Foil.lookupName x (ctxTypes ctx)
             value = case getDef (Foil.lookupName x (ctxDefs ctx)) of
@@ -379,15 +254,15 @@ makeArtifact name reservation source imports cm = withCheckedModule cm $ \_ env 
                 { adSpelling   = spelling
                 , adVisibility =
                     if Map.member spelling (envExports env) then Public else Private
-                , adType       = StoredTerm (encodeTerm ty)
-                , adValue      = StoredTerm (encodeTerm value)
+                , adType       = storeTerm ty
+                , adValue      = storeTerm value
                 }
-            , supportOf ty <> supportOf value
+            , termSpellings (envDisplay env) ty
+                <> termSpellings (envDisplay env) value
             , localsOf ty <> localsOf value )
    in ModuleArtifact
         { artifactModule  = name
-        , artifactConstants = constants
-        , artifactLocals  = locals
+        , artifactLayout  = layout
         , artifactSource  = source
         , artifactImports = imports
         , artifactHash    =
@@ -395,22 +270,6 @@ makeArtifact name reservation source imports cm = withCheckedModule cm $ \_ env 
         , artifactSpellings = spellings
         , artifactDecls   = decls
         }
-
--- | The names a term's binders bind: what 'artifactLocals' ranges over.
--- Note that 'supportOf' cannot see them: they are bound, not free.
-localsOf :: Term n -> [Foil.RawName]
-localsOf = \case
-  Var _    -> []
-  Node sig -> bifoldMap scopedLocals localsOf sig
-  where
-    scopedLocals :: forall m. ScopedTerm m -> [Foil.RawName]
-    scopedLocals (ScopedAST pat body) = patternIds pat <> localsOf body
-
-    patternIds :: forall m l. Pattern' Raw.BNFC'Position m l -> [Foil.RawName]
-    patternIds = \case
-      PatternWildcard _ -> []
-      PatternVar _ b    -> [Foil.nameId (Foil.nameOf b)]
-      PatternPair _ a b -> patternIds a <> patternIds b
 
 -- * Loading
 
@@ -432,9 +291,10 @@ loadArtifact
   -> Either ArtifactError (CheckedModule c)
 loadArtifact hashes range env artifact = do
   mapM_ checkImport (artifactImports artifact)
-  relocation <- constantRelocation (artifactConstants artifact) range
-                                   (artifactLocals artifact)
-                                   (artifactSpellings artifact) (envDeclared env')
+  relocation <-
+    either (Left . located . renderArtifactError) Right $
+      constantRelocation (artifactLayout artifact) range
+                         (artifactSpellings artifact) (envDeclared env')
   go relocation (Blocks.beginBlock range) env' (artifactDecls artifact)
   where
     checkImport (m, h) = case Map.lookup m hashes of
@@ -442,6 +302,11 @@ loadArtifact hashes range env artifact = do
       Just _ -> Left (stale <> prettyVarIdent m <> " has changed since then")
       Nothing -> Left (stale <> prettyVarIdent m <> " is not among the modules loaded so far")
     stale = "stale artifact for " <> prettyVarIdent (artifactModule artifact) <> ": import "
+
+    -- Locate an error at this artifact.
+    located :: String -> ArtifactError
+    located err =
+      "artifact for " <> prettyVarIdent (artifactModule artifact) <> ": " <> err
 
     -- An import contributes the exporting module's public names, as in
     -- 'checkModule'; the artifact's own references are fully qualified, so
@@ -478,16 +343,14 @@ loadArtifact hashes range env artifact = do
              => Maybe (Foil.NameMap old (Foil.Name c)) -> StoredTerm
              -> Either ArtifactError (Term m)
     loadTerm relocation stored = case relocation of
-      Nothing -> context (decodeStored stored)
+      Nothing -> decode stored
       Just moved -> do
-        t <- context (decodeStored stored)
+        t <- decode stored
         pure (Foil.sink (relocateConstants moved t))
       where
-        context :: Either ArtifactError a -> Either ArtifactError a
-        context = either
-          (\err -> Left ("artifact for " <> prettyVarIdent (artifactModule artifact)
-                            <> ": " <> err))
-          Right
+        decode :: forall o. StoredTerm -> Either ArtifactError (Term o)
+        decode =
+          either (Left . located . renderArtifactError) Right . decodeStored
 
 -- | Load a module from its artifact into the environment of an already
 -- loaded (or checked) unit, composing the evidence: the load-side mirror of
