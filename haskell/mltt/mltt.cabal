@@ -146,6 +146,7 @@ test-suite spec
       Language.MLTT.ParametersSpec
       Language.MLTT.ReplImportSpec
       Language.MLTT.ReplSpec
+      Language.MLTT.TelescopeSpec
       SpecHook
       Paths_mltt
   hs-source-dirs:

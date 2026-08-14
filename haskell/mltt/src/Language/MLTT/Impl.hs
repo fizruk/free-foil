@@ -532,7 +532,7 @@ withParams
   -> [Raw.Param]
   -> (String -> r)        -- ^ A parameter's type did not resolve.
   -> (forall p. Foil.DExt n p
-        => Telescope Raw.BNFC'Position n p -> Env p -> r)
+        => ParamTelescope Raw.BNFC'Position n p -> Env p -> r)
   -> r
 withParams env [] _onErr cont = cont TelescopeEmpty env
 withParams env (Raw.AParam _loc name rawTy : rest) onErr cont =
