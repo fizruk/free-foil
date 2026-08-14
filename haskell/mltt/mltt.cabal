@@ -141,6 +141,7 @@ test-suite spec
       Language.MLTT.ArtifactSpec
       Language.MLTT.BuildSpec
       Language.MLTT.ImplSpec
+      Language.MLTT.IncludeSpec
       Language.MLTT.LinkSpec
       Language.MLTT.ModulesSpec
       Language.MLTT.ParametersSpec

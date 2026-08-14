@@ -195,13 +195,56 @@ definition rather than the parameters of its module.
 **Discharge is where the demo needs scope restriction rather than extension.**
 Checking happens in the scope the parameters extend the module's scope to, and
 the result has to come back, because the module's scope is where its exports
-live and where the next module starts. `Language.MLTT.Telescope` walks the
-parameters from the inside out and, at each one, asks free-foil's `unsinkAST`
-whether the term can do without it: if it can, the parameter is dropped; if it
-cannot, it is abstracted over with `Π` for the type and `λ` for the value. So
-the used set is not declared and believed, and not computed by a separate
-analysis either — it is whatever restriction turns out to reject, and the
-upward closure follows from asking about one parameter at a time.
+live and where the next module starts. `Language.MLTT.Telescope` takes the
+support of the type and of the value, once each, and closes that set under the
+parameter types: keeping `(x : A)` puts `A` into it, and one pass from the
+inside out settles that, since a parameter's type mentions only the parameters
+before it. Free-foil's `withThinnedNameBinderList` then cuts the chain of
+binders down to the closed set in one step, and the abstractions are rebuilt
+along the thinned chain, restricting each kept parameter type and the body into
+it with `unsinkAST`. So the used set is not declared and believed, and the term
+is walked a fixed number of times rather than once per parameter, which asking
+`unsinkAST` at every parameter in turn would do.
+
+## Named telescopes and `include`
+
+A parameter block can be declared once and reused. A `telescope` declaration is
+a unit of its own, beside the modules, and it binds nothing: what it names is a
+module header and not a term.
+
+```
+telescope Monoid (A : 𝕌) (unit : A) (mul : A → A → A)
+
+module CommMonoid include Monoid
+def square : A → A := λ x ⇒ mul x x
+
+module Group include Monoid (inv : A → A)
+def undo : A → A := λ x ⇒ mul x (inv x)
+```
+
+The included fields come first in the including module's telescope, before the
+parameters it declares itself, and one of its own may mention them: `inv : A →
+A` above resolves only because `A` came from `Monoid`. Everything downstream is
+unchanged, so `undo` is discharged over `(A, mul, inv)` exactly as if the three
+had been written out.
+
+An include is resolved before the module is checked, so what reaches the checker
+is an ordinary parametrised module. That is also what makes an include behave
+like an import for the cache: a module's content hash is taken over its resolved
+header, so changing a telescope rebuilds every module that includes it.
+
+A telescope is elaborated afresh in each including module, so two includers share
+nothing but the source they were written in. Instantiation is application: what
+leaves an including module is a closed constant, and there is no `interpretation`
+command because there is nothing for one to do.
+
+Internally the parameters of a module are a labelled telescope, which is a
+free-foil *pattern* with a label and a payload per binder. It is written out in
+`Language.MLTT.Telescope`, with `CoSinkable` and `UnifiablePattern` by hand, so
+that scope extension, the names of a block and α-equivalence of two blocks all
+come from the library rather than from the demo. Its Haddock records what those
+instances need that the pattern interface does not offer — a payload has to be
+carried into the ambient scope, and `withPattern` exposes no renaming for it.
 
 ## Running it
 
@@ -230,7 +273,7 @@ compute id 𝟙 tt
 | `Language.MLTT.Eval` | Reduction: pattern matching as a substitution, `whnf`, `nf`, `conv`, and the desugaring of `→` and `×`. |
 | `Language.MLTT.Typecheck` | A bidirectional type checker. |
 | `Language.MLTT.Resolve` | Name resolution: paths, name tables, `open`, and the free identifiers of a raw term. Deliberately free of any dependency on the foil. |
-| `Language.MLTT.Telescope` | Module parameters: the telescope they form, discharge over the ones a declaration uses, and the check of an `over` clause against that set. |
+| `Language.MLTT.Telescope` | The labelled telescope, a foil pattern with a label and a payload per binder; module parameters as an instance of it, discharge over the fields a declaration uses, and the check of an `over` clause against that set. |
 | `Language.MLTT.Impl` | The interpreter: build order, modules, declarations, the growing top-level scope, and printing. |
 
 Two things are worth reading for the design rather than for the type theory.

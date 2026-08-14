@@ -34,7 +34,7 @@ srcX = sourceLines ["module X", "def unrelated : 𝟙 := tt"]
 
 oneModule :: SourceText -> Raw.Module
 oneModule src = case parseProgram src of
-  Right (Raw.AProgram _ [m]) -> m
+  Right (Raw.AProgram _ [Raw.UnitModule _ m]) -> m
   Right _                    -> error "expected exactly one module"
   Left err                   -> error err
 

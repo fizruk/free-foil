@@ -52,7 +52,7 @@ import qualified Control.Monad.Foil.Blocks    as Blocks
 import           Data.Functor.Compose         (Compose (..))
 import           Data.Functor.Identity        (Identity (..))
 import           Control.Monad.Free.Foil      (AST (Var), UnresolvedName (..))
-import           Data.List                    (foldl', intercalate)
+import           Data.List                    (foldl', group, intercalate, sort)
 import           Data.Map                     (Map)
 import           Data.String                  (IsString)
 import           Data.Maybe                   (listToMaybe)
@@ -244,19 +244,62 @@ buildOrder modules
 
 -- | The name of a module.
 moduleName :: Raw.Module -> Raw.VarIdent
-moduleName (Raw.AModule _ name _ _ _) = name
+moduleName (Raw.AModule _ name _ _ _ _) = name
 
 -- | The parameters of a module.
+--
+-- Note that this is the block after 'resolveUnits' has put the included fields
+-- in front of it, since that is the only shape a module reaches the checker in.
 moduleParams :: Raw.Module -> [Raw.Param]
-moduleParams (Raw.AModule _ _ params _ _) = params
+moduleParams (Raw.AModule _ _ _ params _ _) = params
 
 -- | The imports of a module.
 moduleImports :: Raw.Module -> [Raw.Import]
-moduleImports (Raw.AModule _ _ _ imports _) = imports
+moduleImports (Raw.AModule _ _ _ _ imports _) = imports
 
 -- | The declarations of a module.
 moduleDecls :: Raw.Module -> [Raw.Decl]
-moduleDecls (Raw.AModule _ _ _ _ decls) = decls
+moduleDecls (Raw.AModule _ _ _ _ _ decls) = decls
+
+-- * Telescopes and includes
+
+-- | The telescopes a program declares, by name.
+type Telescopes = Map Raw.VarIdent [Raw.Param]
+
+-- | Split a program's units and resolve every @include@ clause.
+--
+-- An include is expanded into the module's parameter block, so that nothing
+-- downstream has to know about telescopes: what comes out is an ordinary
+-- parametrised module, elaborated and discharged as before. Expanding before
+-- the module is hashed is also what makes an include behave like an import for
+-- staleness, since a changed telescope changes the printed form of every module
+-- that includes it.
+--
+-- The included fields come first, in the order the clauses are written, and the
+-- module's own parameters follow. A telescope may be included by any number of
+-- modules and is elaborated afresh in each, which is what keeps the elaboration
+-- canonical: nothing is shared between two modules but the source.
+resolveUnits :: [Raw.Unit] -> Either BuildError [Raw.Module]
+resolveUnits units
+  | (dup : _) <- duplicates = Left ("telescope declared twice: " <> prettyVarIdent dup)
+  | otherwise = traverse expandIncludes modules
+  where
+    declared = [t | Raw.UnitTelescope _ t <- units]
+    modules  = [m | Raw.UnitModule _ m <- units]
+
+    telescopes :: Telescopes
+    telescopes = Map.fromList [(name, params) | Raw.ATelescope _ name params <- declared]
+
+    duplicates =
+      [name | name : _ : _ <- group (sort [name | Raw.ATelescope _ name _ <- declared])]
+
+    expandIncludes (Raw.AModule loc name includes params imports decls) = do
+      included <- concat <$> traverse include includes
+      return (Raw.AModule loc name [] (included <> params) imports decls)
+
+    include (Raw.AnInclude _loc name) = case Map.lookup name telescopes of
+      Just params -> Right params
+      Nothing     -> Left ("no telescope named " <> prettyVarIdent name <> " is declared")
 
 -- * Name layout
 --
@@ -335,9 +378,18 @@ stripeRange (StripeIndex i) = Foil.NameRange (hi - stripeSize + 1) hi
 
 -- | Interpret a program: order its modules by their imports, then check each.
 interpretProgram :: Raw.Program -> [CommandResult]
-interpretProgram (Raw.AProgram _loc modules) = interpretModules modules
+interpretProgram (Raw.AProgram _loc units) = interpretUnits units
 
--- | Interpret modules gathered from any number of sources.
+-- | Interpret units gathered from any number of sources.
+--
+-- The telescopes are resolved over all of them at once, exactly as the imports
+-- are, so a module may include a telescope declared in another file.
+interpretUnits :: [Raw.Unit] -> [CommandResult]
+interpretUnits units = case resolveUnits units of
+  Left err      -> [Failed err]
+  Right modules -> interpretModules modules
+
+-- | Interpret modules whose includes have already been resolved.
 --
 -- Build order is computed over all of them at once, so a module may import one
 -- declared in another file, or later in the same file.
@@ -754,12 +806,12 @@ interpret input = interpretProgram <$> parseProgram input
 --
 -- Each source is parsed on its own, so a syntax error is reported against the
 -- line of the file it is in rather than against a concatenation of them all.
--- The modules are pooled afterwards, which is what lets one file import
--- another.
+-- The units are pooled afterwards, which is what lets one file import a module
+-- or include a telescope declared in another.
 interpretSources :: [(FilePath, SourceText)] -> Either ParseError [CommandResult]
-interpretSources sources = interpretModules . concat <$> traverse parseSource sources
+interpretSources sources = interpretUnits . concat <$> traverse parseSource sources
   where
     parseSource (path, input) = case parseProgram input of
-      Left err                    -> Left (path <> ":" <> err)
-      Right (Raw.AProgram _ms ms) -> Right ms
+      Left err                       -> Left (path <> ":" <> err)
+      Right (Raw.AProgram _loc units) -> Right units
 

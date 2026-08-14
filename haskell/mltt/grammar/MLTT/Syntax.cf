@@ -24,18 +24,34 @@ layout "where" ;
 -- "Language.MLTT.Resolve".
 token VarIdent letter (letter | digit | '_' | '\'' | '.')* ;
 
--- * Modules
+-- * Units
 
--- A program is a sequence of modules. Normally each one is its own file, but
--- putting several in one file is convenient for tests and for a one-file demo.
-AProgram. Program ::= [Module] ;
-terminator Module "" ;
+-- A program is a sequence of units: modules, and the telescopes they include.
+-- Normally each unit is its own file, but putting several in one file is
+-- convenient for tests and for a one-file demo.
+AProgram. Program ::= [Unit] ;
+terminator Unit "" ;
+
+UnitModule.    Unit ::= Module ;
+UnitTelescope. Unit ::= TelescopeDecl ;
 
 -- A module may take parameters. Every declaration inside it is checked with
 -- the parameters in scope, and is then discharged over exactly the ones it
 -- turns out to use, so a client applies it to those and to no others. See
 -- "Language.MLTT.Telescope".
-AModule.  Module ::= "module" VarIdent [Param] ";" [Import] [Decl] ;
+--
+-- An `include` clause takes the parameters of a named telescope, so that a
+-- block of parameters can be declared once and reused. The includes come
+-- first, in order, and the module's own parameters follow them.
+AModule.  Module ::= "module" VarIdent [Include] [Param] ";" [Import] [Decl] ;
+
+AnInclude. Include ::= "include" VarIdent ;
+terminator Include "" ;
+
+-- A telescope declaration names a block of parameters and binds nothing else.
+-- It is a unit of its own rather than a declaration inside a module, since
+-- what it names is a module header and not a term.
+ATelescope. TelescopeDecl ::= "telescope" VarIdent [Param] ";" ;
 
 AParam.   Param ::= "(" VarIdent ":" Term ")" ;
 terminator Param "" ;

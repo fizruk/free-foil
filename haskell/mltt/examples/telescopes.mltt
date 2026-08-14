@@ -1,0 +1,47 @@
+-- Named telescopes: a block of module parameters declared once and included
+-- by several modules.
+--
+-- A `telescope` declaration names a parameter block. It is a unit of its own,
+-- beside the modules, and it binds nothing: what it names is a module header
+-- and not a term. A module `include`s it, and the included fields come first
+-- in that module's parameter telescope, before the parameters it declares
+-- itself. Nothing downstream changes, and in particular discharge does not:
+-- every declaration still leaves its module abstracted over exactly the fields
+-- it uses, included or own.
+
+telescope Monoid (A : 𝕌) (unit : A) (mul : A → A → A)
+
+-- The same three fields, without writing them again. An `over` clause names
+-- included fields exactly as it names a module's own.
+module CommMonoid include Monoid
+def square over (A, mul) : A → A := λ x ⇒ mul x x
+def neutral over (A, unit) : A := unit
+
+-- A module may declare parameters of its own after the ones it includes, and
+-- their types may mention the included fields: an include is a prefix of one
+-- telescope and not a block beside it. Here `inv`'s type mentions `A`, which
+-- came from `Monoid`.
+module Group include Monoid (inv : A → A)
+def undo over (A, mul, inv) : A → A := λ x ⇒ mul x (inv x)
+def unitInverse over (A, unit, inv) : A := inv unit
+
+-- The two modules include the same telescope and are otherwise unrelated: the
+-- telescope is elaborated afresh in each, so nothing is shared between them
+-- but the source it was written in.
+module Client
+import CommMonoid
+import Group
+
+-- Instantiation is application. A declaration that left an including module is
+-- an ordinary closed constant, so there is nothing to interpret and no command
+-- for interpreting it.
+compute square 𝟙 (λ x ⇒ λ y ⇒ x) tt
+compute neutral 𝟙 tt
+compute undo 𝟙 (λ x ⇒ λ y ⇒ x) (λ x ⇒ x) tt
+compute unitInverse 𝟙 tt (λ x ⇒ x)
+
+-- The discharged types say which fields each declaration took, in telescope
+-- order, with the included ones first.
+check square : Π (A : 𝕌) → Π (mul : A → A → A) → A → A
+check undo : Π (A : 𝕌) → Π (mul : A → A → A) → Π (inv : A → A) → A → A
+check unitInverse : Π (A : 𝕌) → Π (unit : A) → Π (inv : A → A) → A

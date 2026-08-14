@@ -141,15 +141,32 @@ instance Print Language.MLTT.Syntax.Abs.VarIdent where
   prt _ (Language.MLTT.Syntax.Abs.VarIdent i) = doc $ showString i
 instance Print (Language.MLTT.Syntax.Abs.Program' a) where
   prt i = \case
-    Language.MLTT.Syntax.Abs.AProgram _ modules -> prPrec i 0 (concatD [prt 0 modules])
+    Language.MLTT.Syntax.Abs.AProgram _ units -> prPrec i 0 (concatD [prt 0 units])
 
-instance Print [Language.MLTT.Syntax.Abs.Module' a] where
+instance Print [Language.MLTT.Syntax.Abs.Unit' a] where
   prt _ [] = concatD []
   prt _ (x:xs) = concatD [prt 0 x, prt 0 xs]
 
+instance Print (Language.MLTT.Syntax.Abs.Unit' a) where
+  prt i = \case
+    Language.MLTT.Syntax.Abs.UnitModule _ module_ -> prPrec i 0 (concatD [prt 0 module_])
+    Language.MLTT.Syntax.Abs.UnitTelescope _ telescopedecl -> prPrec i 0 (concatD [prt 0 telescopedecl])
+
 instance Print (Language.MLTT.Syntax.Abs.Module' a) where
   prt i = \case
-    Language.MLTT.Syntax.Abs.AModule _ varident params imports decls -> prPrec i 0 (concatD [doc (showString "module"), prt 0 varident, prt 0 params, doc (showString ";"), prt 0 imports, prt 0 decls])
+    Language.MLTT.Syntax.Abs.AModule _ varident includes params imports decls -> prPrec i 0 (concatD [doc (showString "module"), prt 0 varident, prt 0 includes, prt 0 params, doc (showString ";"), prt 0 imports, prt 0 decls])
+
+instance Print (Language.MLTT.Syntax.Abs.Include' a) where
+  prt i = \case
+    Language.MLTT.Syntax.Abs.AnInclude _ varident -> prPrec i 0 (concatD [doc (showString "include"), prt 0 varident])
+
+instance Print [Language.MLTT.Syntax.Abs.Include' a] where
+  prt _ [] = concatD []
+  prt _ (x:xs) = concatD [prt 0 x, prt 0 xs]
+
+instance Print (Language.MLTT.Syntax.Abs.TelescopeDecl' a) where
+  prt i = \case
+    Language.MLTT.Syntax.Abs.ATelescope _ varident params -> prPrec i 0 (concatD [doc (showString "telescope"), prt 0 varident, prt 0 params, doc (showString ";")])
 
 instance Print (Language.MLTT.Syntax.Abs.Param' a) where
   prt i = \case
