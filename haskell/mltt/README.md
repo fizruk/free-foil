@@ -67,9 +67,9 @@ waiting to be filled here.
   never printed; `let` substitutes rather than sharing; `conv` normalises both
   sides in full. Nothing here has been measured.
 
-Named telescopes, interned qualified names, separate checking with linking, and
-serialisation are not in this list. They are not out of scope — they are what
-comes next, and what is here was built to carry them.
+Refinement of a telescope and interned qualified names are not in this list.
+They are not out of scope: they are what comes next, and what is here was built
+to carry them.
 
 ## The module layer
 
@@ -245,6 +245,17 @@ that scope extension, the names of a block and α-equivalence of two blocks all
 come from the library rather than from the demo. Its Haddock records what those
 instances need that the pattern interface does not offer — a payload has to be
 carried into the ambient scope, and `withPattern` exposes no renaming for it.
+
+The idea is not new here. The framing followed is Jon Sterling's, in the
+[Pterodactyl worklog](https://www.jonmsterling.com/01HC/), where a theory
+expression denotes a telescope and refining a field leaves the remaining fields
+as a telescope again, and that framing inherits in turn. Telescopes are
+[de Bruijn's](<https://doi.org/10.1016/0890-5401(91)90066-B>), and labelling
+their fields, so that a block can be declared once and projected from, is what
+[dependent record types](https://doi.org/10.1007/s001650200018) are, with
+[manifest fields](https://doi.org/10.1007/978-3-642-02444-3_15) for the refined
+case, which is not implemented here. What is new is only that the telescope is a
+scope-safe pattern rather than a construction on raw syntax.
 
 ## Running it
 
