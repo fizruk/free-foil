@@ -35,7 +35,9 @@ to be worth seeing. Declarations are laid out rather than punctuated, and a
 `namespace` block is opened by indenting under it.
 
 Conversion is naive: both sides are normalised and compared with the library's
-`alphaEquiv`.
+`alphaEquiv`. `nf` does contract η, which is what makes `plus zero n` and `n`
+convertible for the Church numerals; η as an *expansion* would need types, and
+the evaluator here is untyped.
 
 ## What is deliberately not here
 
@@ -250,13 +252,12 @@ telescope threads a `PatternTransport` instead, which is the library's answer to
 exactly this.
 
 `examples/theories.mltt` puts the layer to work: a `Monoid` telescope carrying
-its associativity law, a lemma proved once from that law, and the Church
-numerals under addition as an instance that discharges the law by `refl`, since
-both sides of associativity normalise to the same term. Using the lemma at the
-instance is then application, and no command registers anything anywhere. The
-unit laws are left out of the telescope deliberately: `plus zero n` normalises
-to `λ A ⇒ λ f ⇒ λ x ⇒ n A f x` and stops one η-contraction short of `n`, and
-conversion here has no η, so no instance could prove one.
+associativity and both unit laws, two lemmas proved once from those laws, and
+the Church numerals under addition as an instance that discharges every law by
+`refl`. Using a lemma at the instance is then application, and no command
+registers anything anywhere. The two lemmas need different fields — one the
+associativity, the other the unit and its law — so each is applied to what it
+took and to nothing else.
 
 The idea is not new here. The framing followed is Jon Sterling's, in the
 [Pterodactyl worklog](https://www.jonmsterling.com/01HC/), where a theory
