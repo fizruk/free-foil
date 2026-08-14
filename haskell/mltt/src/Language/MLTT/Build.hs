@@ -51,6 +51,8 @@ import           Control.Exception        (evaluate)
 import           Control.Monad            (foldM, forM, forM_, unless, when)
 import qualified Control.Monad.Foil       as Foil
 import qualified Control.Monad.Foil.Blocks as Blocks
+import qualified Data.ByteString          as BS
+import qualified Data.ByteString.Lazy     as BSL
 import           Data.Char                (isSpace)
 import           Data.Function            (on)
 import           Data.Functor.Compose     (Compose (..))
@@ -201,7 +203,7 @@ gatherArtifacts dir env = go [] ([], Map.empty)
                           <> ": not in this session's world, and no artifact at "
                           <> artifactPath name))
         else either (\e -> Left ("artifact for " <> prettyVarIdent name <> ": " <> e)) Right
-               . readArtifact <$> readFile (artifactPath name)
+               . decodeArtifact . BSL.fromStrict <$> BS.readFile (artifactPath name)
 
     go trail acc@(loads, hashes) name
       | name `elem` trail =
@@ -272,7 +274,7 @@ loadImports hashes artifacts name (Repl me) =
               <> [Imported (renderVarIdent name)] )
   where
     step (Importing block env view) a = do
-      cm <- loadArtifact hashes (stripeRange (artifactStripe a)) env a
+      cm <- loadArtifact hashes (artifactConstants a) env a
       withCheckedModule cm $ \ext env' _ ->
         case Blocks.resumeBlock (Blocks.blockRange block)
                (Blocks.composeExtWithin (Blocks.blockExt block) ext) of
@@ -429,7 +431,8 @@ buildModulesWith mode cacheDir modules k =
         Just dir -> do
           exists <- doesFileExist (path dir)
           if exists
-            then either (const Nothing) Just . readArtifact <$> readFile (path dir)
+            then either (const Nothing) Just . decodeArtifact . BSL.fromStrict
+                   <$> BS.readFile (path dir)
             else pure Nothing
       case cached of
         Just a
@@ -438,11 +441,11 @@ buildModulesWith mode cacheDir modules k =
           -> pure (cm, a, [LoadedModule (renderVarIdent name)])
         _ -> do
           let cm = checkModule range env m
-              a  = makeArtifact name idx source importHashes cm
+              a  = makeArtifact name range source importHashes cm
               rs = resultsOf cm
           forM_ cacheDir $ \dir ->
             when (succeeded rs) $
-              writeFile (path dir) (renderArtifact a)
+              BSL.writeFile (path dir) (encodeArtifact a)
           pure (cm, a, rs)
 
 -- | Group modules, already in topological order, into dependency waves: a

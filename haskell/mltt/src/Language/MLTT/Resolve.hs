@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 -- | Name resolution: which surface spellings denote which declarations.
 --
 -- Nothing in this module mentions a scope, a 'Control.Monad.Foil.Name', or the
@@ -33,10 +34,12 @@
 --   where @NarrowToUnit@ runs before @ElaborateUnit@.
 module Language.MLTT.Resolve where
 
+import           Data.Binary              (Binary)
 import           Data.List                (inits, intercalate, stripPrefix)
 import           Data.Map                 (Map)
 import qualified Data.Map                 as Map
 import           Data.Maybe               (mapMaybe)
+import           GHC.Generics             (Generic)
 import qualified Language.MLTT.Syntax.Abs as Raw
 
 -- $setup
@@ -154,7 +157,10 @@ data Visibility
   | Private
     -- ^ Not exported. An importing module cannot /name/ it — and can still
     -- /reduce/ through it, since withholding a spelling touches no term.
-  deriving (Eq, Show, Read)
+  deriving (Eq, Show, Read, Generic)
+
+-- | One tag byte, from the 'Generic' shape.
+instance Binary Visibility
 
 -- | Add a declaration to what a module exports, if it is public.
 --

@@ -63,6 +63,8 @@ library
       array >=0.5.3.0
     , base >=4.19 && <5
     , bifunctors
+    , binary
+    , bytestring
     , containers
     , deepseq
     , directory
@@ -89,6 +91,8 @@ executable mltt
       array >=0.5.3.0
     , base >=4.19 && <5
     , bifunctors
+    , binary
+    , bytestring
     , containers
     , deepseq
     , directory
@@ -116,6 +120,8 @@ test-suite doctests
       array >=0.5.3.0
     , base >=4.19 && <5
     , bifunctors
+    , binary
+    , bytestring
     , containers
     , deepseq
     , directory
@@ -154,6 +160,8 @@ test-suite spec
       array >=0.5.3.0
     , base >=4.19 && <5
     , bifunctors
+    , binary
+    , bytestring
     , containers
     , deepseq
     , directory
