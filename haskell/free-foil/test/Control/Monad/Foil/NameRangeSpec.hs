@@ -89,6 +89,21 @@ spec = do
     it "reports an empty range as exhausted" $
       rawFreshNameIn (NameRange 5 4) IntSet.empty `shouldBe` Nothing
 
+  describe "rawFreshName" $ do
+    it "allocates 0 over a scope of negative names only" $
+      Foil.withFreshIn (NameRange (-10) (-1)) Foil.emptyScope $ \bneg ->
+        let scope = Foil.extendScope bneg Foil.emptyScope
+         in Foil.withFresh scope $ \b ->
+              Foil.nameId (Foil.nameOf b) `shouldBe` 0
+
+    prop "stays non-negative and fresh" $
+      forAll (IntSet.filter (/= maxBound) <$> genRawScope) $ \scope ->
+        let x = rawFreshName scope
+         in conjoin
+              [ counterexample "dipped below zero" (x >= 0)
+              , counterexample "not fresh" (not (IntSet.member x scope))
+              ]
+
   describe "withFreshIn" $ do
     it "allocates the low end of an untouched range" $
       Foil.withFreshIn (NameRange 100 199) Foil.emptyScope $ \binder ->

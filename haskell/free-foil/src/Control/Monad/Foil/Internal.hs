@@ -1434,9 +1434,21 @@ type RawScope = IntSet
 -- | \(O(\min(n, W))\).
 -- Generate a fresh raw name that
 -- does not appear in a given raw scope.
+-- The guard keeps allocation out of the negative range: names below zero
+-- are reserved for interned constants, allocated by an explicit policy
+-- ('withFreshIn' at a negative range) and never by this successor. Without
+-- the guard, a scope holding only negative names would hand out the
+-- successor of its maximum, which is a "fresh" name inside the constants'
+-- region and may collide with a constant not in this scope. A scope that
+-- holds 'maxBound' is reported as exhausted rather than wrapped past,
+-- since the wrapped successor lands on an arbitrary small name that may
+-- well be taken.
 rawFreshName :: RawScope -> RawName
-rawFreshName scope | IntSet.null scope = 0
-                   | otherwise = IntSet.findMax scope + 1
+rawFreshName scope
+  | IntSet.null scope = 0
+  | otherwise = case IntSet.findMax scope of
+      m | m == maxBound -> error "rawFreshName: name space exhausted"
+        | otherwise     -> max 0 (m + 1)
 
 -- | An inclusive reservation of a contiguous range of raw names.
 --
