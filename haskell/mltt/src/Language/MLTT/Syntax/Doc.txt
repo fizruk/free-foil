@@ -29,10 +29,10 @@ The reserved words used in Syntax are the following:
   | ``λ`` | ``π₁`` | ``π₂`` | ``𝕌``
 
 The symbols used in Syntax are the following:
-  | ; | ( | : | )
-  | := | { | } | ,
-  | → | × | ⇒ | =
-  | 𝟙 | _ |  |
+  | ; | / | { | }
+  | := | , | ( | :
+  | ) | → | × | ⇒
+  | = | 𝟙 | _ |
 
 ===Comments===
 Single-line comments begin with --.Multiple-line comments are  enclosed with {- and -}.
@@ -49,11 +49,18 @@ All other symbols are terminals.
   | //Unit// | -> | //Module//
   |  |  **|**  | //TelescopeDecl//
   | //Module// | -> | ``module`` //VarIdent// //[Include]// //[Param]// ``;`` //[Import]// //[Decl]//
-  | //Include// | -> | ``include`` //VarIdent//
+  | //Include// | -> | ``include`` //VarIdent// //Refinement//
   | //[Include]// | -> | **eps**
   |  |  **|**  | //Include// //[Include]//
+  | //Refinement// | -> | **eps**
+  |  |  **|**  | ``/`` ``{`` //[Fixed]// ``}``
+  | //Fixed// | -> | //VarIdent// ``:=`` //Term//
+  | //[Fixed]// | -> | **eps**
+  |  |  **|**  | //Fixed//
+  |  |  **|**  | //Fixed// ``,`` //[Fixed]//
   | //TelescopeDecl// | -> | ``telescope`` //VarIdent// //[Param]// ``;``
   | //Param// | -> | ``(`` //VarIdent// ``:`` //Term// ``)``
+  |  |  **|**  | ``(`` //VarIdent// ``:`` //Term// ``:=`` //Term// ``)``
   | //[Param]// | -> | **eps**
   |  |  **|**  | //Param// //[Param]//
   | //Import// | -> | ``import`` //VarIdent//

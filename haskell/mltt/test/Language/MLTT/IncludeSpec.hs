@@ -9,6 +9,7 @@
 -- written out by hand, and an include behaves like an import for staleness.
 module Language.MLTT.IncludeSpec (spec) where
 
+import           Data.List                    (isInfixOf)
 import           System.Directory             (getTemporaryDirectory,
                                                removePathForcibly)
 import           System.FilePath              ((</>))
@@ -122,6 +123,60 @@ spec = do
       -- The instance supplies the carrier, the operation and its own proof of
       -- the law, in telescope order. There is no interpretation step.
       failures (run theoryAndInstance) `shouldBe` []
+
+  describe "refining an include" $ do
+    it "makes a fixed field manifest, so nothing is discharged over it" $
+      -- `A` is fixed, so `square` takes the operation and not the carrier.
+      run (withMonoid
+            [ "module M include Monoid / {A := 𝟙}"
+            , "def square : A → A := λ x ⇒ mul x x" ])
+        `shouldSatisfy` (Defined "square" ["mul"] `elem`)
+
+    it "leaves nothing to discharge when every field is fixed" $
+      -- Fixing the whole block is what an instance is.
+      run (withMonoid
+            [ "module M include Monoid / {A := 𝟙, unit := tt, mul := λ x ⇒ λ y ⇒ x}"
+            , "def twice : A → A := λ x ⇒ mul x x" ])
+        `shouldSatisfy` (Defined "twice" [] `elem`)
+
+    it "lets the type of a later field use a fixed one" $
+      failures (run (withMonoid
+            [ "module M include Monoid / {A := 𝟙}"
+            , "def u : A := unit" ]))
+        `shouldBe` []
+
+    it "refuses a value that names a field of the telescope" $
+      -- The admissibility condition, and Sterling's diagonal: a supplied value
+      -- must come from the ambient context, so it cannot name a field that is
+      -- still a variable. Nothing tests this — the value is elaborated before
+      -- any of the block's binders, so the name is simply not in scope.
+      failures (run (withMonoid
+            [ "module M include Monoid / {A := 𝟙, unit := mul}"
+            , "def x : 𝟙 := tt" ]))
+        `shouldBe` ["cannot fix unit: it depends on mul, which is not fixed"]
+
+    it "refuses fixing a field whose type is not fixed" $
+      -- The same condition reaching the field's type rather than its value:
+      -- `unit : A`, so fixing `unit` while `A` is a variable is not admissible.
+      -- The fixed fields have to be closed under what they depend on.
+      failures (run (withMonoid
+            ["module M include Monoid / {unit := tt}", "def x : 𝟙 := tt"]))
+        `shouldBe` ["cannot fix unit: it depends on A, which is not fixed"]
+
+    it "checks a fixed value against the field's declared type" $
+      failures (run (withMonoid
+            ["module M include Monoid / {A := 𝟙, unit := 𝕌}", "def x : 𝟙 := tt"]))
+        `shouldSatisfy` any ("expected type: 𝟙" `isInfixOf`)
+
+    it "reports a field the telescope does not have" $
+      failures (run (withMonoid
+            ["module M include Monoid / {B := 𝟙}", "def x : 𝟙 := tt"]))
+        `shouldBe` ["telescope Monoid has no field B"]
+
+    it "reports a field fixed twice" $
+      failures (run (withMonoid
+            ["module M include Monoid / {A := 𝟙, A := 𝕌}", "def x : 𝟙 := tt"]))
+        `shouldBe` ["field fixed twice: A"]
 
   describe "a telescope that is not there" $ do
     it "is reported, naming it" $
