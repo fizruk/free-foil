@@ -255,6 +255,12 @@ A fixed field is *manifest*: an abbreviation rather than a variable, so nothing
 is discharged over it, and fixing every field is what an instance is — `sum4`
 above is a plain constant a client applies to its argument alone.
 
+The header is elaborated after the module's imports, so a refinement may use what
+they bring in — which is why `import Church` reads *below* the `include` that
+uses `Nat`. That order is the wrong way round for a reader, and worth fixing: the
+literature this follows puts imports first, since in Agda and in ML signatures a
+parameter block comes after them.
+
 A supplied value is elaborated in the including module's own scope, before any of
 the block's binders, so it cannot mention a field that is still a variable. That
 is the admissibility condition, and it holds by scoping rather than by a test:
