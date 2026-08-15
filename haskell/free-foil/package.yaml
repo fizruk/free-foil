@@ -93,3 +93,13 @@ benchmarks:
     dependencies:
       - free-foil
       - tasty-bench
+
+  restriction:
+    main: Main.hs
+    source-dirs: bench/restriction
+    ghc-options:
+      - -O2
+      - -rtsopts
+    dependencies:
+      - free-foil
+      - tasty-bench
