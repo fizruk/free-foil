@@ -101,10 +101,14 @@ substitute scope subst term
   -- left as they stand, as on the no-clash path below; a caller that wants
   -- them refreshed asks 'substituteRefreshed'.
   | Foil.nullSubst subst = unsafeCoerce term
-  | otherwise = case term of
-      Var name -> Foil.lookupSubst subst name
-      Node node -> Node (bimap f (substitute scope subst) node)
+  | otherwise = go term
   where
+    -- The substitution is known non-empty here, and it can only change
+    -- under a binder, so the walk between binders is unchecked and each
+    -- binder entry re-enters 'substitute', testing emptiness exactly once.
+    go = \case
+      Var name -> Foil.lookupSubst subst name
+      Node node -> Node (bimap f go node)
     f (ScopedAST binder body) =
       Foil.withRefreshedPattern scope binder $ \extendSubst binder' ->
         let subst' = extendSubst (Foil.sink subst)
