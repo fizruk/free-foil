@@ -286,29 +286,65 @@ type Telescopes = Map Raw.VarIdent [Raw.Param]
 -- module's own parameters follow. A telescope may be included by any number of
 -- modules and is elaborated afresh in each, which is what keeps the elaboration
 -- canonical: nothing is shared between two modules but the source.
+--
+-- A telescope may itself include telescopes, so a theory can extend a poorer
+-- theory: @telescope Monoid include Semigroup (unit : A) …@ is the monoid
+-- block built on the semigroup one. Telescope includes are expanded first, in
+-- dependency order over the declared telescopes with a cycle reported by name
+-- — the same shape as the build order over modules — so by the time a module
+-- includes a telescope, the telescope is a plain parameter list. A refined
+-- include composes unchanged, since refining a parameter list yields a
+-- parameter list.
 resolveUnits :: [Raw.Unit] -> Either BuildError [Raw.Module]
 resolveUnits units
   | (dup : _) <- duplicates = Left ("telescope declared twice: " <> prettyVarIdent dup)
-  | otherwise = traverse expandIncludes modules
+  | otherwise = do
+      telescopes <- foldM expandDeclared Map.empty (Map.keys rawTelescopes)
+      traverse (expandIncludes telescopes) modules
   where
     declared = [t | Raw.UnitTelescope _ t <- units]
     modules  = [m | Raw.UnitModule _ m <- units]
 
-    telescopes :: Telescopes
-    telescopes = Map.fromList [(name, params) | Raw.ATelescope _ name params <- declared]
+    rawTelescopes :: Map Raw.VarIdent ([Raw.Include], [Raw.Param])
+    rawTelescopes = Map.fromList
+      [(name, (incs, params)) | Raw.ATelescope _ name incs params <- declared]
 
     duplicates =
-      [name | name : _ : _ <- group (sort [name | Raw.ATelescope _ name _ <- declared])]
+      [name | name : _ : _ <- group (sort [name | Raw.ATelescope _ name _ _ <- declared])]
 
-    expandIncludes (Raw.AModule loc name includes params imports decls) = do
-      included <- concat <$> traverse include includes
+    -- Expand one declared telescope into the memo, dependencies first. The
+    -- path carries the includes being expanded, outermost last, so a cycle is
+    -- reported in the order it is entered.
+    expandDeclared done name = fst <$> expandTelescope [] done name
+
+    expandTelescope path done name
+      | name `elem` path =
+          Left ("telescopes include each other in a cycle: "
+                 <> intercalate " -> "
+                      (map prettyVarIdent (reverse (name : path))))
+      | Just params <- Map.lookup name done = Right (done, params)
+      | Just (incs, params) <- Map.lookup name rawTelescopes = do
+          (done', included) <- foldM (includeInto (name : path)) (done, []) incs
+          let expanded = included <> params
+          return (Map.insert name expanded done', expanded)
+      | otherwise =
+          Left ("no telescope named " <> prettyVarIdent name <> " is declared")
+
+    includeInto path (done, acc) (Raw.AnInclude _loc name refinement) = do
+      (done', params) <- expandTelescope path done name
+      fixed <- refinementOf name params refinement
+      return (done', acc <> map (fixParam fixed) params)
+
+    expandIncludes telescopes (Raw.AModule loc name includes params imports decls) = do
+      included <- concat <$> traverse (include telescopes) includes
       return (Raw.AModule loc name [] (included <> params) imports decls)
 
-    include (Raw.AnInclude _loc name refinement) = case Map.lookup name telescopes of
-      Nothing -> Left ("no telescope named " <> prettyVarIdent name <> " is declared")
-      Just params -> do
-        fixed <- refinementOf name params refinement
-        return (map (fixParam fixed) params)
+    include telescopes (Raw.AnInclude _loc name refinement) =
+      case Map.lookup name telescopes of
+        Nothing -> Left ("no telescope named " <> prettyVarIdent name <> " is declared")
+        Just params -> do
+          fixed <- refinementOf name params refinement
+          return (map (fixParam fixed) params)
 
     -- A refined field keeps its place in the telescope and becomes manifest,
     -- so the residual is the same block with fewer variables in it.

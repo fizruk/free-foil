@@ -58,7 +58,7 @@ All other symbols are terminals.
   | //[Fixed]// | -> | **eps**
   |  |  **|**  | //Fixed//
   |  |  **|**  | //Fixed// ``,`` //[Fixed]//
-  | //TelescopeDecl// | -> | ``telescope`` //VarIdent// //[Param]// ``;``
+  | //TelescopeDecl// | -> | ``telescope`` //VarIdent// //[Include]// //[Param]// ``;``
   | //Param// | -> | ``(`` //VarIdent// ``:`` //Term// ``)``
   |  |  **|**  | ``(`` //VarIdent// ``:`` //Term// ``:=`` //Term// ``)``
   | //[Param]// | -> | **eps**

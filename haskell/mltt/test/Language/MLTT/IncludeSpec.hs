@@ -124,6 +124,66 @@ spec = do
       -- the law, in telescope order. There is no interpretation step.
       failures (run theoryAndInstance) `shouldBe` []
 
+  describe "a telescope that includes a telescope" $ do
+    it "puts the included fields first, so a theory extends a poorer one" $
+      -- The monoid block is the semigroup block with a unit after it, and a
+      -- declaration in it is discharged in that order.
+      run (unlines
+            [ "telescope Semigroup (A : 𝕌) (mul : A → A → A)"
+            , "telescope Monoid include Semigroup (unit : A)"
+            , "module M include Monoid"
+            , "def scaled : A → A := λ x ⇒ mul unit x" ])
+        `shouldSatisfy` (Defined "scaled" ["A", "mul", "unit"] `elem`)
+
+    it "expands a chain of includes, dependencies first" $
+      -- Sterling's hierarchy, in miniature: Magma, Semigroup, Monoid.
+      run (unlines
+            [ "telescope Magma (A : 𝕌) (mul : A → A → A)"
+            , "telescope Semigroup include Magma (e : A)"
+            , "telescope Monoid include Semigroup (z : A)"
+            , "module M include Monoid"
+            , "def pick : A := mul e z" ])
+        `shouldSatisfy` (Defined "pick" ["A", "mul", "e", "z"] `elem`)
+
+    it "may include a telescope declared after it" $
+      -- Telescopes are expanded in dependency order, not source order.
+      failures (run (unlines
+            [ "telescope Monoid include Semigroup (unit : A)"
+            , "telescope Semigroup (A : 𝕌) (mul : A → A → A)"
+            , "module M include Monoid"
+            , "def u : A := unit" ]))
+        `shouldBe` []
+
+    it "composes with refinement, since refining yields a parameter list" $
+      run (unlines
+            [ "telescope Semigroup (A : 𝕌) (mul : A → A → A)"
+            , "telescope Pointed include Semigroup / {A := 𝟙} (p : A)"
+            , "module M include Pointed"
+            , "def pick : A := p" ])
+        `shouldSatisfy` (Defined "pick" ["p"] `elem`)
+
+    it "reports a cycle by naming it" $
+      failures (run (unlines
+            [ "telescope A include B (x : 𝕌)"
+            , "telescope B include A (y : 𝕌)"
+            , "module M include A"
+            , "def u : 𝟙 := tt" ]))
+        `shouldBe` ["telescopes include each other in a cycle: A -> B -> A"]
+
+    it "reports a self-include as the smallest cycle" $
+      failures (run (unlines
+            [ "telescope T include T (x : 𝕌)"
+            , "module M include T"
+            , "def u : 𝟙 := tt" ]))
+        `shouldBe` ["telescopes include each other in a cycle: T -> T"]
+
+    it "reports a missing telescope in a telescope's include" $
+      failures (run (unlines
+            [ "telescope T include Nope (x : 𝕌)"
+            , "module M include T"
+            , "def u : 𝟙 := tt" ]))
+        `shouldBe` ["no telescope named Nope is declared"]
+
   describe "refining an include" $ do
     it "makes a fixed field manifest, so nothing is discharged over it" $
       -- `A` is fixed, so `square` takes the operation and not the carrier.
