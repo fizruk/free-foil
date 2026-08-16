@@ -111,6 +111,34 @@ Pi.       Term ::= "Π" "(" Pattern ":" Term ")" "→" ScopedTerm ;
 Sigma.    Term ::= "Σ" "(" Pattern ":" Term ")" "×" ScopedTerm ;
 Lam.      Term ::= "λ" Pattern "⇒" ScopedTerm ;
 Let.      Term ::= "let" Pattern "=" Term "in" ScopedTerm ;
+
+-- Multi-binder sugar. The rules below are `define`s: they construct nested
+-- `Lam` and `Pi` nodes at parse time, so the abstract syntax — and with it
+-- everything free foil's Template Haskell generates — is exactly as if the
+-- binders had been written out one by one. The printer prints the desugared
+-- form, so a content hash does not depend on which spelling was written.
+--
+-- `λ a b c ⇒ e` is `λ a ⇒ λ b ⇒ λ c ⇒ e`, at any number of binders. The
+-- category ScopedTerm9 shares the type of ScopedTerm, which is what lets the
+-- recursion produce plain scoped terms.
+lamMulti.    Term ::= "λ" Pattern Pattern ScopedTerm9 ;
+define lamMulti p q r = Lam p (AScopedTerm (Lam q r)) ;
+lamRestDone. ScopedTerm9 ::= "⇒" Term ;
+define lamRestDone t = AScopedTerm t ;
+lamRestMore. ScopedTerm9 ::= Pattern ScopedTerm9 ;
+define lamRestMore p r = AScopedTerm (Lam p r) ;
+
+-- `Π (a b c : T) → e` is `Π (a : T) → Π (b : T) → Π (c : T) → e`, up to four
+-- binders in the group, the type repeated for each. A `define` cannot fold
+-- over a list, so the arities are written out.
+piTwo.   Term ::= "Π" "(" Pattern Pattern ":" Term ")" "→" ScopedTerm ;
+define piTwo p q ty t = Pi p ty (AScopedTerm (Pi q ty t)) ;
+piThree. Term ::= "Π" "(" Pattern Pattern Pattern ":" Term ")" "→" ScopedTerm ;
+define piThree p q r ty t =
+  Pi p ty (AScopedTerm (Pi q ty (AScopedTerm (Pi r ty t)))) ;
+piFour.  Term ::= "Π" "(" Pattern Pattern Pattern Pattern ":" Term ")" "→" ScopedTerm ;
+define piFour p q r s ty t =
+  Pi p ty (AScopedTerm (Pi q ty (AScopedTerm (Pi r ty (AScopedTerm (Pi s ty t)))))) ;
 Arrow.    Term ::= Term1 "→" Term ;
 Product.  Term ::= Term1 "×" Term ;
 

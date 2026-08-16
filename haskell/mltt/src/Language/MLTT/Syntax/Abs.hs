@@ -111,6 +111,24 @@ data Pattern' a
     | PatternPair a (Pattern' a) (Pattern' a)
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
 
+lamMulti :: a -> Pattern' a -> Pattern' a -> ScopedTerm' a -> Term' a
+lamMulti = \ _a p q r -> Lam _a p (AScopedTerm _a (Lam _a q r))
+
+lamRestDone :: a -> Term' a -> ScopedTerm' a
+lamRestDone = \ _a t -> AScopedTerm _a t
+
+lamRestMore :: a -> Pattern' a -> ScopedTerm' a -> ScopedTerm' a
+lamRestMore = \ _a p r -> AScopedTerm _a (Lam _a p r)
+
+piTwo :: a -> Pattern' a -> Pattern' a -> Term' a -> ScopedTerm' a -> Term' a
+piTwo = \ _a p q ty t -> Pi _a p ty (AScopedTerm _a (Pi _a q ty t))
+
+piThree :: a -> Pattern' a -> Pattern' a -> Pattern' a -> Term' a -> ScopedTerm' a -> Term' a
+piThree = \ _a p q r ty t -> Pi _a p ty (AScopedTerm _a (Pi _a q ty (AScopedTerm _a (Pi _a r ty t))))
+
+piFour :: a -> Pattern' a -> Pattern' a -> Pattern' a -> Pattern' a -> Term' a -> ScopedTerm' a -> Term' a
+piFour = \ _a p q r s ty t -> Pi _a p ty (AScopedTerm _a (Pi _a q ty (AScopedTerm _a (Pi _a r ty (AScopedTerm _a (Pi _a s ty t))))))
+
 newtype VarIdent = VarIdent String
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Data, C.Typeable, C.Generic, Data.String.IsString)
 
