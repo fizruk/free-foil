@@ -6,6 +6,7 @@
 -- modes (unknown module, missing artifact, stale chain).
 module Language.MLTT.ReplImportSpec (spec) where
 
+import           Control.Monad.Foil.Registry (StripeIndex (..))
 import qualified Control.Monad.Foil           as Foil
 import           Data.List                    (isInfixOf)
 import           System.Directory             (getTemporaryDirectory,

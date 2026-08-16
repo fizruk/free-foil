@@ -51,6 +51,7 @@ import           Control.Exception        (evaluate)
 import           Control.Monad            (foldM, forM, forM_, unless, when)
 import qualified Control.Monad.Foil       as Foil
 import qualified Control.Monad.Foil.Blocks as Blocks
+import           Control.Monad.Foil.Registry (StripeIndex (..))
 import qualified Data.ByteString          as BS
 import qualified Data.ByteString.Lazy     as BSL
 import           Data.Char                (isSpace)
