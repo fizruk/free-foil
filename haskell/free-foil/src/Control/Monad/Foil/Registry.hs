@@ -23,6 +23,7 @@ module Control.Monad.Foil.Registry (
   -- * Stripe indices
   StripeIndex (..),
   -- * Layouts
+  StripeSize (..),
   StripeLayout (..),
   stripesBelowZero,
   stripesAbove,
@@ -37,7 +38,7 @@ import           Data.Binary                 (Binary)
 import           Data.Map                    (Map)
 import qualified Data.Map                    as Map
 
-import           Control.Monad.Foil.Internal (NameRange (..))
+import           Control.Monad.Foil.Internal (NameRange (..), RawName)
 
 -- $setup
 -- >>> import Control.Monad.Foil.Internal
@@ -47,6 +48,12 @@ import           Control.Monad.Foil.Internal (NameRange (..))
 -- a count, or an offset.
 newtype StripeIndex = StripeIndex Int
   deriving newtype (Eq, Ord, Show, Read, Binary)
+
+-- | How many names a unit may declare: the width of every stripe a layout
+-- hands out. Its own type, so that a size cannot be confused with a name, an
+-- index, or a base.
+newtype StripeSize = StripeSize Int
+  deriving newtype (Eq, Ord, Show, Read)
 
 -- | Where stripe @i@ lies on the raw-name line.
 --
@@ -70,27 +77,25 @@ newtype StripeLayout = StripeLayout
 -- names, which is what
 -- <https://github.com/fizruk/free-foil the mltt demo> uses it for.
 --
--- >>> stripeRange (stripesBelowZero 100) (StripeIndex 0)
+-- >>> stripeRange (stripesBelowZero (StripeSize 100)) (StripeIndex 0)
 -- NameRange {nameRangeLo = -100, nameRangeHi = -1}
--- >>> stripeRange (stripesBelowZero 100) (StripeIndex 2)
+-- >>> stripeRange (stripesBelowZero (StripeSize 100)) (StripeIndex 2)
 -- NameRange {nameRangeLo = -300, nameRangeHi = -201}
-stripesBelowZero
-  :: Int  -- ^ How many names a unit may declare.
-  -> StripeLayout
-stripesBelowZero size = StripeLayout $ \(StripeIndex i) ->
+stripesBelowZero :: StripeSize -> StripeLayout
+stripesBelowZero (StripeSize size) = StripeLayout $ \(StripeIndex i) ->
   let hi = negate (i * size) - 1
    in NameRange (hi - size + 1) hi
 
 -- | Stripe @i@ is the @i@-th run of @size@ names at or above a base,
 -- counting upwards, so stripe 0 is @[base .. base + size - 1]@.
 --
--- >>> stripeRange (stripesAbove 0 100) (StripeIndex 1)
+-- >>> stripeRange (stripesAbove 0 (StripeSize 100)) (StripeIndex 1)
 -- NameRange {nameRangeLo = 100, nameRangeHi = 199}
 stripesAbove
-  :: Int  -- ^ The base: the low end of stripe 0.
-  -> Int  -- ^ How many names a unit may declare.
+  :: RawName     -- ^ The base: the low end of stripe 0.
+  -> StripeSize
   -> StripeLayout
-stripesAbove base size = StripeLayout $ \(StripeIndex i) ->
+stripesAbove base (StripeSize size) = StripeLayout $ \(StripeIndex i) ->
   let lo = base + i * size
    in NameRange lo (lo + size - 1)
 
@@ -110,7 +115,7 @@ registrySize = Map.size
 
 -- | The stripe of a unit, assigning the next one on first use.
 --
--- >>> let layout = stripesBelowZero 10
+-- >>> let layout = stripesBelowZero (StripeSize 10)
 -- >>> let (r1, rangeA) = registerUnit layout "A" emptyRegistry
 -- >>> rangeA
 -- NameRange {nameRangeLo = -10, nameRangeHi = -1}

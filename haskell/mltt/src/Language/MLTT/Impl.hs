@@ -386,8 +386,8 @@ resolveUnits units
 -- stays out of their region.
 
 -- | How many top-level names a module may declare.
-stripeSize :: Int
-stripeSize = 0x100000
+stripeSize :: Registry.StripeSize
+stripeSize = Registry.StripeSize 0x100000
 
 -- | The region module parameters and elaboration-time binders live in: every
 -- non-negative name, now that the stripes lie below zero.
