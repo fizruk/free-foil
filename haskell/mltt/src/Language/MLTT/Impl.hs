@@ -45,10 +45,11 @@
 module Language.MLTT.Impl where
 
 import           Control.DeepSeq              (NFData)
-import           Data.Binary                  (Binary)
 import           Control.Monad                (foldM)
 import qualified Control.Monad.Foil           as Foil
 import qualified Control.Monad.Foil.Blocks    as Blocks
+import           Control.Monad.Foil.Registry  (StripeIndex (..))
+import qualified Control.Monad.Foil.Registry  as Registry
 import           Data.Functor.Compose         (Compose (..))
 import           Data.Functor.Identity        (Identity (..))
 import           Control.Monad.Free.Foil      (AST (Var), UnresolvedName (..))
@@ -385,8 +386,8 @@ resolveUnits units
 -- stays out of their region.
 
 -- | How many top-level names a module may declare.
-stripeSize :: Int
-stripeSize = 0x100000
+stripeSize :: Registry.StripeSize
+stripeSize = Registry.StripeSize 0x100000
 
 -- | The region module parameters and elaboration-time binders live in: every
 -- non-negative name, now that the stripes lie below zero.
@@ -408,42 +409,29 @@ stripeSize = 0x100000
 localRegion :: Foil.NameRange
 localRegion = Foil.NameRange 0 maxBound
 
--- | A stripe's position in the registry: which run of 'stripeSize' names a
--- module draws from. Its own type, so that a stripe index cannot be confused
--- with a name, a count, or an offset.
-newtype StripeIndex = StripeIndex Int
-  deriving newtype (Eq, Ord, Show, Read, Binary)
+-- | The demo's stripe layout: runs of 'stripeSize' names below zero,
+-- descending, per "Control.Monad.Foil.Registry". The registry machinery
+-- itself lives in the library now; what stays here is this policy.
+mlttStripes :: Registry.StripeLayout
+mlttStripes = Registry.stripesBelowZero stripeSize
 
--- | Which stripe each module's declarations live in.
---
--- The assignment is what makes raw names deterministic: a module's
--- declarations are numbered @base@, @base + 1@, … in declaration order,
--- whatever else is checked around it. In a real build this map is persistent
--- — written beside the build products and loaded at start — because cached
--- artefacts survive changes elsewhere in the module graph exactly when the
--- assignment does not move. Here it is threaded through one run, and a test
--- (or a driver) can seed it.
-type Registry = Map Raw.VarIdent StripeIndex
+-- | Which stripe each module's declarations live in; see
+-- "Control.Monad.Foil.Registry" for why the assignment is persistent and
+-- append-only. Here it is threaded through one run, and a test (or a driver)
+-- can seed it.
+type Registry = Registry.Registry Raw.VarIdent
 
 -- | The registry before any module has ever been checked.
 emptyRegistry :: Registry
-emptyRegistry = Map.empty
+emptyRegistry = Registry.emptyRegistry
 
 -- | The stripe of a module, assigning the next one on first use.
--- The registry is append-only, so the next stripe index is its size.
 registerModule :: Raw.VarIdent -> Registry -> (Registry, Foil.NameRange)
-registerModule name registry = case Map.lookup name registry of
-  Just i  -> (registry, stripeRange i)
-  Nothing -> let i = StripeIndex (Map.size registry)
-              in (Map.insert name i registry, stripeRange i)
+registerModule = Registry.registerUnit mlttStripes
 
--- | Stripe @i@ is the @i@-th run of 'stripeSize' names below zero, counting
--- downwards, so stripe 0 is @[-stripeSize .. -1]@. Within a stripe,
--- allocation still ascends, so declaration order is ascending name order.
+-- | Where stripe @i@ lies, under the demo's layout.
 stripeRange :: StripeIndex -> Foil.NameRange
-stripeRange (StripeIndex i) = Foil.NameRange (hi - stripeSize + 1) hi
-  where
-    hi = negate (i * stripeSize) - 1
+stripeRange = Registry.stripeRange mlttStripes
 
 -- * Interpreting a program
 

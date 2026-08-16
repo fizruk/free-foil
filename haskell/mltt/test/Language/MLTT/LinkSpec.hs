@@ -9,6 +9,7 @@
 -- with the shared import identified rather than renamed apart.
 module Language.MLTT.LinkSpec (spec) where
 
+import           Control.Monad.Foil.Registry (StripeIndex (..))
 import           Control.Concurrent           (forkIO, newEmptyMVar, putMVar,
                                                takeMVar)
 import           Control.Exception            (evaluate)

@@ -4,6 +4,7 @@
 -- environment carried from step to step.
 module Language.MLTT.ReplSpec (spec) where
 
+import           Control.Monad.Foil.Registry (StripeIndex (..))
 import           Test.Hspec
 
 import           Language.MLTT.Impl

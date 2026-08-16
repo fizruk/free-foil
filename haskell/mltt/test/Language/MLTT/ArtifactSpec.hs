@@ -8,6 +8,7 @@
 -- and check a client on top.
 module Language.MLTT.ArtifactSpec (spec) where
 
+import           Control.Monad.Foil.Registry (StripeIndex (..))
 import qualified Control.Monad.Foil           as Foil
 import           Data.Map                     (Map)
 import qualified Data.Map                     as Map
