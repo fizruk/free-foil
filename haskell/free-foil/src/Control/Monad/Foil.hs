@@ -36,6 +36,7 @@ module Control.Monad.Foil (
   tryWithFreshIn,
   withFreshPattern,
   withRefreshed,
+  withRefreshedIn,
   withRefreshedPattern,
   withRefreshedPattern',
   unsinkName,
