@@ -426,8 +426,16 @@ emptyRegistry :: Registry
 emptyRegistry = Registry.emptyRegistry
 
 -- | The stripe of a module, assigning the next one on first use.
+--
+-- The demo keeps one flat 'localRegion' rather than a per-declaration
+-- 'Registry.RegionLayout': its display shows raw indices directly, and the
+-- canonicity of its elaborated terms already holds with the flat region
+-- (see 'localRegion'), so it trades the reopening-clash-freedom of regions
+-- for small printable names.
 registerModule :: Raw.VarIdent -> Registry -> (Registry, Foil.NameRange)
-registerModule = Registry.registerUnit mlttStripes
+registerModule name registry =
+  case Registry.registerUnit name registry of
+    (registry', i) -> (registry', stripeRange i)
 
 -- | Where stripe @i@ lies, under the demo's layout.
 stripeRange :: StripeIndex -> Foil.NameRange
