@@ -147,6 +147,7 @@ test-suite spec
       Language.MLTT.ParametersSpec
       Language.MLTT.ReplImportSpec
       Language.MLTT.ReplSpec
+      Language.MLTT.SugarSpec
       Language.MLTT.TelescopeSpec
       SpecHook
       Paths_mltt

@@ -84,9 +84,15 @@ All other symbols are terminals.
   |  |  **|**  | ``Σ`` ``(`` //Pattern// ``:`` //Term// ``)`` ``×`` //ScopedTerm//
   |  |  **|**  | ``λ`` //Pattern// ``⇒`` //ScopedTerm//
   |  |  **|**  | ``let`` //Pattern// ``=`` //Term// ``in`` //ScopedTerm//
+  |  |  **|**  | ``λ`` //Pattern// //Pattern// //ScopedTerm9//
+  |  |  **|**  | ``Π`` ``(`` //Pattern// //Pattern// ``:`` //Term// ``)`` ``→`` //ScopedTerm//
+  |  |  **|**  | ``Π`` ``(`` //Pattern// //Pattern// //Pattern// ``:`` //Term// ``)`` ``→`` //ScopedTerm//
+  |  |  **|**  | ``Π`` ``(`` //Pattern// //Pattern// //Pattern// //Pattern// ``:`` //Term// ``)`` ``→`` //ScopedTerm//
   |  |  **|**  | //Term1// ``→`` //Term//
   |  |  **|**  | //Term1// ``×`` //Term//
   |  |  **|**  | //Term1//
+  | //ScopedTerm9// | -> | ``⇒`` //Term//
+  |  |  **|**  | //Pattern// //ScopedTerm9//
   | //Term1// | -> | //Term1// //Term2//
   |  |  **|**  | //Term2//
   | //Term2// | -> | ``π₁`` //Term2//

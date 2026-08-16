@@ -26,7 +26,10 @@ The core is deliberately small.
   `A × B`.
 - Top-level definitions, unfolded by δ-reduction.
 
-λ is written `λ x ⇒ e`. Not `λ x . e`, because a dot inside an identifier is
+λ is written `λ x ⇒ e`, and binders come in groups: `λ a b c ⇒ e` is sugar
+for the nested λs, and `Π (a b c : Nat) → B` for the nested Πs with the type
+repeated. Both desugar in the parser, so the abstract syntax — and the printed
+form a content hash is taken over — never records which spelling was written. Not `λ x . e`, because a dot inside an identifier is
 part of the identifier — `Nat.zero` is one token, so the parser never has to
 decide whether a dot qualifies a name or separates a binder from a body. And
 not `λ x → e`, so that the arrow of a λ-abstraction is not read as the arrow
