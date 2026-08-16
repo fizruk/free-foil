@@ -50,7 +50,8 @@ data Fixed' a = AFixed a VarIdent (Term' a)
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
 
 type TelescopeDecl = TelescopeDecl' BNFC'Position
-data TelescopeDecl' a = ATelescope a VarIdent [Param' a]
+data TelescopeDecl' a
+    = ATelescope a VarIdent [Include' a] [Param' a]
   deriving (C.Eq, C.Ord, C.Show, C.Read, C.Functor, C.Foldable, C.Traversable, C.Data, C.Typeable, C.Generic)
 
 type Param = Param' BNFC'Position
@@ -156,7 +157,7 @@ instance HasPosition Fixed where
 
 instance HasPosition TelescopeDecl where
   hasPosition = \case
-    ATelescope p _ _ -> p
+    ATelescope p _ _ _ -> p
 
 instance HasPosition Param where
   hasPosition = \case

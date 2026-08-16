@@ -230,6 +230,13 @@ A` above resolves only because `A` came from `Monoid`. Everything downstream is
 unchanged, so `undo` is discharged over `(A, mul, inv)` exactly as if the three
 had been written out.
 
+A telescope may itself include telescopes, so a theory can extend a poorer one:
+`telescope Monoid include Semigroup (unit : A) …` is the monoid block built on
+the semigroup block, and `examples/theories.mltt` runs the hierarchy Semigroup,
+Monoid, CommMonoid, Group in the manner of Pollack's records and Sterling's
+Pterodactyl. Telescope includes are expanded first, in dependency order over
+the declared telescopes, and a cycle is reported by name.
+
 An include is resolved before the module is checked, so what reaches the checker
 is an ordinary parametrised module. That is also what makes an include behave
 like an import for the cache: a module's content hash is taken over its resolved

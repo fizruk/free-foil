@@ -180,7 +180,7 @@ instance Print [Language.MLTT.Syntax.Abs.Fixed' a] where
 
 instance Print (Language.MLTT.Syntax.Abs.TelescopeDecl' a) where
   prt i = \case
-    Language.MLTT.Syntax.Abs.ATelescope _ varident params -> prPrec i 0 (concatD [doc (showString "telescope"), prt 0 varident, prt 0 params, doc (showString ";")])
+    Language.MLTT.Syntax.Abs.ATelescope _ varident includes params -> prPrec i 0 (concatD [doc (showString "telescope"), prt 0 varident, prt 0 includes, prt 0 params, doc (showString ";")])
 
 instance Print (Language.MLTT.Syntax.Abs.Param' a) where
   prt i = \case

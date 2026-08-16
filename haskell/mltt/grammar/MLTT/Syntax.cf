@@ -62,7 +62,11 @@ separator Fixed "," ;
 -- A telescope declaration names a block of parameters and binds nothing else.
 -- It is a unit of its own rather than a declaration inside a module, since
 -- what it names is a module header and not a term.
-ATelescope. TelescopeDecl ::= "telescope" VarIdent [Param] ";" ;
+--
+-- A telescope may itself include telescopes, so a theory can extend a poorer
+-- theory: `telescope Monoid include Semigroup (unit : A) ...`. Includes are
+-- expanded before any module's, in dependency order, and a cycle is an error.
+ATelescope. TelescopeDecl ::= "telescope" VarIdent [Include] [Param] ";" ;
 
 -- A parameter is either bound, given a type, or /manifest/, given a value. A
 -- manifest field is an abbreviation and not a variable: it is not discharged

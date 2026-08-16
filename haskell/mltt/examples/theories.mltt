@@ -3,17 +3,23 @@
 --
 -- This is the demo the module layer was built for. A theory is a named
 -- telescope: its fields are a carrier, the operations on it, and the laws they
--- satisfy, all in one dependent block. A module includes the theory to work in
--- it, and every declaration leaves that module discharged over the fields it
--- used. An instance is a module that fixes those fields to values, so using a
--- theory's lemma at an instance is application. There is no `interpretation`
--- command here, and nothing for one to do.
+-- satisfy, all in one dependent block. A richer theory includes a poorer one,
+-- so the hierarchy below runs Semigroup, Monoid, CommMonoid, Group, in the
+-- manner of Pollack's dependent records and Sterling's Pterodactyl. A module
+-- includes a theory to work in it, and every declaration leaves that module
+-- discharged over the fields it used. An instance is a module that fixes those
+-- fields to values, so using a theory's lemma at an instance is application.
+-- There is no `interpretation` command here, and nothing for one to do.
 
-telescope Monoid
+telescope Semigroup
   (A : 𝕌)
-  (unit : A)
   (mul : A → A → A)
   (assoc : Π (x : A) → Π (y : A) → Π (z : A) → Id(A, mul (mul x y) z, mul x (mul y z)))
+
+-- A monoid is a semigroup with a unit and its laws: the include puts the
+-- semigroup's fields first, and the unit's types may mention them.
+telescope Monoid include Semigroup
+  (unit : A)
   (unitL : Π (x : A) → Id(A, mul unit x, x))
   (unitR : Π (x : A) → Id(A, mul x unit, x))
 
@@ -34,32 +40,28 @@ def squareAssoc over (A, mul, assoc)
   := λ x ⇒ assoc x x x
 
 -- A different set of fields again: the unit and its law, and not associativity.
-def unitSquare over (A, unit, mul, unitL)
+def unitSquare over (A, mul, unit, unitL)
   : Π (x : A) → Id(A, mul unit (square x), square x)
   := λ x ⇒ unitL (square x)
 
 -- * Theories on top of theories
 
--- A module that includes a theory may declare fields of its own after it, and
--- their types may mention what was included, which is how one works in a richer
--- theory than the one that was declared.
---
--- Note what this is not. Pollack builds a monoid by joining a semigroup with a
--- unit and its laws, and Sterling's hierarchy runs Magma, Semigroup, Monoid,
--- Group; each step is a theory, and can be included in turn. Here only a module
--- may include, so `CommMonoid` and `Group` below are modules working in an
--- extended block, not theories a third module could include. A telescope that
--- includes a telescope is the obvious next step.
-module CommMonoid include Monoid
+-- Each of these is a theory in its own right, built on Monoid by inclusion,
+-- and can itself be included by a further telescope or worked in by a module.
+telescope CommMonoid include Monoid
   (comm : Π (x : A) → Π (y : A) → Id(A, mul x y, mul y x))
-def unitFlip over (A, unit, mul, comm)
+
+telescope Group include Monoid
+  (inv : A → A)
+  (invL : Π (x : A) → Id(A, mul (inv x) x, unit))
+
+module CommMonoidTheory include CommMonoid
+def unitFlip over (A, mul, unit, comm)
   : Π (x : A) → Id(A, mul unit x, mul x unit)
   := λ x ⇒ comm unit x
 
-module Group include Monoid
-  (inv : A → A)
-  (invL : Π (x : A) → Id(A, mul (inv x) x, unit))
-def cancelSquare over (A, unit, mul, inv, invL)
+module GroupTheory include Group
+def cancelSquare over (A, mul, unit, inv, invL)
   : Π (x : A) → Id(A, mul (inv (mul x x)) (mul x x), unit)
   := λ x ⇒ invL (mul x x)
 
@@ -112,14 +114,14 @@ def fourth over (mul) : Nat → Nat := λ x ⇒ mul (mul x x) (mul x x)
 -- decided by the structure its module fixed, and neither takes an argument for
 -- it.
 module NatAdd
-  include Monoid / {A := Nat, unit := zero, mul := plus,
-                    assoc := plusAssoc, unitL := plusUnitL, unitR := plusUnitR}
+  include Monoid / {A := Nat, mul := plus, assoc := plusAssoc,
+                    unit := zero, unitL := plusUnitL, unitR := plusUnitR}
 import Church
 def double : Nat → Nat := λ x ⇒ mul x x
 
 module NatMul
-  include Monoid / {A := Nat, unit := one, mul := times,
-                    assoc := timesAssoc, unitL := timesUnitL, unitR := timesUnitR}
+  include Monoid / {A := Nat, mul := times, assoc := timesAssoc,
+                    unit := one, unitL := timesUnitL, unitR := timesUnitR}
 import Church
 def sq : Nat → Nat := λ x ⇒ mul x x
 
@@ -151,5 +153,5 @@ check squareAssoc Nat times timesAssoc
   : Π (x : Nat) → Id(Nat, times (times x x) x, times x (times x x))
 
 -- And one over a different set of fields again.
-check unitSquare Nat zero plus plusUnitL
+check unitSquare Nat plus zero plusUnitL
   : Π (x : Nat) → Id(Nat, plus zero (plus x x), plus x x)
