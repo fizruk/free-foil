@@ -81,6 +81,7 @@ module Control.Monad.Foil (
   Substitution,
   lookupSubst,
   identitySubst,
+  nullSubst,
   voidSubst,
   addSubst,
   addSubstPattern,

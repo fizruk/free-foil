@@ -1420,6 +1420,11 @@ identitySubst
   :: InjectName e => Substitution e i i
 identitySubst = UnsafeSubstitution IntMap.empty
 
+-- | Whether a substitution maps every name to itself (see 'addRename',
+-- which deletes identity renames, so this is one null test).
+nullSubst :: Substitution e i o -> Bool
+nullSubst (UnsafeSubstitution env) = IntMap.null env
+
 -- | An empty substitution from an empty scope.
 voidSubst :: Substitution e VoidS n
 voidSubst = UnsafeSubstitution IntMap.empty
