@@ -82,7 +82,13 @@ New:
 
 - `Control.Monad.Foil.Blocks.resumeBlock` resumes allocating from a range once the evidence has grown past what a `Block` tracked by itself — after composing in a loaded unit's evidence, say. The invariant `withFreshInBlock` rests on is checked (the allocation range must lie inside the evidence's ranges), and this is what lets an interactive unit keep allocating in its own reservation after an import enlarges its scope.
 
+- `withRefreshedIn` is `withRefreshed` with the replacement allocated inside a given `NameRange`, so a client that reserves regions of the raw-name line can keep a rename from straying into someone else's reservation. The no-rename fast path is unchanged.
+
+- `Control.Monad.Foil.Registry` gains *region layouts* for local names. A `RegionLayout` gives each declaration of a unit its own open-ended run of the local region, with the unit's first run derived from its stripe index (`firstRegionOf`, advanced by `nextRegion`; `regionsAbove` builds the ascending-from-a-base layout). Stripes make a unit's top-level names disjoint from every other unit's; runs do the same for the names a checker invents *inside* a declaration, so a stored term reopened under another declaration's locals takes the no-rename fast path, and a unit's elaboration depends only on the unit itself. Deriving the first run from the stripe index rather than from a counter shared across units is essential: the counter variant loses the determinism, and an experiment caught it. rzk adopts the layout; on the sHoTT corpus it takes clash-renames 89% below the successor-allocation baseline, and an edit to one file moves no name of any other file. The mltt demo deliberately keeps its single flat region, trading reopening-clash-freedom for the small raw indices its display prints.
+
 Changed:
+
+- **`registerUnit` no longer takes a `StripeLayout` and returns the unit's `StripeIndex`** rather than a `NameRange`. The index determines every reservation derived for a unit — its stripe under a `StripeLayout`, and its runs of local names under a `RegionLayout` — so the layouts interpret the index instead of being consulted at registration. For the old behaviour, apply `stripeRange layout` to the result.
 
 - `convertToAST` and `convertToScopedAST` are deprecated in favour of `unsafeConvertToAST` and `unsafeConvertToScopedAST`, which are the same functions under names that admit they call `error`. The old names still work.
 
