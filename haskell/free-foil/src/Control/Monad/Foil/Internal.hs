@@ -266,6 +266,22 @@ withRefreshed scope@(UnsafeScope rawScope) name@(UnsafeName rawName) cont
   | IntSet.member rawName rawScope = withFresh scope cont
   | otherwise = unsafeAssertFresh (UnsafeNameBinder name) cont
 
+-- | A version of 'withRefreshed' that allocates the replacement name within
+-- a given range when the candidate is taken. A client that reserves regions
+-- of the raw-name line (per-module stripes, a region for locals) uses this
+-- so that a rename cannot stray into someone else's reservation.
+withRefreshedIn
+  :: Distinct o
+  => NameRange  -- ^ The reservation to allocate a replacement from.
+  -> Scope o    -- ^ Ambient scope.
+  -> Name i     -- ^ Name to refresh (if it clashes with the ambient scope).
+  -> (forall o'. DExt o o' => NameBinder o o' -> r)
+  -- ^ Continuation, accepting the refreshed name.
+  -> r
+withRefreshedIn range scope@(UnsafeScope rawScope) name@(UnsafeName rawName) cont
+  | IntSet.member rawName rawScope = withFreshIn range scope cont
+  | otherwise = unsafeAssertFresh (UnsafeNameBinder name) cont
+
 -- | Safely rename (if necessary) a given pattern to extend a given scope.
 -- This is similar to 'withFreshPattern', except if a name in the pattern
 -- does not clash with the scope, it can be used immediately, without renaming.
@@ -1403,6 +1419,11 @@ lookupSubst (UnsafeSubstitution env) (UnsafeName name) =
 identitySubst
   :: InjectName e => Substitution e i i
 identitySubst = UnsafeSubstitution IntMap.empty
+
+-- | Whether a substitution maps every name to itself (see 'addRename',
+-- which deletes identity renames, so this is one null test).
+nullSubst :: Substitution e i o -> Bool
+nullSubst (UnsafeSubstitution env) = IntMap.null env
 
 -- | An empty substitution from an empty scope.
 voidSubst :: Substitution e VoidS n

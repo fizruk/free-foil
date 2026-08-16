@@ -27,6 +27,11 @@ module Control.Monad.Foil.Registry (
   StripeLayout (..),
   stripesBelowZero,
   stripesAbove,
+  -- * Local-region layouts
+  RegionWidth (..),
+  RegionsPerUnit (..),
+  RegionLayout (..),
+  regionsAbove,
   -- * The registry
   Registry,
   emptyRegistry,
@@ -113,24 +118,85 @@ emptyRegistry = Map.empty
 registrySize :: Registry name -> Int
 registrySize = Map.size
 
--- | The stripe of a unit, assigning the next one on first use.
+-- | The stripe index of a unit, assigning the next one on first use.
+--
+-- The index, not a range, is what registration hands out: a unit's index
+-- determines /every/ reservation derived for it — its stripe under a
+-- 'StripeLayout', and its runs of local names under a 'RegionLayout' — so
+-- the layouts interpret the index rather than being consulted here.
 --
 -- >>> let layout = stripesBelowZero (StripeSize 10)
--- >>> let (r1, rangeA) = registerUnit layout "A" emptyRegistry
--- >>> rangeA
+-- >>> let (r1, iA) = registerUnit "A" emptyRegistry
+-- >>> stripeRange layout iA
 -- NameRange {nameRangeLo = -10, nameRangeHi = -1}
--- >>> snd (registerUnit layout "B" r1)
+-- >>> stripeRange layout (snd (registerUnit "B" r1))
 -- NameRange {nameRangeLo = -20, nameRangeHi = -11}
 --
 -- Registration is idempotent, which is the determinism a cache rests on:
 --
--- >>> snd (registerUnit layout "A" r1) == rangeA
+-- >>> snd (registerUnit "A" r1) == iA
 -- True
 registerUnit
   :: Ord name
-  => StripeLayout -> name -> Registry name -> (Registry name, NameRange)
-registerUnit layout name registry = case Map.lookup name registry of
-  Just i  -> (registry, stripeRange layout i)
+  => name -> Registry name -> (Registry name, StripeIndex)
+registerUnit name registry = case Map.lookup name registry of
+  Just i  -> (registry, i)
   Nothing ->
     let i = StripeIndex (Map.size registry)
-     in (Map.insert name i registry, stripeRange layout i)
+     in (Map.insert name i registry, i)
+
+-- * Local-region layouts
+
+-- | How far apart consecutive local-region floors sit within a unit's runs.
+-- This is spacing, not a hard width: a run is open-ended above its floor,
+-- and a scope-driven allocator would have to hold this many names /in scope
+-- at once/ to reach the next floor.
+newtype RegionWidth = RegionWidth Int
+  deriving newtype (Eq, Ord, Show, Read)
+
+-- | How many runs of local names a unit may hold before its runs would
+-- spill into the next unit's. A spill is not unsound for a client that
+-- refreshes on clash; it only forfeits the disjointness described under
+-- 'RegionLayout' for the runs past the cap.
+newtype RegionsPerUnit = RegionsPerUnit Int
+  deriving newtype (Eq, Ord, Show, Read)
+
+-- | Where a unit's runs of /local/ names lie: one open-ended region per
+-- declaration (or command) of the unit, advanced with 'nextRegion' as the
+-- unit's declarations are processed.
+--
+-- Stripes make a unit's top-level names disjoint from every other unit's;
+-- runs of local regions do the same for the names a checker invents
+-- /inside/ a declaration. A term stored under one declaration then never
+-- collides with another declaration's live locals when it is reopened, so a
+-- refreshing substitution takes its no-rename fast path throughout. And
+-- since the first run is derived from the unit's stripe index rather than
+-- from a counter shared across units, a unit's elaboration depends only on
+-- the unit itself: editing a neighbour moves nothing, which is the
+-- name-for-name determinism a cache rests on.
+--
+-- The trade-off is that local names carry large offsets, so a client that
+-- shows raw indices directly (as the mltt demo does) may prefer a single
+-- flat region and accept the transient renames instead.
+data RegionLayout = RegionLayout
+  { firstRegionOf :: StripeIndex -> NameRange
+    -- ^ The run of the unit's first declaration.
+  , nextRegion    :: NameRange -> NameRange
+    -- ^ The next declaration's run.
+  }
+
+-- | Runs ascending from a base: the unit with stripe index @i@ starts its
+-- runs at @base + i * perUnit * width@, and each declaration's floor sits
+-- @width@ above the previous one. The top of every run is open.
+--
+-- >>> let locals = regionsAbove 0 (RegionsPerUnit 0x10) (RegionWidth 0x100)
+-- >>> nameRangeLo (firstRegionOf locals (StripeIndex 2))
+-- 8192
+-- >>> nameRangeLo (nextRegion locals (firstRegionOf locals (StripeIndex 2)))
+-- 8448
+regionsAbove :: RawName -> RegionsPerUnit -> RegionWidth -> RegionLayout
+regionsAbove base (RegionsPerUnit perUnit) (RegionWidth w) = RegionLayout
+  { firstRegionOf = \(StripeIndex i) ->
+      NameRange (base + i * perUnit * w) maxBound
+  , nextRegion = \(NameRange lo _) -> NameRange (lo + w) maxBound
+  }
