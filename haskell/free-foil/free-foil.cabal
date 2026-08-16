@@ -35,6 +35,7 @@ library
       Control.Monad.Foil.Internal.ValidNameBinders
       Control.Monad.Foil.Registry
       Control.Monad.Foil.Relative
+      Control.Monad.Foil.Telescope
       Control.Monad.Foil.TH
       Control.Monad.Foil.TH.MkFoilData
       Control.Monad.Foil.TH.MkFromFoil
