@@ -82,7 +82,7 @@ instance Sinkable e => CoSinkable (Telescope label e) where
           => f x y z z' -> f y y' z' z'' -> f x y' z z'')
     -> Scope o
     -> Telescope label e n l
-    -> (forall o'. DExt o o' => f n l o o' -> Telescope label e o o' -> r)
+    -> (forall o'. DExt o o' => f n l o o' -> Telescope label e o o' -> Scope o' -> r)
     -> r
   withPattern withBinder unit comp = go verbatimTransport
     where
@@ -91,16 +91,17 @@ instance Sinkable e => CoSinkable (Telescope label e) where
          -> Scope o'
          -> Telescope label e n' l'
          -> (forall o''. DExt o' o''
-               => f n' l' o' o'' -> Telescope label e o' o'' -> r')
+               => f n' l' o' o'' -> Telescope label e o' o'' -> Scope o'' -> r')
          -> r'
-      go _transport _scope TelescopeEmpty cont = cont unit TelescopeEmpty
+      go _transport scope TelescopeEmpty cont = cont unit TelescopeEmpty scope
       go transport scope (TelescopeCons label payload binder rest) cont =
         withBinder scope binder $ \fbinder binder' ->
           go (transportUnderBinder transport binder binder')
              (extendScope binder' scope)
-             rest $ \frest rest' ->
+             rest $ \frest rest' scope'' ->
             cont (comp fbinder frest)
               (TelescopeCons label (transportPayload transport payload) binder' rest')
+              scope''
 
 -- | Two telescopes unify when their binders line up and their payloads agree.
 --

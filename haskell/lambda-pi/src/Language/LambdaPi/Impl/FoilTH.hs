@@ -97,14 +97,12 @@ substitute :: Distinct o => Scope o -> Substitution FoilTerm i o -> FoilTerm i -
 substitute scope subst = \case
     FoilVar _loc name -> lookupSubst subst name
     FoilApp loc f x -> FoilApp loc (substitute scope subst f) (substitute scope subst x)
-    FoilLam loc1 pattern (FoilAScopedTerm loc2 body) -> withRefreshedPattern scope pattern $ \extendSubst pattern' ->
+    FoilLam loc1 pattern (FoilAScopedTerm loc2 body) -> withRefreshedPattern scope pattern $ \extendSubst pattern' scope' ->
       let subst' = extendSubst subst
-          scope' = extendScopePattern pattern' scope
           body' = substitute scope' subst' body
        in FoilLam loc1 pattern' (FoilAScopedTerm loc2 body')
-    FoilPi loc1 pattern a (FoilAScopedTerm loc2 b) -> withRefreshedPattern scope pattern $ \extendSubst pattern' ->
+    FoilPi loc1 pattern a (FoilAScopedTerm loc2 b) -> withRefreshedPattern scope pattern $ \extendSubst pattern' scope' ->
       let subst' = extendSubst subst
-          scope' = extendScopePattern pattern' scope
           a' = substitute scope subst a
           b' = substitute scope' subst' b
        in FoilPi loc1 pattern' a' (FoilAScopedTerm loc2 b')

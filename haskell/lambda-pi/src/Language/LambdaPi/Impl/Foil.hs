@@ -110,13 +110,12 @@ instance CoSinkable Pattern where
 
   withPattern withNameBinder id' combine scope pattern cont =
     case pattern of
-      PatternWildcard -> cont id' PatternWildcard
+      PatternWildcard -> cont id' PatternWildcard scope
       PatternVar x    -> withNameBinder scope x $ \f x' ->
-        cont f (PatternVar x')
-      PatternPair l r -> withPattern withNameBinder id' combine scope l $ \fl l' ->
-        let scope' = extendScopePattern l' scope
-        in withPattern withNameBinder id' combine scope' r $ \fr r' ->
-              cont (combine fl fr) (PatternPair l' r')
+        cont f (PatternVar x') (extendScope x' scope)
+      PatternPair l r -> withPattern withNameBinder id' combine scope l $ \fl l' scope' ->
+        withPattern withNameBinder id' combine scope' r $ \fr r' scope'' ->
+              cont (combine fl fr) (PatternPair l' r') scope''
 
 instance UnifiablePattern Pattern where
   unifyPatterns PatternWildcard PatternWildcard = SameNameBinders emptyNameBinders
@@ -133,14 +132,12 @@ instance RelMonad Name Expr where
   rbind scope e subst = case e of
     VarE name -> subst name
     AppE f x -> AppE (rbind scope f subst) (rbind scope x subst)
-    LamE pattern body -> withRefreshedPattern' scope pattern $ \extendSubst pattern' ->
+    LamE pattern body -> withRefreshedPattern' scope pattern $ \extendSubst pattern' scope' ->
       let subst' = extendSubst subst
-          scope' = extendScopePattern pattern' scope
           body' = rbind scope' body subst'
       in LamE pattern' body'
-    PiE pattern a b -> withRefreshedPattern' scope pattern $ \extendSubst pattern' ->
+    PiE pattern a b -> withRefreshedPattern' scope pattern $ \extendSubst pattern' scope' ->
       let subst' = extendSubst subst
-          scope' = extendScopePattern pattern' scope
           a' = rbind scope a subst
           b' = rbind scope' b subst'
        in PiE pattern' a' b'
@@ -208,14 +205,12 @@ substitute :: Distinct o => Scope o -> Substitution Expr i o -> Expr i -> Expr o
 substitute scope subst = \case
     VarE name -> lookupSubst subst name
     AppE f x -> AppE (substitute scope subst f) (substitute scope subst x)
-    LamE pattern body -> withRefreshedPattern scope pattern $ \extendSubst pattern' ->
+    LamE pattern body -> withRefreshedPattern scope pattern $ \extendSubst pattern' scope' ->
       let subst' = extendSubst subst
-          scope' = extendScopePattern pattern' scope
           body' = substitute scope' subst' body
        in LamE pattern' body'
-    PiE pattern a b -> withRefreshedPattern scope pattern $ \extendSubst pattern' ->
+    PiE pattern a b -> withRefreshedPattern scope pattern $ \extendSubst pattern' scope' ->
       let subst' = extendSubst subst
-          scope' = extendScopePattern pattern' scope
           a' = substitute scope subst a
           b' = substitute scope' subst' b
        in PiE pattern' a' b'
@@ -231,14 +226,12 @@ substituteRefresh :: Distinct o => Scope o -> Substitution Expr i o -> Expr i ->
 substituteRefresh scope subst = \case
     VarE name -> lookupSubst subst name
     AppE f x -> AppE (substituteRefresh scope subst f) (substituteRefresh scope subst x)
-    LamE pattern body -> withFreshPattern scope pattern $ \extendSubst pattern' ->
+    LamE pattern body -> withFreshPattern scope pattern $ \extendSubst pattern' scope' ->
       let subst' = extendSubst subst
-          scope' = extendScopePattern pattern' scope
           body' = substituteRefresh scope' subst' body
        in LamE pattern' body'
-    PiE pattern a b -> withFreshPattern scope pattern $ \extendSubst pattern' ->
+    PiE pattern a b -> withFreshPattern scope pattern $ \extendSubst pattern' scope' ->
       let subst' = extendSubst subst
-          scope' = extendScopePattern pattern' scope
           a' = substituteRefresh scope subst a
           b' = substituteRefresh scope' subst' b
        in PiE pattern' a' b'

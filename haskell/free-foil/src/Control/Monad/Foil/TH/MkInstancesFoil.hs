@@ -150,19 +150,18 @@ deriveCoSinkable nameT patternT = do
         conParamPatterns = zipWith mkConParamPattern params [1..]
         mkConParamPattern _ i = VarP (mkName ("x" ++ show i))
 
-        go _i _scope' rename' p [] = AppE (AppE (VarE cont) rename') p
+        go _i scope' rename' p [] = AppE (AppE (AppE (VarE cont) rename') p) (VarE scope')
         go i scope' rename' p ((_bang, PeelConT tyName _tyParams) : conParams)
           | tyName == nameT || tyName == patternT =
               AppE
                 (foldl AppE (VarE 'Foil.withPattern) [VarE withNameBinder, VarE id', VarE comp, VarE scope', VarE xi])
-                (LamE [VarP renamei, VarP xi']
-                  (LetE [ValD (VarP scopei) (NormalB (AppE (AppE (VarE 'Foil.extendScopePattern) (VarE xi')) (VarE scope'))) []]
-                    (go (i + 1) scopei (foldl AppE (VarE comp) [rename', VarE renamei]) (AppE p (VarE xi')) conParams)))
+                (LamE [VarP renamei, VarP xi', VarP scopei]
+                  (go (i + 1) scopei (foldl AppE (VarE comp) [rename', VarE renamei]) (AppE p (VarE xi')) conParams))
           where
             xi = mkName ("x" ++ show i)
             xi' = mkName ("x" ++ show i ++ "'")
             renamei = mkName ("f" ++ show i)
-            scopei = mkName ("_scope" ++ show i)
+            scopei = mkName ("scope" ++ show i)
         go i scope' rename' p (_ : conPatterns) =
           go (i + 1) scope' rename' (AppE p (VarE xi)) conPatterns
           where

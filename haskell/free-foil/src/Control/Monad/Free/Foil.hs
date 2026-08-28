@@ -112,9 +112,8 @@ substitute scope subst term
       Var name -> Foil.lookupSubst subst name
       Node node -> Node (bimap f go node)
     f (ScopedAST binder body) =
-      Foil.withRefreshedPattern scope binder $ \extendSubst binder' ->
+      Foil.withRefreshedPattern scope binder $ \extendSubst binder' scope' ->
         let subst' = extendSubst (Foil.sink subst)
-            scope' = Foil.extendScopePattern binder' scope
             body' = substitute scope' subst' body
         in ScopedAST binder' body'
 
@@ -138,9 +137,8 @@ substituteRefreshed scope subst = \case
   Node node -> Node (bimap f (substituteRefreshed scope subst) node)
   where
     f (ScopedAST binder body) =
-      Foil.withFreshPattern scope binder $ \extendSubst binder' ->
+      Foil.withFreshPattern scope binder $ \extendSubst binder' scope' ->
         let subst' = extendSubst (Foil.sink subst)
-            scope' = Foil.extendScopePattern binder' scope
             body' = substituteRefreshed scope' subst' body
         in ScopedAST binder' body'
 
@@ -155,9 +153,8 @@ instance (Bifunctor sig, Foil.CoSinkable binder, Foil.SinkableK binder)
     where
       g x = Foil.rbind scope x subst
       g' (ScopedAST binder body) =
-        Foil.withRefreshedPattern' scope binder $ \extendSubst binder' ->
-          let scope' = Foil.extendScopePattern binder' scope
-              subst' = extendSubst subst
+        Foil.withRefreshedPattern' scope binder $ \extendSubst binder' scope' ->
+          let subst' = extendSubst subst
            in ScopedAST binder' (Foil.rbind scope' body subst')
 
 -- | Substitution for a single generalized pattern.
@@ -194,9 +191,8 @@ refreshScopedAST :: (Bifunctor sig, Foil.Distinct n, Foil.CoSinkable binder, Foi
   -> ScopedAST binder sig n
   -> ScopedAST binder sig n
 refreshScopedAST scope (ScopedAST binder body) =
-  Foil.withFreshPattern scope binder $ \extendSubst binder' ->
-    let scope' = Foil.extendScopePattern binder' scope
-        subst = extendSubst (Foil.sink Foil.identitySubst)
+  Foil.withFreshPattern scope binder $ \extendSubst binder' scope' ->
+    let subst = extendSubst (Foil.sink Foil.identitySubst)
     in ScopedAST binder' (substituteRefreshed scope' subst body)
 
 -- | \(\alpha\)-equivalence check for two terms in one scope
