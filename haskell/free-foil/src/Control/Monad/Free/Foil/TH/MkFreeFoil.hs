@@ -22,7 +22,7 @@ import qualified Control.Monad.Free.Foil    as Foil
 import           Data.Bifunctor
 import           Data.Char                  (toUpper)
 import           Data.List                  (find, unzip4, (\\), nub)
-import           Data.Maybe                 (catMaybes, listToMaybe, mapMaybe,
+import           Data.Maybe                 (fromMaybe, isJust, catMaybes, listToMaybe, mapMaybe,
                                              maybeToList)
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -366,6 +366,166 @@ isScopeField :: FreeFoilConfig -> Type -> Bool
 isScopeField FreeFoilConfig{..} = \case
   PeelConT typeName _ | Just _ <- lookupScopeName typeName freeFoilTermConfigs -> True
   _ -> False
+
+-- | What a raw binding constructor's field becomes in the scope-safe binding
+-- type. Mirrors the classification in 'toFreeFoilBindingCon': an identifier
+-- becomes a 'Foil.NameBinder' and threads the scope; a binding type becomes a
+-- nested binding type and threads the scope; anything else is a payload that
+-- binds nothing.
+data BindingFieldSort = FieldBinder | FieldPattern | FieldPayload
+  deriving (Eq)
+
+bindingFieldSortOf :: FreeFoilConfig -> Type -> BindingFieldSort
+bindingFieldSortOf FreeFoilConfig{..} = \case
+  PeelConT typeName _typeParams
+    | typeName `elem` map rawIdentName freeFoilTermConfigs -> FieldBinder
+    | Just _ <- lookupBindingName typeName freeFoilTermConfigs -> FieldPattern
+  _ -> FieldPayload
+
+-- | Does this field introduce binders (and so thread the scope)?
+isBindingFieldSort :: BindingFieldSort -> Bool
+isBindingFieldSort = \case
+  FieldPayload -> False
+  _ -> True
+
+-- | Does this raw payload type mention anything that converts to a
+-- scope-indexed type in the binding type (a term, a scoped term, an
+-- identifier, or a nested binding under a type constructor)? Such a payload
+-- cannot be rebuilt by the generated 'Foil.CoSinkable' instance — rebuilding
+-- it at another scope is what 'Foil.transportPayload' exists for — so we
+-- refuse to derive, matching the GenericK-side refusal for derived patterns.
+mentionsScopeIndexed :: FreeFoilConfig -> Type -> Bool
+mentionsScopeIndexed FreeFoilConfig{..} = go
+  where
+    isIndexedName typeName = or
+      [ typeName `elem` rawQuantifiedNames
+      , typeName `elem` map rawIdentName freeFoilTermConfigs
+      , isJust (lookupTermName typeName freeFoilTermConfigs)
+      , isJust (lookupSubTermName typeName freeFoilTermConfigs)
+      , isJust (lookupScopeName typeName freeFoilTermConfigs)
+      , isJust (lookupSubScopeName typeName freeFoilTermConfigs)
+      , isJust (lookupBindingName typeName freeFoilTermConfigs)
+      ]
+    go = \case
+      PeelConT typeName typeParams -> isIndexedName typeName || any go typeParams
+      AppT f x -> go f || go x
+      SigT t _ -> go t
+      ParensT t -> go t
+      _ -> False
+
+-- | The constructors of a raw type as (name, field types), with every
+-- constructor syntax flattened to the same shape.
+flattenCons :: [Con] -> [(Name, [Type])]
+flattenCons = concatMap go
+  where
+    go = \case
+      NormalC name types -> [(name, map snd types)]
+      RecC name types -> [(name, map (\(_, _, t) -> t) types)]
+      InfixC l name r -> [(name, [snd l, snd r])]
+      GadtC names types _retType -> [ (name, map snd types) | name <- names ]
+      RecGadtC names types _retType -> [ (name, map (\(_, _, t) -> t) types) | name <- names ]
+      ForallC _ _ con -> go con
+
+-- | One 'Foil.coSinkabilityProof' clause for a generated binding constructor:
+--
+-- > coSinkabilityProof rename (Con x1 x2 x3) cont =
+-- >   coSinkabilityProof rename x1 $ \rename' x1' ->
+-- >     coSinkabilityProof rename' x2 $ \rename'' x2' ->
+-- >       cont rename'' (Con x1' x2' x3)
+--
+-- Binder and nested-pattern fields thread the renaming left to right (each via
+-- its own 'Foil.CoSinkable' instance); payload fields pass through untouched.
+mkCoSinkabilityProofClause :: FreeFoilConfig -> (Name, [Type]) -> Q Clause
+mkCoSinkabilityProofClause config (rawConName, rawFieldTypes) = do
+  let conName = toConName config rawConName
+      sorts = map (bindingFieldSortOf config) rawFieldTypes
+      -- Underscore-prefix the binders the clause will not use, so that the
+      -- generated code triggers no -Wunused-matches in the client module.
+      hasBinding = any isBindingFieldSort sorts
+  rename <- newName (if hasBinding then "rename" else "_rename")
+  cont <- newName "cont"
+  xs <- mapM (\i -> newName ("x" <> show i)) [1 .. length sorts]
+  -- fields collects the rebuilt constructor arguments in order (as a
+  -- difference list, since each step appends on the right).
+  let go renameCur [] fields =
+        return (VarE cont `AppE` VarE renameCur
+                  `AppE` foldl AppE (ConE conName) (fields []))
+      go renameCur ((FieldPayload, x) : rest) fields =
+        go renameCur rest (fields . (VarE x :))
+      go renameCur ((_, x) : rest) fields = do
+        x' <- newName (nameBase x <> "'")
+        renameNext <- newName "rename'"
+        body <- go renameNext rest (fields . (VarE x' :))
+        return (VarE 'Foil.coSinkabilityProof `AppE` VarE renameCur `AppE` VarE x
+                  `AppE` LamE [VarP renameNext, VarP x'] body)
+  body <- go rename (zip sorts xs) id
+  return (Clause [VarP rename, ConP conName [] (map VarP xs), VarP cont] (NormalB body) [])
+
+-- | One 'Foil.withPattern' clause for a generated binding constructor:
+--
+-- > withPattern withBinder unit_ comp_ scope (Con x1 x2 x3) cont =
+-- >   withBinder scope x1 $ \f1 x1' ->
+-- >     let scope' = extendScope x1' scope
+-- >     in withPattern withBinder unit_ comp_ scope' x2 $ \f2 x2' ->
+-- >          cont (comp_ f1 f2) (Con x1' x2' x3)
+--
+-- A 'Foil.NameBinder' field is processed with @withBinder@ directly, a nested
+-- binding field recurses through its own 'Foil.withPattern', and each of them
+-- extends the ambient scope for the fields to its right. Results compose left
+-- to right with @comp_@; a constructor that binds nothing hands @unit_@ over.
+mkWithPatternClause :: FreeFoilConfig -> (Name, [Type]) -> Q Clause
+mkWithPatternClause config (rawConName, rawFieldTypes) = do
+  let conName = toConName config rawConName
+      sorts = map (bindingFieldSortOf config) rawFieldTypes
+      -- Underscore-prefix the binders the clause will not use, so that the
+      -- generated code triggers no -Wunused-matches in the client module: a
+      -- nested binding field keeps everything alive (its recursive call takes
+      -- unit_ and comp_ along), otherwise usage depends on how many fields
+      -- bind at all.
+      nBinding = length (filter isBindingFieldSort sorts)
+      hasNested = FieldPattern `elem` sorts
+      usedIf b n = if b then n else '_' : n
+  withBinder <- newName (usedIf (nBinding > 0) "withBinder")
+  unit_ <- newName (usedIf (nBinding == 0 || hasNested) "unit_")
+  comp_ <- newName (usedIf (nBinding >= 2 || hasNested) "comp_")
+  scope <- newName (usedIf (nBinding > 0) "scope")
+  cont <- newName "cont"
+  xs <- mapM (\i -> newName ("x" <> show i)) [1 .. length sorts]
+  -- acc is the composition of the binder results so far (Nothing before the
+  -- first one), composed left to right as each field is passed; fields
+  -- collects the rebuilt constructor arguments in order (as a difference
+  -- list, since each step appends on the right).
+  let go _scopeCur acc [] fields =
+        return (VarE cont `AppE` fromMaybe (VarE unit_) acc
+                  `AppE` foldl AppE (ConE conName) (fields []))
+      go scopeCur acc ((FieldPayload, x) : rest) fields =
+        go scopeCur acc rest (fields . (VarE x :))
+      go scopeCur acc ((sort, x) : rest) fields = do
+        x' <- newName (nameBase x <> "'")
+        f <- newName "f"
+        scopeNext <- newName $
+          if any (isBindingFieldSort . fst) rest then "scope'" else "_scope'"
+        let extend = case sort of
+              FieldBinder -> 'Foil.extendScope
+              _           -> 'Foil.extendScopePattern
+            call = case sort of
+              FieldBinder ->
+                VarE withBinder `AppE` VarE scopeCur `AppE` VarE x
+              _ ->
+                VarE 'Foil.withPattern `AppE` VarE withBinder `AppE` VarE unit_
+                  `AppE` VarE comp_ `AppE` VarE scopeCur `AppE` VarE x
+            acc' = case acc of
+              Nothing -> VarE f
+              Just a  -> VarE comp_ `AppE` a `AppE` VarE f
+        body <- go scopeNext (Just acc') rest (fields . (VarE x' :))
+        return $ call `AppE` LamE [VarP f, VarP x']
+          (LetE [ValD (VarP scopeNext)
+                   (NormalB (VarE extend `AppE` VarE x' `AppE` VarE scopeCur)) []]
+             body)
+  body <- go scope Nothing (zip sorts xs) id
+  return (Clause
+    [VarP withBinder, VarP unit_, VarP comp_, VarP scope, ConP conName [] (map VarP xs), VarP cont]
+    (NormalB body) [])
 
 termConToPat :: Name -> FreeFoilConfig -> FreeFoilTermConfig -> Con -> Q [([Name], Pat, Pat, [Exp])]
 termConToPat rawTypeName config@FreeFoilConfig{..} FreeFoilTermConfig{..} = go
@@ -721,6 +881,7 @@ mkFreeFoil :: FreeFoilConfig -> Q [Dec]
 mkFreeFoil config@FreeFoilConfig{..} = concat <$> sequence
   [ mapM mkQuantifiedType rawQuantifiedNames
   , mapM mkBindingType freeFoilTermConfigs
+  , concat <$> mapM mkPatternCoSinkable freeFoilTermConfigs
   , concat <$> mapM mkSignatureTypes freeFoilTermConfigs
   , concat <$> mapM mkPatternSynonyms freeFoilTermConfigs
   ]
@@ -765,6 +926,36 @@ mkFreeFoil config@FreeFoilConfig{..} = concat <$> sequence
       addModFinalizer $ putDoc (DeclDoc bindingName)
         ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. A binding type, scope-safe version of '" ++ show rawBindingName ++ "'.")
       return (DataD [] bindingName newParams Nothing newCons [])
+
+    -- A concrete 'Foil.CoSinkable' instance for the generated binding type,
+    -- one clause per constructor, delegating to the fields' instances. The
+    -- GenericK default routes every binder operation through a generic
+    -- representation traversal, which costs a measurable constant per binder
+    -- at runtime (see issue #82); the concrete instance removes it, and a
+    -- client no longer declares (or hand-writes) the instance itself.
+    mkPatternCoSinkable FreeFoilTermConfig{..} = do
+      (tvars, cons) <- reifyDataOrNewtype rawBindingName
+      let bindingName = toFreeFoilName config rawBindingName
+          bindingT = PeelConT bindingName (map (VarT . tvarName) tvars)
+          flatCons = flattenCons cons
+      forM_ flatCons $ \(conName, fieldTypes) ->
+        forM_ fieldTypes $ \fieldType ->
+          case bindingFieldSortOf config fieldType of
+            FieldPayload | mentionsScopeIndexed config fieldType -> fail $ unlines
+              [ "mkFreeFoil: cannot generate a CoSinkable instance for " <> show bindingName
+              , "  constructor " <> show conName <> " has a payload of raw type " <> pprint fieldType
+              , "  which becomes scope-indexed; write the instance by hand"
+              , "  (transportPayload is the sanctioned way to rebuild such a field)"
+              ]
+            _ -> return ()
+      coSinkClauses <- mapM (mkCoSinkabilityProofClause config) flatCons
+      withPatClauses <- mapM (mkWithPatternClause config) flatCons
+      return
+        [ InstanceD Nothing [] (AppT (ConT ''Foil.CoSinkable) bindingT)
+            [ FunD 'Foil.coSinkabilityProof coSinkClauses
+            , FunD 'Foil.withPattern withPatClauses
+            ]
+        ]
 
     mkSignatureTypes termConfig@FreeFoilTermConfig{..} = do
       sig <- mkSignatureType termConfig rawTermName
