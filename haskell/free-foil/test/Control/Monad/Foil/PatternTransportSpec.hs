@@ -62,7 +62,7 @@ instance Foil.CoSinkable Chain where
           => f x y z z' -> f y y' z' z'' -> f x y' z z'')
     -> Foil.Scope o
     -> Chain n l
-    -> (forall o'. Foil.DExt o o' => f n l o o' -> Chain o o' -> r)
+    -> (forall o'. Foil.DExt o o' => f n l o o' -> Chain o o' -> Foil.Scope o' -> r)
     -> r
   withPattern withBinder unit comp = go Foil.verbatimTransport
     where
@@ -70,16 +70,17 @@ instance Foil.CoSinkable Chain where
          => Foil.PatternTransport n' o'
          -> Foil.Scope o'
          -> Chain n' l'
-         -> (forall o''. Foil.DExt o' o'' => f n' l' o' o'' -> Chain o' o'' -> r')
+         -> (forall o''. Foil.DExt o' o'' => f n' l' o' o'' -> Chain o' o'' -> Foil.Scope o'' -> r')
          -> r'
-      go _transport _scope ChainEmpty cont = cont unit ChainEmpty
+      go _transport scope ChainEmpty cont = cont unit ChainEmpty scope
       go transport scope (ChainCons payload binder rest) cont =
         withBinder scope binder $ \fbinder binder' ->
           go (Foil.transportUnderBinder transport binder binder')
              (Foil.extendScope binder' scope)
-             rest $ \frest rest' ->
+             rest $ \frest rest' scope'' ->
             cont (comp fbinder frest)
               (ChainCons (Foil.transportPayload transport payload) binder' rest')
+              scope''
 
 -- | The result of processing one binder, when there is nothing to carry.
 data NoInfo (x :: Foil.S) (y :: Foil.S) (z :: Foil.S) (z' :: Foil.S) = NoInfo
@@ -100,7 +101,7 @@ refreshChain scope chain cont =
     (\NoInfo NoInfo -> NoInfo)
     scope
     chain
-    (\NoInfo chain' -> cont chain')
+    (\NoInfo chain' _scope' -> cont chain')
 
 -- | A chain of two binders, allocated under one binder that it does not bind.
 --

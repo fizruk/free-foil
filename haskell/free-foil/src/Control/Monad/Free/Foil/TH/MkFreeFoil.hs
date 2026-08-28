@@ -466,13 +466,15 @@ mkCoSinkabilityProofClause config (rawConName, rawFieldTypes) = do
 -- > withPattern withBinder unit_ comp_ scope (Con x1 x2 x3) cont =
 -- >   withBinder scope x1 $ \f1 x1' ->
 -- >     let scope' = extendScope x1' scope
--- >     in withPattern withBinder unit_ comp_ scope' x2 $ \f2 x2' ->
--- >          cont (comp_ f1 f2) (Con x1' x2' x3)
+-- >     in withPattern withBinder unit_ comp_ scope' x2 $ \f2 x2' scope'' ->
+-- >          cont (comp_ f1 f2) (Con x1' x2' x3) scope''
 --
--- A 'Foil.NameBinder' field is processed with @withBinder@ directly, a nested
--- binding field recurses through its own 'Foil.withPattern', and each of them
--- extends the ambient scope for the fields to its right. Results compose left
--- to right with @comp_@; a constructor that binds nothing hands @unit_@ over.
+-- A 'Foil.NameBinder' field is processed with @withBinder@ directly and
+-- extends the ambient scope for the fields to its right; a nested binding
+-- field recurses through its own 'Foil.withPattern', which hands the extended
+-- scope to its continuation. Results compose left to right with @comp_@; the
+-- final continuation receives the scope after the whole constructor, and a
+-- constructor that binds nothing hands @unit_@ and the ambient scope over.
 mkWithPatternClause :: FreeFoilConfig -> (Name, [Type]) -> Q Clause
 mkWithPatternClause config (rawConName, rawFieldTypes) = do
   let conName = toConName config rawConName
@@ -488,40 +490,38 @@ mkWithPatternClause config (rawConName, rawFieldTypes) = do
   withBinder <- newName (usedIf (nBinding > 0) "withBinder")
   unit_ <- newName (usedIf (nBinding == 0 || hasNested) "unit_")
   comp_ <- newName (usedIf (nBinding >= 2 || hasNested) "comp_")
-  scope <- newName (usedIf (nBinding > 0) "scope")
+  scope <- newName "scope"
   cont <- newName "cont"
   xs <- mapM (\i -> newName ("x" <> show i)) [1 .. length sorts]
   -- acc is the composition of the binder results so far (Nothing before the
   -- first one), composed left to right as each field is passed; fields
   -- collects the rebuilt constructor arguments in order (as a difference
   -- list, since each step appends on the right).
-  let go _scopeCur acc [] fields =
+  let go scopeCur acc [] fields =
         return (VarE cont `AppE` fromMaybe (VarE unit_) acc
-                  `AppE` foldl AppE (ConE conName) (fields []))
+                  `AppE` foldl AppE (ConE conName) (fields [])
+                  `AppE` VarE scopeCur)
       go scopeCur acc ((FieldPayload, x) : rest) fields =
         go scopeCur acc rest (fields . (VarE x :))
       go scopeCur acc ((sort, x) : rest) fields = do
         x' <- newName (nameBase x <> "'")
         f <- newName "f"
-        scopeNext <- newName $
-          if any (isBindingFieldSort . fst) rest then "scope'" else "_scope'"
-        let extend = case sort of
-              FieldBinder -> 'Foil.extendScope
-              _           -> 'Foil.extendScopePattern
-            call = case sort of
-              FieldBinder ->
-                VarE withBinder `AppE` VarE scopeCur `AppE` VarE x
-              _ ->
-                VarE 'Foil.withPattern `AppE` VarE withBinder `AppE` VarE unit_
-                  `AppE` VarE comp_ `AppE` VarE scopeCur `AppE` VarE x
-            acc' = case acc of
+        scopeNext <- newName "scope'"
+        let acc' = case acc of
               Nothing -> VarE f
               Just a  -> VarE comp_ `AppE` a `AppE` VarE f
         body <- go scopeNext (Just acc') rest (fields . (VarE x' :))
-        return $ call `AppE` LamE [VarP f, VarP x']
-          (LetE [ValD (VarP scopeNext)
-                   (NormalB (VarE extend `AppE` VarE x' `AppE` VarE scopeCur)) []]
-             body)
+        return $ case sort of
+          FieldBinder ->
+            VarE withBinder `AppE` VarE scopeCur `AppE` VarE x
+              `AppE` LamE [VarP f, VarP x']
+                  (LetE [ValD (VarP scopeNext)
+                           (NormalB (VarE 'Foil.extendScope `AppE` VarE x' `AppE` VarE scopeCur)) []]
+                     body)
+          _ ->
+            VarE 'Foil.withPattern `AppE` VarE withBinder `AppE` VarE unit_
+              `AppE` VarE comp_ `AppE` VarE scopeCur `AppE` VarE x
+              `AppE` LamE [VarP f, VarP x', VarP scopeNext] body
   body <- go scope Nothing (zip sorts xs) id
   return (Clause
     [VarP withBinder, VarP unit_, VarP comp_, VarP scope, ConP conName [] (map VarP xs), VarP cont]

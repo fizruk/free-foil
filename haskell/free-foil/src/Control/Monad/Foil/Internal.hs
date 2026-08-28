@@ -130,7 +130,7 @@ extendScopePattern pat scope = withPattern
   compExtendScope
   scope
   pat
-  (\(ExtendScope extend) _ -> extend scope)
+  (\(ExtendScope extend) _ _ -> extend scope)
 
 -- | Auxiliary data structure for scope extension. Used in 'extendScopePattern'.
 newtype ExtendScope n l (o :: S) (o' :: S) = ExtendScope (Scope n -> Scope l)
@@ -162,7 +162,7 @@ namesOfPattern pat = withPattern @_ @n
     unsafeAssertFresh binder $ \binder' ->
       k (NamesOf [nameOf binder]) binder')
   idNamesOf compNamesOf (error "impossible") pat
-  (\(NamesOf names) _ -> names)
+  (\(NamesOf names) _ _ -> names)
 
 -- | Auxiliary structure collecting names in scope @l@ that extend scope @n@.
 -- Used in 'namesOfPattern'.
@@ -244,8 +244,8 @@ withFreshPattern
   :: (Distinct o, CoSinkable pattern, Sinkable e, InjectName e)
   => Scope o      -- ^ Ambient scope.
   -> pattern n l  -- ^ Pattern to refresh (if it clashes with the ambient scope).
-  -> (forall o'. DExt o o' => (Substitution e n o -> Substitution e l o') -> pattern o o' -> r)
-  -- ^ Continuation, accepting the refreshed pattern.
+  -> (forall o'. DExt o o' => (Substitution e n o -> Substitution e l o') -> pattern o o' -> Scope o' -> r)
+  -- ^ Continuation, accepting the refreshed pattern and the extended scope.
   -> r
 withFreshPattern scope pattern cont = withPattern
   (\scope' binder f -> withFresh scope'
@@ -254,7 +254,7 @@ withFreshPattern scope pattern cont = withPattern
   compWithRefreshedPattern
   scope
   pattern
-  (\(WithRefreshedPattern f) pattern' -> cont f pattern')
+  (\(WithRefreshedPattern f) pattern' scope' -> cont f pattern' scope')
 
 -- | Safely rename (if necessary) a given name to extend a given scope.
 -- This is similar to 'withFresh', except if the name does not clash with
@@ -293,6 +293,11 @@ withRefreshedIn range scope@(UnsafeScope rawScope) name@(UnsafeName rawName) con
 --
 -- This is a more general version of 'withRefreshed'.
 --
+-- The continuation also receives the scope extended with the refreshed
+-- pattern: the traversal computes it along the way, so the caller does not
+-- recompute it with 'extendScopePattern' (a second traversal of the same
+-- pattern). The same holds for 'withFreshPattern' and 'withRefreshedPattern''.
+--
 -- Note that there is deliberately no fast path for the case when /every/ binder
 -- of the pattern is already fresh in the ambient scope. It is tempting to test
 -- all binders at once and, when none clashes, hand the continuation @sink@
@@ -317,8 +322,8 @@ withRefreshedPattern
   :: (Distinct o, CoSinkable pattern, Sinkable e, InjectName e)
   => Scope o      -- ^ Ambient scope.
   -> pattern n l  -- ^ Pattern to refresh (if it clashes with the ambient scope).
-  -> (forall o'. DExt o o' => (Substitution e n o -> Substitution e l o') -> pattern o o' -> r)
-  -- ^ Continuation, accepting the refreshed pattern.
+  -> (forall o'. DExt o o' => (Substitution e n o -> Substitution e l o') -> pattern o o' -> Scope o' -> r)
+  -- ^ Continuation, accepting the refreshed pattern and the extended scope.
   -> r
 withRefreshedPattern scope pattern cont = withPattern
   (\scope' binder f -> withRefreshed scope' (nameOf binder)
@@ -327,7 +332,7 @@ withRefreshedPattern scope pattern cont = withPattern
   compWithRefreshedPattern
   scope
   pattern
-  (\(WithRefreshedPattern f) pattern' -> cont f pattern')
+  (\(WithRefreshedPattern f) pattern' scope' -> cont f pattern' scope')
 
 -- | Refresh (if needed) bound variables introduced in a pattern.
 --
@@ -341,7 +346,7 @@ withRefreshedPattern'
   :: (CoSinkable pattern, Distinct o, InjectName e, Sinkable e)
   => Scope o
   -> pattern n l
-  -> (forall o'. DExt o o' => ((Name n -> e o) -> Name l -> e o') -> pattern o o' -> r) -> r
+  -> (forall o'. DExt o o' => ((Name n -> e o) -> Name l -> e o') -> pattern o o' -> Scope o' -> r) -> r
 withRefreshedPattern' scope pattern cont = withPattern
   (\scope' binder f -> withRefreshed scope' (nameOf binder)
     (\binder' ->
@@ -353,7 +358,7 @@ withRefreshedPattern' scope pattern cont = withPattern
   compWithRefreshedPattern'
   scope
   pattern
-  (\(WithRefreshedPattern' f) pattern' -> cont f pattern')
+  (\(WithRefreshedPattern' f) pattern' scope' -> cont f pattern' scope')
 
 -- | Unsafely declare that a given name (binder)
 -- is already fresh in any scope @n'@.
@@ -384,7 +389,7 @@ compWithRefreshedPattern (WithRefreshedPattern f) (WithRefreshedPattern g) =
   WithRefreshedPattern (g . f)
 
 -- | Auxiliary structure to accumulate substitution extensions
--- produced when refreshing a pattern.
+-- and the extended scope produced when refreshing a pattern.
 -- Similar to 'WithRefreshedPattern', except here substitutions are represented as functions.
 -- Used in 'withRefreshedPattern''.
 newtype WithRefreshedPattern' e n l (o :: S) (o' :: S) = WithRefreshedPattern' ((Name n -> e o) -> Name l -> e o')
@@ -454,7 +459,7 @@ unsinkNamePattern pat = withPattern @_ @n
   compUnsinkName
   (error "impossible")  -- scope is not used, but has to be provided in general
   pat
-  (\(UnsinkName unsink) _ -> unsink)
+  (\(UnsinkName unsink) _ _ -> unsink)
 
 -- | Auxiliary structure for unsinking names.
 -- Used in 'unsinkNamePattern'.
@@ -842,8 +847,8 @@ instance CoSinkable NameBinders where
     cont unsafeCoerce (UnsafeNameBinders names)
 
   withPattern withBinder unit comp scope binders cont =
-    withPattern withBinder unit comp scope (nameBindersList binders) $ \f binders' ->
-      cont f (fromNameBindersList binders')
+    withPattern withBinder unit comp scope (nameBindersList binders) $ \f binders' scope' ->
+      cont f (fromNameBindersList binders') scope'
 
 instance CoSinkable NameBinderList where
   coSinkabilityProof rename NameBinderListEmpty cont = cont rename NameBinderListEmpty
@@ -853,12 +858,12 @@ instance CoSinkable NameBinderList where
         cont rename'' (NameBinderListCons binder' binders')
 
   withPattern withBinder unit comp scope binders cont = case binders of
-    NameBinderListEmpty -> cont unit NameBinderListEmpty
+    NameBinderListEmpty -> cont unit NameBinderListEmpty scope
     NameBinderListCons x xs ->
       withBinder scope x $ \f x' ->
-        let scope' = extendScopePattern x' scope
-        in withPattern withBinder unit comp scope' xs $ \f' xs' ->
-            cont (comp f f') (NameBinderListCons x' xs')
+        let scope' = extendScope x' scope
+        in withPattern withBinder unit comp scope' xs $ \f' xs' scope'' ->
+            cont (comp f f') (NameBinderListCons x' xs') scope''
 
 -- ** Pattern combinators
 
@@ -883,7 +888,7 @@ data U2 (n :: S) (l :: S) where
 
 instance CoSinkable U2 where
   coSinkabilityProof rename U2 cont = cont rename U2
-  withPattern _withBinder unit _combine _scope U2 cont = cont unit U2
+  withPattern _withBinder unit _combine scope U2 cont = cont unit U2 scope
 instance UnifiablePattern U2 where
   unifyPatterns U2 U2 = SameNameBinders emptyNameBinders
 
@@ -1276,8 +1281,8 @@ class CoSinkable (pattern :: S -> S -> Type) where
     -- ^ Ambient scope.
     -> pattern n l
     -- ^ Pattern to process.
-    -> (forall o'. DExt o o' => f n l o o' -> pattern o o' -> r)
-    -- ^ Continuation, accepting result for the entire pattern and a (possibly refreshed) pattern.
+    -> (forall o'. DExt o o' => f n l o o' -> pattern o o' -> Scope o' -> r)
+    -- ^ Continuation, accepting the result for the entire pattern, a (possibly refreshed) pattern, and the scope extended by that pattern.
     -> r
   default withPattern
     :: (Distinct o, GenericK pattern, GValidNameBinders pattern (RepK pattern), GHasNameBinders (RepK pattern))
@@ -1286,7 +1291,7 @@ class CoSinkable (pattern :: S -> S -> Type) where
     -> (forall x y y' z z' z''. (DExt z z', DExt z' z'') => f x y z z' -> f y y' z' z'' -> f x y' z z'')
     -> Scope o
     -> pattern n l
-    -> (forall o'. DExt o o' => f n l o o' -> pattern o o' -> r)
+    -> (forall o'. DExt o o' => f n l o o' -> pattern o o' -> Scope o' -> r)
     -> r
   withPattern = gunsafeWithPatternViaHasNameBinders
 
@@ -1400,13 +1405,15 @@ nameBinderListOf pat = withPattern
   compWithNameBinderList
   emptyScope
   pat
-  (\(WithNameBinderList f) _ -> f NameBinderListEmpty)
+  (\(WithNameBinderList f) _ _ -> f NameBinderListEmpty)
 
 instance CoSinkable NameBinder where
   coSinkabilityProof _rename (UnsafeNameBinder name) cont =
     cont unsafeCoerce (UnsafeNameBinder name)
 
-  withPattern f _ _ = f
+  withPattern withBinder _ _ scope binder cont =
+    withBinder scope binder $ \f binder' ->
+      cont f binder' (extendScope binder' scope)
 
 -- * Safe substitions
 
@@ -1949,12 +1956,12 @@ gunsafeWithPatternViaHasNameBinders
   -- ^ Ambient scope.
   -> pattern n l
   -- ^ Pattern to process.
-  -> (forall o'. DExt o o' => f n l o o' -> pattern o o' -> r)
-  -- ^ Continuation, accepting result for the entire pattern and a (possibly refreshed) pattern.
+  -> (forall o'. DExt o o' => f n l o o' -> pattern o o' -> Scope o' -> r)
+  -- ^ Continuation, accepting the result for the entire pattern, a (possibly refreshed) pattern, and the scope extended by that pattern.
   -> r
 gunsafeWithPatternViaHasNameBinders withBinder id_ comp_ scope pat cont =
-  withPattern withBinder id_ comp_ scope (ggetNameBinders pat) $ \result binders ->
-    cont result (gunsafeSetNameBinders (unsafeCoerce pat) binders) -- FIXME: safer version
+  withPattern withBinder id_ comp_ scope (ggetNameBinders pat) $ \result binders scope' ->
+    cont result (gunsafeSetNameBinders (unsafeCoerce pat) binders) scope' -- FIXME: safer version
 
 -- ** Manipulating nested 'NameBinder's
 -- | If @'HasNameBinders' f@, then @f n l@ is expected to act as a binder,

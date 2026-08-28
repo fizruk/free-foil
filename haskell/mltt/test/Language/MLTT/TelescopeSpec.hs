@@ -94,7 +94,7 @@ withRefreshedTelescope
   -> r
 withRefreshedTelescope scope tele cont =
   Foil.withRefreshedPattern scope tele $
-    \(_ :: Foil.Substitution Term n' o -> Foil.Substitution Term l' o') tele' ->
+    \(_ :: Foil.Substitution Term n' o -> Foil.Substitution Term l' o') tele' _scope' ->
       cont tele'
 
 -- | The raw names of the binders, outermost first.
