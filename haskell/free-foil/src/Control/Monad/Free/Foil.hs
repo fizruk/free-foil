@@ -52,7 +52,7 @@ instance (forall x y. NFData (binder x y), forall l. NFData (AST binder sig l)) 
 -- with (free) variables in scope @n@.
 data AST binder sig n where
   -- | A (free) variable in scope @n@.
-  Var :: Foil.Name n -> AST binder sig n
+  Var :: {-# UNPACK #-} !(Foil.Name n) -> AST binder sig n
   -- | A non-variable syntactic construction specified by the signature 'Bifunctor' @sig@.
   Node :: sig (ScopedAST binder sig n) (AST binder sig n) -> AST binder sig n
 
