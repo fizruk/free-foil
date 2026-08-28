@@ -110,6 +110,7 @@ test-suite spec
       Control.Monad.Foil.SinkableSpec
       Control.Monad.Foil.UnifiablePatternSpec
       Control.Monad.Foil.UnifyNameBindersSpec
+      Control.Monad.Free.Foil.AlphaEquivSpec
       Control.Monad.Free.Foil.AnnotatedSpec
       Control.Monad.Free.Foil.SupportSpec
       Control.Monad.Free.Foil.TH.MkFreeFoilSpec
@@ -135,6 +136,29 @@ test-suite spec
     , hspec-discover
     , kind-generics >=0.5.0 && <0.6
     , kind-generics-th
+    , template-haskell >=2.21.0.0 && <2.24
+    , text >=1.2.3.1 && <2.2
+  default-language: Haskell2010
+
+benchmark alphaequiv
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  other-modules:
+      Paths_free_foil
+  hs-source-dirs:
+      bench/alphaequiv
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -optP-Wno-nonportable-include-path -O2 -rtsopts
+  build-depends:
+      array >=0.5.3.0 && <0.6
+    , base >=4.19 && <5
+    , bifunctors >=5.5 && <5.7
+    , binary >=0.8
+    , bytestring >=0.11
+    , containers >=0.6.8 && <0.9
+    , deepseq >=1.4 && <1.6
+    , free-foil
+    , kind-generics >=0.5.0 && <0.6
+    , tasty-bench
     , template-haskell >=2.21.0.0 && <2.24
     , text >=1.2.3.1 && <2.2
   default-language: Haskell2010

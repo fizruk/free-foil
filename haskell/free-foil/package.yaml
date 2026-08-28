@@ -103,3 +103,13 @@ benchmarks:
     dependencies:
       - free-foil
       - tasty-bench
+
+  alphaequiv:
+    main: Main.hs
+    source-dirs: bench/alphaequiv
+    ghc-options:
+      - -O2
+      - -rtsopts
+    dependencies:
+      - free-foil
+      - tasty-bench
