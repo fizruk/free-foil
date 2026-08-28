@@ -111,12 +111,14 @@ member (UnsafeName name) (UnsafeScope s) = rawMember name s
 -- Note that as long as the foil is used as intended,
 -- the name binder is guaranteed to introduce a name
 -- that does not appear in the initial scope.
+{-# INLINABLE extendScope #-}
 extendScope :: NameBinder n l -> Scope n -> Scope l
 extendScope (UnsafeNameBinder (UnsafeName name)) (UnsafeScope scope) =
   UnsafeScope (IntSet.insert name scope)
 
 -- | Extend scope with variables inside a pattern.
 -- This is a more flexible version of 'extendScope'.
+{-# INLINABLE extendScopePattern #-}
 extendScopePattern
   :: (Distinct n, CoSinkable pattern)
   => pattern n l -> Scope n -> Scope l
@@ -178,6 +180,7 @@ compNamesOf (NamesOf xs) (NamesOf ys) =
 -- ** Refreshing binders
 
 -- | Allocate a fresh binder for a given scope.
+{-# INLINABLE withFreshBinder #-}
 withFreshBinder
   :: Scope n
   -> (forall l. NameBinder n l -> r) -> r
@@ -187,6 +190,7 @@ withFreshBinder (UnsafeScope scope) cont =
     binder = UnsafeNameBinder (UnsafeName (rawFreshName scope))
 
 -- | Safely produce a fresh name binder with respect to a given scope.
+{-# INLINABLE withFresh #-}
 withFresh
   :: Distinct n => Scope n
   -> (forall l. DExt n l => NameBinder n l -> r) -> r
@@ -255,6 +259,7 @@ withFreshPattern scope pattern cont = withPattern
 -- | Safely rename (if necessary) a given name to extend a given scope.
 -- This is similar to 'withFresh', except if the name does not clash with
 -- the scope, it can be used immediately, without renaming.
+{-# INLINABLE withRefreshed #-}
 withRefreshed
   :: Distinct o
   => Scope o    -- ^ Ambient scope.
@@ -307,6 +312,7 @@ withRefreshedIn range scope@(UnsafeScope rawScope) name@(UnsafeName rawName) con
 -- inside another @λ x1@ arising from ordinary evaluation. Handing such a caller
 -- @sink@ would apply its substitution to a name the pattern binds — that is,
 -- capture the bound variable.
+{-# INLINABLE withRefreshedPattern #-}
 withRefreshedPattern
   :: (Distinct o, CoSinkable pattern, Sinkable e, InjectName e)
   => Scope o      -- ^ Ambient scope.
@@ -351,6 +357,7 @@ withRefreshedPattern' scope pattern cont = withPattern
 
 -- | Unsafely declare that a given name (binder)
 -- is already fresh in any scope @n'@.
+{-# INLINABLE unsafeAssertFresh #-}
 unsafeAssertFresh :: forall n l n' l' r. NameBinder n l
   -> (DExt n' l' => NameBinder n' l' -> r) -> r
 unsafeAssertFresh binder cont =
@@ -1409,6 +1416,7 @@ newtype Substitution (e :: S -> Type) (i :: S) (o :: S) =
   UnsafeSubstitution (IntMap (e o))
 
 -- | Apply substitution to a given name.
+{-# INLINABLE lookupSubst #-}
 lookupSubst :: InjectName e => Substitution e i o -> Name i -> e o
 lookupSubst (UnsafeSubstitution env) (UnsafeName name) =
     case IntMap.lookup name env of
@@ -1430,6 +1438,7 @@ voidSubst :: Substitution e VoidS n
 voidSubst = UnsafeSubstitution IntMap.empty
 
 -- | Extend substitution with a particular mapping.
+{-# INLINABLE addSubst #-}
 addSubst
   :: Substitution e i o
   -> NameBinder i i'
@@ -1464,6 +1473,7 @@ addSubstList _ _ [] = error "cannot add a binder to Substitution since the value
 -- of the same raw name, so the delete cannot be skipped even when nothing is
 -- being renamed. See 'withRefreshedPattern' for why that rules out an
 -- all-binders-fresh fast path.
+{-# INLINABLE addRename #-}
 addRename :: InjectName e => Substitution e i o -> NameBinder i i' -> Name o -> Substitution e i' o
 addRename s@(UnsafeSubstitution env) b@(UnsafeNameBinder (UnsafeName name1)) n@(UnsafeName name2)
     | name1 == name2 = UnsafeSubstitution (IntMap.delete name1 env)
