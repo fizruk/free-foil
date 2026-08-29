@@ -24,8 +24,8 @@ dependencies:
   base: ">= 4.19 && < 5"
   text: ">= 1.2.3.1 && < 2.2"
   containers: ">= 0.6.8 && < 0.9"  # >= 0.6.8 for Data.IntSet.fromRange
-  binary: ">= 0.8"      # a GHC boot library; used by the Binary and Artifact modules
-  bytestring: ">= 0.11"  # likewise a boot library; stored terms are lazy bytes
+  binary: ">= 0.8 && < 0.9"        # a GHC boot library, for the Binary and Artifact modules
+  bytestring: ">= 0.11 && < 0.13"  # likewise a boot library, for lazy stored terms
   bifunctors: ">= 5.5 && < 5.7"
   template-haskell: ">= 2.21.0.0 && < 2.24"
   deepseq: ">= 1.4 && < 1.6"
