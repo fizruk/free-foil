@@ -23,6 +23,6 @@ class RelMonad (f :: S -> Type) (m :: S -> Type) where
   -- preserving the more general type signature for 'rbind'.
   rbind :: Distinct b => Scope b -> m a -> (f a -> m b) -> m b
 
--- | Relative version of 'liftM' (an 'fmap' restricted to 'Monad').
+-- | Relative version of @liftM@ (an 'fmap' restricted to 'Monad').
 liftRM :: (RelMonad f m, Distinct b) => Scope b -> (f a -> f b) -> m a -> m b
 liftRM scope f m = rbind scope m (rreturn . f)

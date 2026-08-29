@@ -27,25 +27,25 @@ import           Data.ZipMatchK.Mappings
 
 -- | Kind-polymorphic syntactic (first-order) unification of two values.
 --
--- Note: @f@ is expected to be a traversable n-functor,
--- but at the moment we lack a @TraversableK@ constraint.
+-- Note that @f@ is expected to be a traversable n-functor. There is no
+-- @TraversableK@ constraint to say so at the moment.
 --
 -- The default implementation is generic, via 'Generics.Kind.RepK'. It is
--- convenient, but it reflects each node into a representation and back on every
--- comparison, and a constructor is represented as a chain of @L1@\/@R1@ wrappers
--- as long as its index, so the cost grows with the size of the signature. On a
--- 44-constructor signature it costs about 1.8 times the time and 2.3 times the
--- allocation of the written-out instance, and comparing terms is most of what a
--- typechecker does. Use 'Data.ZipMatchK.TH.deriveZipMatchK' (or
+-- convenient, but it reflects each node into a representation and back on
+-- every comparison, and a constructor is represented as a chain of
+-- @L1@\/@R1@ wrappers as long as its index, so the cost grows with the size of
+-- the signature. Comparing terms is most of what a typechecker does, and on a
+-- large signature the generic instance costs roughly twice what the
+-- written-out one does. Use 'Data.ZipMatchK.TH.deriveZipMatchK' (or
 -- 'Data.ZipMatchK.TH.deriveZipMatchK2', for a signature bifunctor with extra
 -- parameters) to generate the written-out instance instead.
 class ZipMatchK (f :: k) where
   -- | Perform one level of equality testing:
   --
   -- * when @k = 'Type'@, values are compared directly (e.g. via 'Eq');
-  -- * when @k = 'Type' -> 'Type'@, we compare term constructors;
-  --   if term constructors are unequal, we return 'Nothing';
-  --   otherwise, we pair up all components with a given function.
+  -- * when @k = 'Type' -> 'Type'@, term constructors are compared. Unequal
+  --   constructors give 'Nothing', and equal ones have all their components
+  --   paired up with a given function.
   zipMatchWithK :: forall as bs cs. Mappings as bs cs -> f :@@: as -> f :@@: bs -> Maybe (f :@@: cs)
   default zipMatchWithK :: forall as bs cs.
     (GenericK f, GZipMatch (RepK f), ReqsZipMatchWith (RepK f) as bs cs)

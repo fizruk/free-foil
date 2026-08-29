@@ -17,8 +17,8 @@ The core is deliberately small.
   consistency, so `nf` can diverge on a well-typed term.
 - `Π`, `Σ`, the identity type `Id`, and the unit type `𝟙` with its element `tt`.
 - λ-abstraction, application, pairs, **and their eliminators**: `π₁`, `π₂`, and
-  `J`. A 2024 reviewer of the free foil paper noted that the `lambda-pi` demo
-  has pair construction and no eliminator; that is not repeated here.
+  `J`. The `lambda-pi` demo has pair construction and no eliminator, which is
+  a gap this demo does not repeat.
 - **Pattern binders**: `_`, a variable, and a pair pattern, nested arbitrarily.
   This is what makes the demo exercise free foil's custom-pattern layer rather
   than a flat list of binders.
@@ -28,10 +28,11 @@ The core is deliberately small.
 
 λ is written `λ x ⇒ e`, and binders come in groups: `λ a b c ⇒ e` is sugar
 for the nested λs, and `Π (a b c : Nat) → B` for the nested Πs with the type
-repeated. Both desugar in the parser, so the abstract syntax — and the printed
-form a content hash is taken over — never records which spelling was written. Not `λ x . e`, because a dot inside an identifier is
-part of the identifier — `Nat.zero` is one token, so the parser never has to
-decide whether a dot qualifies a name or separates a binder from a body. And
+repeated. Both desugar in the parser, so neither the abstract syntax nor the
+printed form a content hash is taken over records which spelling was written.
+Not `λ x . e`, because a dot inside an identifier is part of the identifier.
+`Nat.zero` is one token, so the parser never has to decide whether a dot
+qualifies a name or separates a binder from a body. And
 not `λ x → e`, so that the arrow of a λ-abstraction is not read as the arrow
 of a Π-type; both turn up in one expression often enough for the distinction
 to be worth seeing. Declarations are laid out rather than punctuated, and a
@@ -85,7 +86,7 @@ Usually a module is a file, and the interpreter takes any number of files; but
 nothing requires it, and the example below puts two modules in one file so
 that the whole of it can be read at once. Build order is computed over every
 module the interpreter was given, wherever it came from, so a file may import
-a module declared in another file — or, as here, later in the same one.
+a module declared in another file, or, as here, later in the same one.
 
 ```
 module Prelude
@@ -262,11 +263,11 @@ def sum4 : Nat → Nat := λ x ⇒ mul (mul x x) (mul x x)   -- over nothing
 ```
 
 A fixed field is *manifest*: an abbreviation rather than a variable, so nothing
-is discharged over it, and fixing every field is what an instance is — `sum4`
-above is a plain constant a client applies to its argument alone.
+is discharged over it, and fixing every field is what an instance is. So `sum4`
+above is a plain constant that a client applies to its argument alone.
 
 The header is elaborated after the module's imports, so a refinement may use what
-they bring in — which is why `import Church` reads *below* the `include` that
+they bring in, which is why `import Church` reads *below* the `include` that
 uses `Nat`. That order is the wrong way round for a reader, and worth fixing: the
 literature this follows puts imports first, since in Agda and in ML signatures a
 parameter block comes after them.
@@ -276,7 +277,7 @@ the block's binders, so it cannot mention a field that is still a variable. That
 is the admissibility condition, and it holds by scoping rather than by a test:
 `Monoid / {A := Nat, unit := mul}` reports that `unit` depends on `mul`, which is
 not fixed. It also means the fixed fields have to be closed under what they
-depend on — fixing `unit` while `A` is a variable is refused, since `unit : A`.
+depend on. Fixing `unit` while `A` is a variable is refused, since `unit : A`.
 Values are checked against the fields' declared types.
 
 Internally the parameters of a module are a labelled telescope, which is a
@@ -294,8 +295,8 @@ exactly this.
 associativity and both unit laws, two lemmas proved once from those laws, and
 the Church numerals under addition as an instance that discharges every law by
 `refl`. Using a lemma at the instance is then application, and no command
-registers anything anywhere. The two lemmas need different fields — one the
-associativity, the other the unit and its law — so each is applied to what it
+registers anything anywhere. The two lemmas need different fields, one the
+associativity and the other the unit and its law, so each is applied to what it
 took and to nothing else.
 
 The idea is not new here. The framing followed is Jon Sterling's, in the
@@ -346,13 +347,13 @@ Two things are worth reading for the design rather than for the type theory.
 `p` and `q` at it, via `instantiate`. The two patterns need not have the same
 shape, and neither needs to bind anything, so `λ (x, y) ⇒ e` against
 `Π (z : Σ …) → B` and `λ _ ⇒ e` against `Π (z : A) → B` are the same rule. The
-alternative — relating the two patterns' binders directly — cannot work, since
+alternative, relating the two patterns' binders directly, cannot work, since
 they may bind different numbers of names.
 
 **A top-level constant is an ordinary name.** A `def` extends the ambient scope
 with one more `Foil.Name`, whose entry in a `NameMap` says what it unfolds to.
 That makes the top-level environment a growing foil scope, which is one of the
-two candidate designs for a global environment; the alternative is a signature
+two candidate designs for a global environment. The alternative is a signature
 node carrying an interned identifier, so that a top-level entry is a genuinely
 closed term. Nothing here commits to either yet, and the `Display` map in
 `Language.MLTT.Impl` is the seed of the interner that both would need.

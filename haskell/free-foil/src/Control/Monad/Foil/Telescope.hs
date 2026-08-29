@@ -16,12 +16,12 @@
 -- the names of a block, and α-equivalence of blocks come from the pattern
 -- machinery, with the payloads compared through 'AlphaEquiv'.
 --
--- What this module does not fix is what a payload /is/: the payload type is a
--- parameter, and the operations that need to look inside one — the support a
--- dependency closure needs, say — take the looking function as an argument.
--- A client instantiates the labels and payloads to its own types; the mltt
--- demo uses spellings and types, and closes declarations over the fields they
--- use by 'closeOverTelescope' followed by 'withThinnedNameBinderList'.
+-- What this module does not fix is what a payload /is/. The payload type is a
+-- parameter, and the operations that need to look inside one, such as the
+-- support a dependency closure needs, take the looking function as an
+-- argument. A client instantiates the labels and payloads to its own types.
+-- To close a declaration over the fields it uses, apply 'closeOverTelescope'
+-- and then 'withThinnedNameBinderList'.
 module Control.Monad.Foil.Telescope where
 
 import           Control.Monad.Foil.Internal
@@ -36,9 +36,7 @@ import           Control.Monad.Foil.Relative (RelMonad, liftRM)
 -- that @(A : 𝕌) (m : A → A → A)@ is a two-step telescope whose second payload
 -- mentions the first binder.
 --
--- See 'NameBinderList', which this follows almost line for line. The type
--- was proven in the mltt demo, as a module's parameter block, before moving
--- here.
+-- See 'NameBinderList', which this follows almost line for line.
 data Telescope label e n l where
   TelescopeEmpty :: Telescope label e n n
   TelescopeCons
@@ -50,18 +48,16 @@ data Telescope label e n l where
 
 -- | A telescope is a pattern, so the foil's own machinery walks it.
 --
--- 'coSinkabilityProof' is the interesting half. It is proof code (every
--- call site goes through 'extendRenaming', which is a coercion), but it
--- has to typecheck, and it only does because a payload is sunk by the renaming
--- of the scope /before/ its binder rather than by the extended one.
+-- 'coSinkabilityProof' typechecks only because a payload is sunk by the
+-- renaming of the scope /before/ its binder, rather than by the extended one.
 --
--- 'withPattern' is written out rather than derived, and has to be: the
--- generic implementation refuses a pattern with a field indexed by a scope,
--- since it would leave a payload naming a refreshed binder pointing at the name
--- that binder used to have. This follows the recipe in 'transportPayload':
--- a 'PatternTransport' threaded through the traversal, each payload moved
--- by the transport accumulated /before/ its own binder, since that is the scope
--- the payload lives in.
+-- 'withPattern' has to be written out rather than derived. The generic
+-- implementation refuses a pattern with a field indexed by a scope, since it
+-- would leave a payload that names a refreshed binder pointing at the name
+-- that binder used to have. This instance follows the recipe in
+-- 'transportPayload': a 'PatternTransport' threaded through the traversal,
+-- with each payload moved by the transport accumulated /before/ its own
+-- binder, that being the scope the payload lives in.
 instance Sinkable e => CoSinkable (Telescope label e) where
   coSinkabilityProof rename TelescopeEmpty cont = cont rename TelescopeEmpty
   coSinkabilityProof rename (TelescopeCons label payload binder rest) cont =
@@ -215,9 +211,9 @@ telescopeParams (TelescopeCons label ty binder rest) =
 
 -- | The chain of binders a telescope forms.
 --
--- This is 'nameBinderListOf' at a telescope, written out: the general one
--- goes through 'withPattern' and so rebuilds the telescope only to throw
--- it away, and this is on the checking path.
+-- This is 'nameBinderListOf' at a telescope, written out. The general one
+-- goes through 'withPattern' and so rebuilds the telescope only to throw it
+-- away, which is worth avoiding on the checking path.
 telescopeBinders :: Telescope label e n l -> NameBinderList n l
 telescopeBinders TelescopeEmpty = NameBinderListEmpty
 telescopeBinders (TelescopeCons _ _ binder rest) =
@@ -230,7 +226,7 @@ telescopeBinders (TelescopeCons _ _ binder rest) =
 -- before it, so working from the inside out settles it in one pass.
 --
 -- The support of a payload is the caller's to supply, since the library does
--- not know what a payload is; for terms of the free foil it is
+-- not know what a payload is. For terms of the free foil it is
 -- 'Control.Monad.Free.Foil.supportOf'.
 closeOverTelescope
   :: Distinct l

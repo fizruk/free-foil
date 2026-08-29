@@ -7,9 +7,8 @@
 -- | Module parameters as a labelled telescope, and closing a declaration over
 -- the parameters it uses.
 --
--- The telescope itself — the type, its pattern instances, and the dependency
--- closure — lives in the library ("Control.Monad.Foil.Telescope"), where it
--- moved after being proven here. What stays in the demo is the
+-- The telescope itself (the type, its pattern instances, and the dependency
+-- closure) lives in the library, in "Control.Monad.Foil.Telescope". What stays in the demo is the
 -- instantiation: labels are spellings, payloads are types, and 'discharge'
 -- folds the closed type into @Π@s and the value into @λ@s.
 --

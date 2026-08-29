@@ -21,12 +21,12 @@
 --
 -- The annotation is a /functor of the term/, and that is what lets it depend on
 -- the node's scope. In @'AST' binder sig n@ the signature's term parameter /is/
--- the AST at the node's own scope, so an annotation built from it holds terms in
--- that scope — which is what a type annotation in a dependent language needs.
+-- the AST at the node's own scope, so an annotation built from it holds terms
+-- in that scope, which is what a type annotation in a dependent language needs.
 -- An annotation that ignores the term (a source position, say) is @'Const' a@.
 --
 -- Whether two annotations must agree for their nodes to match is a property of
--- @ann@, not of 'AnnSig'. Two examples, and they are the two you will want:
+-- @ann@, and not of 'AnnSig'. Two examples:
 --
 -- An annotation that ignores the term (a source position) and /is/ compared:
 --
@@ -46,15 +46,17 @@
 -- >     Just (TypeOf (do { a <- l; b <- r; f a b }))
 --
 -- __The instance must return 'Just' unconditionally, and lazily.__ Matching is
--- annotation-blind, so it must succeed whatever the annotations are; the paired
--- annotation is a thunk the (annotation-skipping) 'Bifoldable' never forces. A
--- /strict/ shape — @TypeOf '<$>' f l r@, or anything that yields 'Nothing' when
--- @f@ fails — is a footgun twice over: it breaks blindness (two nodes with
--- different types would fail to match), and it /diverges/ for a finite or
--- lazily-bottomed annotation (a universe tower ending in 'error', say), because
--- forcing the annotation runs off the end. This is why the held term is a 'Maybe':
--- a plain @term@ field would have no value to pair when @f@ fails, forcing a
--- bottom into the result.
+-- annotation-blind, so it must succeed whatever the annotations are, and the
+-- paired annotation is a thunk that the annotation-skipping 'Bifoldable' never
+-- forces.
+--
+-- A /strict/ shape, such as @TypeOf '<$>' f l r@ or anything else that yields
+-- 'Nothing' when @f@ fails, goes wrong twice over. It breaks blindness, since
+-- two nodes with different types would then fail to match. And it /diverges/
+-- for a finite or lazily-bottomed annotation (a universe tower ending in
+-- 'error', say), because forcing the annotation runs off the end. This is why
+-- the held term is a 'Maybe': a plain @term@ field would have no value to pair
+-- when @f@ fails, forcing a bottom into the result.
 --
 -- __Do not reach for the generic instance here.__ It compares the annotation's
 -- /shape/, so a node carrying a memoised normal form would fail to match the same
@@ -63,8 +65,8 @@
 -- pick a side.)
 --
 -- __Note the asymmetry__ in the instances below: 'Bifunctor' and 'Bitraversable'
--- traverse the annotation, but 'Bifoldable' does /not/. This is deliberate — see
--- 'AnnSig'.
+-- traverse the annotation, but 'Bifoldable' does /not/. This is deliberate.
+-- See 'AnnSig'.
 module Control.Monad.Free.Foil.Annotated (
   AnnSig(..),
   AnnAST,
@@ -128,11 +130,11 @@ instance GenericK (AnnSig ann sig) where
 --
 -- The generic default would rebuild the "Generics.Kind" view of every node on
 -- every comparison, and comparing terms is most of what a typechecker does, so
--- for an annotated signature — where it lands on the hottest path — that is a
+-- for an annotated signature, where it lands on the hottest path, that is a
 -- measurable cost. 'Data.ZipMatchK.TH.deriveZipMatchK2' generates the
 -- written-out instance instead: the annotation matched with the term zipper (an
--- annotation is a functor of the term), the inner signature with both. Write
--- @deriveZipMatchK2 ''YourAnnSig@ for a bespoke annotated signature.
+-- annotation is a functor of the term), and the inner signature with both.
+-- Write @deriveZipMatchK2 ''YourAnnSig@ for a bespoke annotated signature.
 deriveZipMatchK2 ''AnnSig
 
 -- | An annotated scope-safe term.

@@ -4,7 +4,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- | A builder over the module machinery: collect modules, order them by
--- imports, and build one of three ways —
+-- imports, and build them in one of three ways:
 --
 -- * 'Sequential': one module after another in topological order, each
 --   absorbed into a growing environment; the classic driver.
@@ -85,7 +85,7 @@ import qualified Language.MLTT.Syntax.Print as Raw
 -- With @--repl@, the files are built first and a session is started over the
 -- result; standard input then belongs to the session, so no files means an
 -- empty environment rather than a source on standard input. The session is
--- entered even if some declarations failed — the failures were reported, and
+-- entered even if some declarations failed. The failures were reported, and
 -- what did check is there to poke at.
 buildMain :: [String] -> IO ()
 buildMain args =
@@ -137,8 +137,8 @@ parseArgs = fmap done . foldM step (BuildOptions Sequential Nothing BatchOnly []
 -- | Begin a session over a build. The session is a module that never ends,
 -- and like any module it starts seeing nothing: an @import@ brings a built
 -- module's exports into scope ('replImport'). Names are allocated from the
--- first stripe the build left free — the registry is append-only, so its
--- size names that stripe.
+-- first stripe the build left free. The registry is append-only, so its size
+-- names that stripe.
 sessionOver :: Foil.Distinct c => Registry -> Env c -> Repl c
 sessionOver registry env =
   beginRepl (stripeRange (StripeIndex (Map.size registry)))
@@ -149,8 +149,8 @@ sessionOver registry env =
 
 -- | One interactive @import@.
 --
--- A module the session's world already holds — built before the session, or
--- imported earlier — contributes its exports to what the session can name,
+-- A module the session's world already holds, built before the session or
+-- imported earlier, contributes its exports to what the session can name,
 -- and nothing else: the import is resolution, exactly as in a module
 -- header, except that a later import rebinds a spelling an earlier one
 -- brought in, the way a later @def@ rebinds one.
@@ -351,7 +351,7 @@ buildModules mode cacheDir modules =
   buildModulesWith mode cacheDir modules (\_ _ results -> pure results)
 
 -- | 'buildModules', handing the continuation the environment the build ends
--- in — at its existential scope index — together with the registry, so a
+-- in, at its existential scope index, together with the registry, so a
 -- session can be started over the result ('sessionOver').
 buildModulesWith
   :: BuildMode -> Maybe FilePath -> [Raw.Module]

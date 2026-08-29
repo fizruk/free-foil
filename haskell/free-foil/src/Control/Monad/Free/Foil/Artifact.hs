@@ -10,23 +10,21 @@
 -- | Serialisation support for checked units: stored terms, spelling tables,
 -- name-range metadata, and relocation.
 --
--- The machinery here assumes only that a unit's /interned constants/ and
--- its /locals/ (the names its binders bind) occupy disjoint name ranges,
--- and it checks that assumption from the recorded metadata rather than
--- taking it on faith. A stored term is then meaningful verbatim: a local
--- keeps its raw id, and a constant is resolved through a spelling table on
--- load. The never-cross-zero layout — constants below zero, locals at or
--- above — is one policy that provides the disjointness globally and by
--- construction; it is what the guarded successor allocator protects, and
--- what the @mltt@ package in the free-foil repository uses, as the worked
--- example of a full artifact built from these parts.
+-- The machinery here assumes only that a unit's /interned constants/ and its
+-- /locals/ (the names its binders bind) occupy disjoint name ranges, and it
+-- checks that assumption from the recorded metadata rather than taking it on
+-- faith. A stored term is then meaningful verbatim: a local keeps its raw id,
+-- and a constant is resolved through a spelling table on load.
 --
--- What loading trusts, and what it checks, is the client's decision; the
+-- One policy that provides the disjointness globally and by construction is
+-- to keep constants below zero and locals at or above, which is what the
+-- guarded successor allocator protects.
+--
+-- What loading trusts, and what it checks, is the client's decision, and the
 -- functions here supply the checkable facts. 'checkStoredLayout' judges the
--- recorded ranges, 'constantRelocation' judges the constants, and both
--- judge from metadata alone, so no stored term is ever walked for
--- checking. Only 'relocateConstants' walks a term, and only when a
--- constant actually moved.
+-- recorded ranges and 'constantRelocation' judges the constants, both from
+-- metadata alone, so no stored term is ever walked for checking. Only
+-- 'relocateConstants' walks a term, and only when a constant actually moved.
 module Control.Monad.Free.Foil.Artifact (
   -- * Errors
   ArtifactError (..),
@@ -78,7 +76,7 @@ import           Control.Monad.Free.Foil.Binary ()
 -- spelling, as the tables are, and a 'Functor' over it.
 data ArtifactError ident
   = MalformedStoredTerm String
-      -- ^ The bytes did not decode; the message is the decoder's.
+      -- ^ The bytes did not decode. The message is the decoder's.
   | OverlappingRegions NameRange NameRange
       -- ^ The recorded constants and locals ranges share a name.
   | SpellingForLocal RawName
@@ -139,7 +137,7 @@ decodeStored (StoredTerm bytes) =
 
 -- | The spelling-table entries a term needs. Its free variables are exactly
 -- its constants, provided the stored declaration is closed over everything
--- local; each is mapped to its spelling from the display table.
+-- local. Each is mapped to its spelling from the display table.
 --
 -- Note that the table should cover the referenced constants and only
 -- those. A table of everything in scope would let an unused import dirty a
@@ -155,7 +153,7 @@ termSpellings display t = Map.fromList
   ]
 
 -- | The names a term's binders bind: what a unit's locals range covers.
--- Note that 'supportOf' cannot see them; they are bound, not free.
+-- Note that 'supportOf' cannot see them, since they are bound and not free.
 localsOf
   :: (Bifoldable sig, HasNameBinders binder)
   => AST binder sig n -> [RawName]
@@ -179,10 +177,10 @@ spanOfNames ids = Just (NameRange (minimum ids) (maximum ids))
 
 -- * Range metadata and its checks
 
--- | A unit's recorded name layout: the actual names of its own constants,
--- and of its locals. The two travel together — an artifact records them as
--- one field, and the checks and the relocation consume them as one value —
--- so they cannot be mixed up with the ranges of the loading world.
+-- | A unit's recorded name layout: the actual names of its own constants, and
+-- of its locals. The two travel together, so that they cannot be mixed up with
+-- the ranges of the loading world. An artifact records them as one field, and
+-- the checks and the relocation consume them as one value.
 data StoredLayout = StoredLayout
   { storedConstants :: NameRange
   , storedLocals    :: NameRange
@@ -211,8 +209,8 @@ nameRangesOverlap (NameRange lo1 hi1) (NameRange lo2 hi2) =
   lo1 <= hi1 && lo2 <= hi2 && lo1 <= hi2 && lo2 <= hi1
 
 -- | The checks a unit's recorded layout admits, judged from metadata alone.
--- The constants and locals ranges must not overlap; no spelling may be
--- recorded for a local; and the constants range must hold exactly one name
+-- The constants and locals ranges must not overlap, no spelling may be
+-- recorded for a local, and the constants range must hold exactly one name
 -- per declaration, since allocation is dense from the range's low end.
 --
 -- >>> layout = StoredLayout (NameRange (-10) (-9)) (NameRange 0 5)
@@ -238,7 +236,7 @@ checkStoredLayout (StoredLayout constants locals) table declCount
 
 -- | What a unit's constants need in the loading world, judged once, from
 -- the spelling table alone. 'Nothing' says every constant already has the
--- id its spelling means here; this is the fast path, on which no term is
+-- id its spelling means here, which is the fast path, on which no term is
 -- walked at all. Otherwise the result is the renaming to apply. Its domain
 -- is a scope of the unit's world, which no longer exists, so its index is
 -- the caller's phantom.
@@ -248,7 +246,7 @@ checkStoredLayout (StoredLayout constants locals) table declCount
 -- order they were allocated, so their relocation is the affine shift
 -- between the recorded range and the one this run assigned. Their new
 -- names are thereby minted ahead of their allocation, which the caller's
--- trust covers. An imported constant resolves by its spelling; one this
+-- trust covers. An imported constant resolves by its spelling, and one this
 -- world does not know is reported. Finally, no relocation target may land
 -- among the locals, since verbatim locals rest on the two never meeting.
 constantRelocation
@@ -284,8 +282,8 @@ constantRelocation (StoredLayout old locals) (NameRange newLo _) table globals =
 -- constants of a general renaming @'Name' n -> 'Name' n'@.
 -- 'sinkabilityProof' embodies the general renaming, but its efficient
 -- implementations degenerate the renaming to a coercion under binders,
--- which is sound only for inclusions; this walk carries an arbitrary map
--- through.
+-- which is sound only for inclusions, whereas this walk carries an arbitrary
+-- map through.
 --
 -- The invariant that lets the walk ignore the binders is the disjointness
 -- the recorded layout certifies: every name in the map's domain is a

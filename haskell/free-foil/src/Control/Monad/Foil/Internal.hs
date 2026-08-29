@@ -39,10 +39,10 @@
 -- [«Free Foil: Generating Efficient and Scope-Safe Abstract Syntax»](https://arxiv.org/abs/2405.16384).
 --
 -- Since the representation of scopes and substitutions
--- is either 'IntMap' or 'IntSet', many of the operations
+-- is either @IntMap@ or @IntSet@, many of the operations
 -- have a worst-case complexity of \(O(\min(n,W))\).
--- This means that the operation can become linear in the size of the scope \(n\) with a maximum of \(W\)
--- — the number of bits in an 'Int' (32 or 64).
+-- This means that the operation can become linear in the size of the scope \(n\) with a
+-- maximum of \(W\), the number of bits in an 'Int' (32 or 64).
 module Control.Monad.Foil.Internal where
 
 import           Control.DeepSeq    (NFData (..))
@@ -78,11 +78,11 @@ data S
           -- All other scopes are represented with type variables,
           -- bound in rank-2 polymophic functions like 'withFreshBinder'.
 
--- | A safe scope, indexed by a type-level scope index 'n'.
+-- | A safe scope, indexed by a type-level scope index @n@.
 newtype Scope (n :: S) = UnsafeScope RawScope
   deriving newtype NFData
 
--- | A name in a safe scope, indexed by a type-level scope index 'n'.
+-- | A name in a safe scope, indexed by a type-level scope index @n@.
 newtype Name (n :: S) = UnsafeName RawName
   deriving newtype (NFData, Eq, Ord, Show)
 
@@ -154,7 +154,7 @@ nameOf :: NameBinder n l -> Name l
 nameOf (UnsafeNameBinder name) = name
 
 -- | Extract names from a pattern.
--- This is a more flexible version of 'namesOf'.
+-- This is a more flexible version of 'nameOf'.
 namesOfPattern
   :: forall pattern n l. (Distinct n, CoSinkable pattern) => pattern n l -> [Name l]
 namesOfPattern pat = withPattern @_ @n
@@ -209,7 +209,7 @@ withFresh scope cont = withFreshBinder scope (`unsafeAssertFresh` cont)
 -- blocks: reserve disjoint ranges for independently checked units, and the
 -- names allocated for them can never collide.
 --
--- Fails with 'error' when the range is exhausted; use 'tryWithFreshIn' to
+-- Fails with 'error' when the range is exhausted. Use 'tryWithFreshIn' to
 -- handle exhaustion instead.
 --
 -- >>> withFreshIn (NameRange 100 199) emptyScope (nameId . nameOf)
@@ -239,7 +239,7 @@ tryWithFreshIn range (UnsafeScope rawScope) cont =
 
 -- | Rename a given pattern into a fresh version of it to extend a given scope.
 --
--- This is similar to 'withRefreshPattern', except here renaming always takes place.
+-- This is similar to 'withRefreshedPattern', except here renaming always takes place.
 withFreshPattern
   :: (Distinct o, CoSinkable pattern, Sinkable e, InjectName e)
   => Scope o      -- ^ Ambient scope.
@@ -310,13 +310,13 @@ withRefreshedIn range scope@(UnsafeScope rawScope) name@(UnsafeName rawName) con
 -- names, but the substitution's domain lives in the pattern's own scope @n@,
 -- while freshness is tested against the unrelated ambient scope @o@.
 --
--- The two can indeed disagree, because 'sink' is a coercion and does not rename:
--- a term built in a small scope keeps its binder names when it is placed in a
--- larger one, so a binder can share a raw name with its own enclosing scope. The
--- @whnf@ examples in @Language.LambdaPi.Impl.FreeFoilTH@ show a @λ x1@ nested
--- inside another @λ x1@ arising from ordinary evaluation. Handing such a caller
--- @sink@ would apply its substitution to a name the pattern binds — that is,
--- capture the bound variable.
+-- The two can indeed disagree, because 'sink' is a coercion and does not
+-- rename: a term built in a small scope keeps its binder names when it is
+-- placed in a larger one, so a binder can share a raw name with its own
+-- enclosing scope. Ordinary evaluation produces such terms, with a @λ x1@
+-- nested inside another @λ x1@. Handing such a caller @sink@ would apply its
+-- substitution to a name the pattern binds, which is to say capture the bound
+-- variable.
 {-# INLINABLE withRefreshedPattern #-}
 withRefreshedPattern
   :: (Distinct o, CoSinkable pattern, Sinkable e, InjectName e)
@@ -479,25 +479,25 @@ compUnsinkName (UnsinkName f) (UnsinkName g)
 
 -- * Sets of names, and scope restriction
 --
--- The foil accounts for scope /extension/: 'NameBinder' adds names, 'Ext' is the
--- erasable evidence, and 'sink' is a coercion. Restriction is the other
--- direction, and needs no new constraint class for it — @'Ext' m n@ read from
--- the other end /is/ the statement that every name of @m@ is a name of @n@, and
--- the runtime witness of it is just the smaller 'Scope'.
+-- The foil accounts for scope /extension/: 'NameBinder' adds names, 'Ext' is
+-- the erasable evidence, and 'sink' is a coercion. Restriction is the other
+-- direction, and it needs no new constraint class. Read from the other end,
+-- @'Ext' m n@ /is/ the statement that every name of @m@ is a name of @n@, and
+-- the runtime witness of it is the smaller 'Scope'.
 --
 -- What restriction does need is a way to talk about a /subset/ of the names in
 -- scope, which is 'NameSet', and a way to cut a scope down to one, which is
 -- 'withRestrictedScope'. Unlike extension, restriction cannot be a pure
--- coercion: 'sink' is sound because a term\'s support is contained in its scope,
--- and the converse has no such invariant, so it has to be tested. The design
--- question is therefore only /where/ the test is paid.
+-- coercion. 'sink' is sound because a term\'s support is contained in its
+-- scope, and the converse has no such invariant, so it has to be tested.
 
 -- | A set of names of scope @n@.
 --
 -- This is not a 'Scope': a 'Scope' is /all/ the names in scope, and the foil
 -- relies on that (it is what freshness is tested against, and what 'Distinct'
--- speaks about). A 'NameSet' is any subset of them — the names a term uses, the
--- assumptions a declaration depends on — and carries no such invariant.
+-- speaks about). A 'NameSet' is any subset of them, such as the names a term
+-- uses or the assumptions a declaration depends on, and carries no such
+-- invariant.
 --
 -- '<>' is union and 'mempty' is empty, so a 'NameSet' can be accumulated with
 -- 'foldMap'.
@@ -580,17 +580,17 @@ unsinkNameSet binder (UnsafeNameSet names) = UnsafeNameSet (names IntSet.\\ boun
 -- | Cut a scope down to a subset of its names.
 --
 -- The names must be names of @n@; nothing checks it, which is why this is the
--- only entry point and takes a 'NameSet' rather than a bare 'IntSet'. The
+-- only entry point and takes a 'NameSet' rather than a bare @IntSet@. The
 -- continuation gets @'Ext' m n@, so anything living in the smaller scope can be
 -- 'sink'ed back into the larger one for free, and @'Distinct' m@, since a subset
 -- of distinct names is distinct.
 --
 -- __Note on allocation.__ A name allocated from the restricted scope is fresh
--- with respect to @m@ and /not/ to @n@, so it may collide with a name of
--- @n@ that the restriction dropped. That is sound — @'Ext' m n@ gives no way to
--- move a term of @n@ into a scope extending @m@ — but it means a restricted
--- scope is for inspecting and restricting terms, not a base to build new
--- binders on and then mix with the original scope.
+-- with respect to @m@ and /not/ to @n@, so it may collide with a name of @n@
+-- that the restriction dropped. This is sound, since @'Ext' m n@ gives no way
+-- to move a term of @n@ into a scope extending @m@. It does mean that a
+-- restricted scope is for inspecting and restricting terms, and not a base to
+-- build new binders on and then mix with the original scope.
 withRestrictedScope
   :: forall n r. Distinct n
   => NameSet n
@@ -647,18 +647,16 @@ data UnifyNameBinders (pattern :: S -> S -> Type) n l r where
 -- or by providing a /safe/ renaming function to convert one binder to another.
 --
 -- When the binders differ, the one with the /larger/ name is renamed towards the
--- one with the smaller name. The direction is deliberate, but it is not what makes
--- the renaming safe, and it is worth being explicit about that, since the choice
--- looks arbitrary and has been "fixed" downstream before.
+-- one with the smaller name. The direction is deliberate, but it is not what
+-- makes the renaming safe.
 --
--- The renaming returned here is not applied by substituting names blindly: callers
--- push it through a term with 'Control.Monad.Foil.Relative.liftRM', which refreshes
--- a binder whenever it would capture. So the target name may perfectly well be used
--- by a binder /inside/ the term being renamed — a term built in a small scope keeps
--- its small binder names when 'sink' places it in a larger one, so binder names do
--- not always grow with depth — and the result is still correct. See
--- @Control.Monad.Foil.UnifyNameBindersSpec@ for the term that exercises exactly
--- this.
+-- The renaming returned here is not applied by substituting names blindly.
+-- Callers push it through a term with
+-- 'Control.Monad.Foil.Relative.liftRM', which refreshes a binder whenever it
+-- would capture. So the target name may well be used by a binder /inside/ the
+-- term being renamed, and the result is still correct. Binder names do not
+-- always grow with depth: a term built in a small scope keeps its small binder
+-- names when 'sink' places it in a larger one.
 unifyNameBinders
   :: forall i l r pattern. Distinct i
   => NameBinder i l -- ^ Left pattern.
@@ -772,8 +770,9 @@ rawNameBinderList (NameBinderListCons binder binders) =
 -- | Keep only those binders of a list whose names are in a given set.
 --
 -- This is the /thinning/ of a chain of binders, and it is what turns a support
--- into a smaller chain in one step. The alternative — asking 'unsinkAST' at
--- every binder whether the term can do without it — walks the term once per
+-- into a smaller chain in one step. The alternative, asking
+-- 'Control.Monad.Free.Foil.unsinkAST' at
+-- every binder whether the term can do without it, walks the term once per
 -- binder, whereas a caller can compute the support once and thin against it.
 --
 -- The thinned scope @m@ is produced rather than given, because there is nothing
@@ -898,7 +897,7 @@ instance UnifiablePattern U2 where
 -- patterns and decide how to rename binders.
 --
 -- Note that the default implementation compares patterns only up to their
--- binders; see 'unifyPatterns' for what that does and does not distinguish.
+-- binders. See 'unifyPatterns' for what that does and does not distinguish.
 class CoSinkable pattern => UnifiablePattern pattern where
   -- | Unify two patterns and decide which binders need to be renamed.
   unifyPatterns :: Distinct n => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
@@ -917,20 +916,15 @@ class CoSinkable pattern => UnifiablePattern pattern where
   -- in order. Since α-equivalence is defined in terms of 'unifyPatterns', this
   -- also means that terms differing only in such a pattern are α-equivalent.
   --
-  -- If your patterns carry data that is semantically relevant, this default is
-  -- not what you want and you should write the instance by hand — see the
-  -- @UnifiablePattern Pattern@ instance in @Language.LambdaPi.Impl.Foil@ for a
-  -- structural one. Use 'UnifiableInPattern' to compare non-binding fields, which
-  -- also lets you deliberately ignore some of them (as
-  -- @Language.LambdaPi.Impl.FreeFoilTH@ does for BNFC source positions).
+  -- A pattern that carries semantically relevant data needs the instance
+  -- written by hand instead. Use 'UnifiableInPattern' to compare non-binding
+  -- fields, which also lets an instance ignore some of them deliberately, as a
+  -- generated instance does for BNFC source positions.
   --
-  -- A field that is /scope-indexed/ — a telescope step's type, say — cannot be
+  -- A field that is /scope-indexed/, such as a telescope step's type, cannot be
   -- compared here at all, since comparing it up to α needs the ambient scope
   -- and this method is given only 'Distinct'. Write 'unifyPatternsIn' for that,
   -- and leave this one as the binder-only approximation.
-  --
-  -- The behaviour described here is pinned down in
-  -- @Control.Monad.Foil.UnifiablePatternSpec@.
   default unifyPatterns
     :: (CoSinkable pattern, Distinct n)
     => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
@@ -945,16 +939,16 @@ class CoSinkable pattern => UnifiablePattern pattern where
   --
   -- Note that the verdict speaks about binders, so an instance comparing
   -- payloads has to apply the renaming the verdict prescribes before it
-  -- compares them — exactly as 'Control.Monad.Free.Foil.alphaEquivScoped'
+  -- compares them, exactly as 'Control.Monad.Free.Foil.alphaEquivScoped'
   -- applies it to the body of a scoped term. Two telescopes @(A : 𝕌) (x : A)@
   -- and @(B : 𝕌) (y : B)@ are α-equivalent, and their second payloads are only
   -- equal once the first binders have been identified.
   --
   -- The default ignores the scope and answers with 'unifyPatterns'. An instance
-  -- that overrides this one should leave 'unifyPatterns' as the binder-only
-  -- approximation rather than remove it: that is what 'unsafeEqPattern' and any
-  -- caller without a scope will get, and it may be more permissive than this
-  -- one, never less.
+  -- that overrides this one should leave 'unifyPatterns' in place as the
+  -- binder-only approximation rather than remove it. That is what
+  -- 'unsafeEqPattern' and any caller without a scope will get, and it may be
+  -- more permissive than this one, never less.
   unifyPatternsIn
     :: Distinct n
     => Scope n -> pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
@@ -1047,13 +1041,13 @@ instance (Functor f, Sinkable e) => Sinkable (Compose f e) where
 --
 -- Tuples and records need no private @unsafeCoerce@ helpers either. A pair
 -- of sinkables is a 'sink2' ('Data.Bifunctor.Tannen.Tannen' for a whole
--- container of them), a pair whose first component is scope-free is a
--- 'sink1' through @'Compose' f ((,) a)@, and a record of sinkable fields
--- derives 'Sinkable' — 'Generics.Kind.TH.deriveGenericK' plus empty
--- 'SinkableK' and 'Sinkable' instances — after which the whole record sinks
--- in one coercion. A record holding the 'Scope' itself is rightly refused
--- (there is no @SinkableK Scope@): the scope must grow when a binder is
--- entered, so keep it beside the sinkable part, not inside it.
+-- container of them), and a pair whose first component is scope-free is a
+-- 'sink1' through @'Compose' f ((,) a)@. A record of sinkable fields derives
+-- 'Sinkable' through 'Generics.Kind.TH.deriveGenericK' and empty 'SinkableK'
+-- and 'Sinkable' instances, after which the whole record sinks in one
+-- coercion. A record holding the 'Scope' itself is rightly refused, since
+-- there is no @SinkableK Scope@: the scope must grow when a binder is
+-- entered, so keep it beside the sinkable part and not inside it.
 --
 -- __Do not map 'sink' over a container.__ @'fmap' 'sink'@ walks the whole
 -- spine to apply a per-element coercion, where 'sink1' is one coercion.
@@ -1091,10 +1085,10 @@ sink = unsafeCoerce
 -- lifted through one 'Functor' layer, justified by the 'Sinkable' instance
 -- of 'Compose'.
 --
--- The soundness argument for 'sink' extends to a container of sinkables — an
--- 'Data.IntMap.IntMap' of terms, a 'Data.Map.Map' keyed by something else, a
--- list of them — so there is no need to walk the spine with @'fmap' 'sink'@, and
--- entering a binder need not be \(O(size)\).
+-- The soundness argument for 'sink' extends to a container of sinkables, such
+-- as an 'Data.IntMap.IntMap' of terms, a 'Data.Map.Map' keyed by something
+-- else, or a list of them. So there is no need to walk the spine with
+-- @'fmap' 'sink'@, and entering a binder need not be \(O(size)\).
 --
 -- >>> :{
 -- sinkEnv :: DExt n l => Map.Map String (Name n) -> Map.Map String (Name l)
@@ -1142,8 +1136,8 @@ sinkabilityProof2 rename1 rename2 =
 -- :}
 --
 -- A container of such pairs is a 'Bifunctor' again, via
--- 'Data.Bifunctor.Tannen.Tannen', so a list of pairs of names — the shape an
--- α-equivalence test threads — also sinks in one coercion:
+-- 'Data.Bifunctor.Tannen.Tannen', so a list of pairs of names, the shape an
+-- α-equivalence test threads, also sinks in one coercion:
 --
 -- >>> :{
 -- sinkPairs :: (DExt n n', DExt m m') => [(Name n, Name m)] -> [(Name n', Name m')]
@@ -1347,10 +1341,10 @@ transportUnderBinder transport binder binder'
 
 -- | Carry a payload along a transport.
 --
--- The 'Sinkable' instance does the walking, and only when it has to: while no
+-- The 'Sinkable' instance does the walking, and only when it has to. While no
 -- binder has been refreshed the payload is taken over as it stands, so the
--- traversals that never rename — 'extendScopePattern', 'namesOfPattern',
--- 'nameBinderListOf' — do not walk payloads at all.
+-- traversals that never rename ('extendScopePattern', 'namesOfPattern',
+-- 'nameBinderListOf') do not walk payloads at all.
 --
 -- The whole recipe for a payload-carrying pattern, at a telescope of labelled
 -- steps:
@@ -1538,7 +1532,7 @@ addNameBinderList _ [] = error "cannot add a binder to NameMap since the value l
 
 -- | Looking up a name should always succeed.
 --
--- Note that since 'Name' is 'Sinkable', you can lookup a name from scope @n@ in a 'NameMap' for scope @l@ whenever @l@ extends @n@.
+-- Note that since 'Name' is 'Sinkable', a name of scope @n@ can be looked up in a 'NameMap' for scope @l@ whenever @l@ extends @n@.
 lookupName :: Name n -> NameMap n a -> a
 lookupName name (NameMap m) =
   case IntMap.lookup (nameId name) m of
@@ -2034,20 +2028,19 @@ instance (GHasNameBinders f, GHasNameBinders g) => GHasNameBinders (f :+: g) whe
   greallyUnsafeSetNameBindersRaw (L1 x) names = first L1 (greallyUnsafeSetNameBindersRaw x names)
   greallyUnsafeSetNameBindersRaw (R1 x) names = first R1 (greallyUnsafeSetNameBindersRaw x names)
 
--- | FIXME: this is, perhaps, the most "unsafe" place for the user
--- since it does not reject "parallel" binders:
+-- | __A caveat.__ This instance treats the two factors as /nested/ binders,
+-- and does not reject /parallel/ ones:
 --
---    data BadPattern n l = BadPattern (NameBinder n l) (NameBinder n l)
+-- > data BadPattern n l = BadPattern (NameBinder n l) (NameBinder n l)
 --
--- This instance will treat both binders in the same way as "nested":
+-- The intended shape is a chain, in which each binder extends the scope the
+-- next one starts from:
 --
---    data GoodPattern n l = forall i. GoodPattern (NameBinder n i) (NameBinder i l)
+-- > data GoodPattern n l = forall i. GoodPattern (NameBinder n i) (NameBinder i l)
 --
--- However, Template Haskell code at the moment will never generate "parallel" binders,
--- and the very user is unlikely to misuse this instance, since "parallel" binders
--- require extra effort to support it.
---
--- Still, it would be better to detect and reject any "parallel" or otherwise improper binders.
+-- Template Haskell never generates parallel binders, and writing one by hand
+-- takes deliberate effort, so this is unlikely to be reached by accident.
+-- Detecting and rejecting such a pattern would still be better.
 instance (GHasNameBinders f, GHasNameBinders g) => GHasNameBinders (f :*: g) where
   ggetNameBindersRaw (x :*: y) = ggetNameBindersRaw x <> ggetNameBindersRaw y
   greallyUnsafeSetNameBindersRaw (x :*: y) names =

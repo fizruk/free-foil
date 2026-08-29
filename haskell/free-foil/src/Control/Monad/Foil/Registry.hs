@@ -3,22 +3,23 @@
 
 -- | Deterministic stripe assignment for separately checked units.
 --
--- A module system wants each unit to allocate its top-level names inside its
--- own reservation (see "Control.Monad.Foil.Blocks"), and it wants the
--- assignment of reservations to be /deterministic/: a unit's declarations are
--- numbered @base@, @base + 1@, … in declaration order, whatever else is
--- checked around it. Determinism is what makes raw names cacheable — a unit
--- checked today and a unit loaded tomorrow agree name for name — and what
--- discharges the trust obligation of 'Control.Monad.Foil.Blocks.checkExtScope',
--- which compares raw names across independently built worlds.
+-- Each unit of a module system allocates its top-level names inside its own
+-- reservation (see "Control.Monad.Foil.Blocks"), and the assignment of
+-- reservations has to be /deterministic/: a unit's declarations are numbered
+-- @base@, @base + 1@, and so on in declaration order, whatever else is
+-- checked around it. Determinism is what makes raw names cacheable, since a
+-- unit checked today and a unit loaded tomorrow then agree name for name. It
+-- is also what discharges the trust obligation of
+-- 'Control.Monad.Foil.Blocks.checkExtScope'.
 --
 -- The registry is that assignment: an append-only map from unit names to
--- stripe indices, handing out the next index on first use. In a real build it
--- is persisted beside the build products, because cached artifacts survive
--- changes elsewhere in the build exactly when the assignment does not move.
--- Where the stripes lie on the raw-name line is a 'StripeLayout', a client
--- policy: the library is region-agnostic, and the allocator admits negative
--- names.
+-- stripe indices, handing out the next index on first use. A build persists
+-- it beside the build products, since a cached artifact survives a change
+-- elsewhere in the build exactly when the assignment does not move.
+--
+-- Where the stripes lie on the raw-name line is a 'StripeLayout' and a
+-- policy of the client. The library is region-agnostic, and the allocator
+-- admits negative names.
 module Control.Monad.Foil.Registry (
   -- * Stripe indices
   StripeIndex (..),
@@ -66,7 +67,7 @@ newtype StripeSize = StripeSize Int
 -- from some base, or interleave with other reservations is a policy of the
 -- client, and everything in "Control.Monad.Foil.Blocks" works from the
 -- resulting 'NameRange's alone. A layout should give disjoint ranges to
--- distinct indices; nothing checks this here, but
+-- distinct indices. Nothing checks this here, but
 -- 'Control.Monad.Foil.Blocks.withDisjointUnion' refuses the overlap at the
 -- point where it would do harm.
 newtype StripeLayout = StripeLayout
@@ -79,8 +80,7 @@ newtype StripeLayout = StripeLayout
 -- is ascending name order.
 --
 -- This layout leaves the whole non-negative range free for a client's local
--- names, which is what
--- <https://github.com/fizruk/free-foil the mltt demo> uses it for.
+-- names.
 --
 -- >>> stripeRange (stripesBelowZero (StripeSize 100)) (StripeIndex 0)
 -- NameRange {nameRangeLo = -100, nameRangeHi = -1}
@@ -120,10 +120,10 @@ registrySize = Map.size
 
 -- | The stripe index of a unit, assigning the next one on first use.
 --
--- The index, not a range, is what registration hands out: a unit's index
--- determines /every/ reservation derived for it — its stripe under a
--- 'StripeLayout', and its runs of local names under a 'RegionLayout' — so
--- the layouts interpret the index rather than being consulted here.
+-- Registration hands out the index and not a range. A unit's index
+-- determines /every/ reservation derived for it: its stripe under a
+-- 'StripeLayout', and its runs of local names under a 'RegionLayout'. The
+-- layouts interpret the index, rather than being consulted here.
 --
 -- >>> let layout = stripesBelowZero (StripeSize 10)
 -- >>> let (r1, iA) = registerUnit "A" emptyRegistry
@@ -156,7 +156,7 @@ newtype RegionWidth = RegionWidth Int
 
 -- | How many runs of local names a unit may hold before its runs would
 -- spill into the next unit's. A spill is not unsound for a client that
--- refreshes on clash; it only forfeits the disjointness described under
+-- refreshes on clash. It only forfeits the disjointness described under
 -- 'RegionLayout' for the runs past the cap.
 newtype RegionsPerUnit = RegionsPerUnit Int
   deriving newtype (Eq, Ord, Show, Read)
@@ -165,19 +165,20 @@ newtype RegionsPerUnit = RegionsPerUnit Int
 -- declaration (or command) of the unit, advanced with 'nextRegion' as the
 -- unit's declarations are processed.
 --
--- Stripes make a unit's top-level names disjoint from every other unit's;
--- runs of local regions do the same for the names a checker invents
+-- Stripes make a unit's top-level names disjoint from every other unit's,
+-- and runs of local regions do the same for the names a checker invents
 -- /inside/ a declaration. A term stored under one declaration then never
 -- collides with another declaration's live locals when it is reopened, so a
--- refreshing substitution takes its no-rename fast path throughout. And
--- since the first run is derived from the unit's stripe index rather than
--- from a counter shared across units, a unit's elaboration depends only on
--- the unit itself: editing a neighbour moves nothing, which is the
--- name-for-name determinism a cache rests on.
+-- refreshing substitution takes its no-rename fast path throughout.
 --
--- The trade-off is that local names carry large offsets, so a client that
--- shows raw indices directly (as the mltt demo does) may prefer a single
--- flat region and accept the transient renames instead.
+-- The first run is derived from the unit's stripe index rather than from a
+-- counter shared across units, so a unit's elaboration depends only on the
+-- unit itself and editing a neighbour moves no name. That is the
+-- determinism a cache rests on.
+--
+-- The trade-off is that local names carry large offsets. A client that
+-- shows raw indices directly may prefer a single flat region, and accept
+-- the transient renames instead.
 data RegionLayout = RegionLayout
   { firstRegionOf :: StripeIndex -> NameRange
     -- ^ The run of the unit's first declaration.

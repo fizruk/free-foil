@@ -335,8 +335,8 @@ loadArtifact hashes range env artifact = do
          in go relocation block' envN' ds
 
     -- The stored term is the checked (hence desugared) one. On the fast
-    -- path it is used exactly as decoded — the phantom index is simply
-    -- taken to be the caller's. Where the registry moved, the term decodes
+    -- path it is used exactly as decoded, the phantom index being taken to
+    -- be the caller's. Where the registry moved, the term decodes
     -- at the map's own phantom, relocates into the base world, and sinks to
     -- the scope at hand.
     loadTerm :: forall old m. Foil.DExt c m

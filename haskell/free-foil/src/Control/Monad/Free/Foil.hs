@@ -100,7 +100,7 @@ substitute scope subst term
   -- scoped term with its own binder's name is an identity rename, and under
   -- a deterministic allocation policy a refreshed binder usually keeps its
   -- name, deleting its entry. Binders that shadow the ambient scope are
-  -- left as they stand, as on the no-clash path below; a caller that wants
+  -- left as they stand, as on the no-clash path below. A caller that wants
   -- them refreshed asks 'substituteRefreshed'.
   | Foil.nullSubst subst = unsafeCoerce term
   | otherwise = go term
@@ -198,9 +198,9 @@ refreshScopedAST scope (ScopedAST binder body) =
 -- | \(\alpha\)-equivalence check for two terms in one scope
 -- via normalization of bound identifiers (via 'refreshAST').
 --
--- Compared to 'alphaEquiv', this function renames every binder on both
--- sides unconditionally, so it does strictly more work; it remains as the
--- independent implementation the tests compare 'alphaEquiv' against.
+-- Compared to 'alphaEquiv', this function renames every binder on both sides
+-- unconditionally, so it does strictly more work. It remains as an
+-- independent implementation of the same test.
 {-# INLINABLE alphaEquivRefreshed #-}
 alphaEquivRefreshed
   :: (Bitraversable sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder)
@@ -220,10 +220,10 @@ instance (Bitraversable sig, ZipMatchK sig, Foil.UnifiablePattern binder, Foil.S
 -- via unification of bound variables (via 'unifyNameBinders').
 --
 -- When two matching binders coincide, comparison continues with no work at
--- all; when they differ, the prescribed renaming is /threaded down the
+-- all. When they differ, the prescribed renaming is /threaded down the
 -- recursion/ (see 'alphaEquivEnv') and consulted at variables only, so
--- nothing is ever copied. An earlier version applied the renaming eagerly,
--- materialising a renamed copy of the remaining body at every mismatched
+-- nothing is ever copied. Applying the renaming eagerly instead would
+-- materialise a renamed copy of the remaining body at every mismatched
 -- binder, which is quadratic on a chain of them.
 {-# INLINABLE alphaEquiv #-}
 alphaEquiv
@@ -244,7 +244,7 @@ alphaEquiv _ _ _ = False
 -- | Same as 'alphaEquiv' but for scoped terms.
 --
 -- While the binders of the two sides coincide, this runs with no renaming
--- state at all; the first pair that differs switches to 'alphaEquivEnv',
+-- state at all. The first pair that differs switches to 'alphaEquivEnv',
 -- which threads the renamings down and switches back when they empty out.
 {-# INLINABLE alphaEquivScoped #-}
 alphaEquivScoped
@@ -306,9 +306,9 @@ alphaEquivScoped scope
 renamedId :: (Foil.NameBinder n a -> Foil.NameBinder n b) -> Foil.Name a -> Int
 renamedId rename = Foil.nameId . Foil.nameOf . rename . Foil.UnsafeNameBinder
 
--- | Bind the paired names of a binder pair: a pair whose names coincide
--- shadows both sides identically and is deleted from the environments; a
--- pair whose names differ binds both to one fresh level. Continues with
+-- | Bind the paired names of a binder pair. A pair whose names coincide
+-- shadows both sides identically and is deleted from the environments. A pair
+-- whose names differ binds both to one fresh level. Continues with
 -- 'alphaEquivEnv' on the bodies.
 bindPairs
   :: forall sig binder m l1 l2. (Bitraversable sig, ZipMatchK sig, Foil.Distinct m, Foil.UnifiablePattern binder, Foil.SinkableK binder)
@@ -324,23 +324,21 @@ bindPairs lvl envL envR pairs scope body1 body2 = case pairs of
 -- | The renaming-threading worker behind 'alphaEquiv': compare two terms
 -- under partial renamings of their names into shared /levels/.
 --
--- Each environment maps a raw name to the level of the binder pair that
--- bound it on the comparison path; a name outside its environment stands
--- for itself. A variable occurrence then compares as a level against a
--- level, or a raw name against a raw name, and the two can never be
--- conflated. This is what makes threading sound where applying a raw
--- renaming at the variables would not be: a renamed name could collide
--- with one that passes through unchanged and happens to share the target
--- spelling. (Levels are also why no capture check is needed: the eager
--- version had to refresh a binder whenever a renaming's target name would
--- be captured by it; a level is never a name, so there is nothing to
--- capture.)
+-- Each environment maps a raw name to the level of the binder pair that bound
+-- it on the comparison path, and a name outside its environment stands for
+-- itself. A variable occurrence then compares as a level against a level, or
+-- as a raw name against a raw name, and the two can never be conflated. This
+-- is what makes threading sound where applying a raw renaming at the variables
+-- would not be, since a renamed name could collide with one that passes
+-- through unchanged and happens to share the target spelling. Levels are also
+-- why no capture check is needed: a level is never a name, so there is nothing
+-- for a binder to capture.
 --
 -- A binder pair whose names coincide /deletes/ those names from both
--- environments -- the pair shadows both sides identically -- and when the
+-- environments, the pair shadowing both sides identically. When the
 -- environments empty out the comparison drops back to the stateless
--- 'alphaEquiv', so only the region of the terms below a mismatched binder
--- (and above the point where the mismatch is shadowed away) pays for the
+-- 'alphaEquiv', so only the region of the terms below a mismatched binder,
+-- and above the point where the mismatch is shadowed away, pays for the
 -- threading at all.
 --
 -- The indices of the two terms are deliberately independent, in the style
@@ -489,8 +487,8 @@ unsafeEqScopedAST (ScopedAST binder1 body1) (ScopedAST binder2 body2) = and
 -- conversion functions are generic in the raw term and only ever see it through
 -- @toSig@, so a source location, if the syntax has one, is not theirs to read.
 -- What they do know, and a caller checking names beforehand does not, is which
--- names were in scope /at the occurrence/ — including the binders passed on the
--- way down — which is what a \"did you mean\" needs.
+-- names were in scope /at the occurrence/, the binders passed on the way down
+-- included. That is what a \"did you mean\" needs.
 data UnresolvedName rawIdent = UnresolvedName
   { unresolvedIdent   :: rawIdent
     -- ^ The identifier that did not resolve.
@@ -548,14 +546,13 @@ unresolvedNames toSig fromRawPattern getScopedTerm = go
 -- that does not resolve.
 --
 -- One pass, short-circuiting at the first failure, so a term that resolves
--- costs no more than 'unsafeConvertToAST' does. The report is complete for that
--- one identifier — 'unresolvedInScope' is built where it fails and so is never
--- computed on the way through.
+-- costs no more than 'unsafeConvertToAST' does. The report is complete for
+-- that one identifier, since 'unresolvedInScope' is built where the conversion
+-- fails and is never computed on the way through.
 --
 -- A caller wanting /every/ unresolved identifier rather than the first pays a
--- second pass for it, with 'unresolvedNames'. That is the right way round: the
--- successful path should be fast, and a failure can afford to be walked again
--- for a better message.
+-- second pass for it, with 'unresolvedNames'. The successful path stays fast
+-- that way, and a failure can afford to be walked again for a better message.
 tryConvertToAST
   :: forall sig binder rawIdent rawTerm rawPattern rawScopedTerm n.
      (Foil.Distinct n, Bitraversable sig, Ord rawIdent,
@@ -888,9 +885,9 @@ supportOfScopedAST (ScopedAST binder body) =
 -- nothing can fail. @'Foil.Ext' m n@ comes back with it, so the term can be
 -- 'Foil.sink'ed to where it came from for free.
 --
--- Verifying a declared dependency — a @uses@ clause, a module's parameters —
--- is this plus a comparison: compute the scope a term really inhabits, and
--- check the declared one against it.
+-- Verifying a declared dependency, such as a @uses@ clause or a module's
+-- parameters, is this plus a comparison: compute the scope a term really
+-- inhabits, and check the declared one against it.
 withRelevantScope
   :: (Foil.Distinct n, Foil.CoSinkable binder, Bifoldable sig)
   => AST binder sig n
@@ -904,9 +901,9 @@ withRelevantScope term cont =
 -- | Unsink an AST from a larger scope to a smaller scope.
 --
 -- This is the a-posteriori form, and the one that has to be paid for: the
--- term's support is computed and compared against the scope. It succeeds or
--- fails; when it succeeds the term itself is untouched, since restriction of a
--- term that does inhabit the smaller scope is a coercion.
+-- term's support is computed and compared against the scope. When it succeeds
+-- the term itself is untouched, since restriction of a term that does inhabit
+-- the smaller scope is a coercion.
 unsinkAST
   :: (Foil.Distinct l, Foil.CoSinkable binder, Bifoldable sig)
   => Foil.Scope n -> AST binder sig l -> Maybe (AST binder sig n)

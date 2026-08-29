@@ -170,7 +170,7 @@ newtype RenderedTerm = RenderedTerm { renderedTerm :: String }
   deriving newtype (Eq, Show, IsString, NFData)
 
 -- | The prose of a failure, whatever layer it came from: a 'ParseError', a
--- 'TypeError', a 'LinkError' — by the time it reaches a result, it is only
+-- 'TypeError', or a 'LinkError'. By the time it reaches a result, it is only
 -- shown.
 type ErrorMessage = String
 
@@ -292,7 +292,7 @@ type Telescopes = Map Raw.VarIdent [Raw.Param]
 -- theory: @telescope Monoid include Semigroup (unit : A) …@ is the monoid
 -- block built on the semigroup one. Telescope includes are expanded first, in
 -- dependency order over the declared telescopes with a cycle reported by name
--- — the same shape as the build order over modules — so by the time a module
+-- in the same shape as the build order over modules, so by the time a module
 -- includes a telescope, the telescope is a plain parameter list. A refined
 -- include composes unchanged, since refining a parameter list yields a
 -- parameter list.
@@ -507,8 +507,8 @@ resultsOf cm = withCheckedModule cm (\_ _ results -> results)
 --
 -- Nothing here depends on any sibling: the module sees only what it imports,
 -- and its declarations take the names its stripe dictates, so two modules
--- with no import path between them can be checked in either order — or in
--- parallel — and produce identical results.
+-- with no import path between them can be checked in either order, or in
+-- parallel, and produce identical results.
 --
 -- A module's parameters are elaborated once here, before its declarations, so
 -- that a parameter block that does not resolve is reported once rather than
@@ -541,8 +541,8 @@ checkModule range env m =
       }
 
 -- | Check a module against the environment of an already checked one,
--- composing the evidence, so that a chain of modules — each importing the
--- previous — presents itself as one checked unit over the chain's base.
+-- composing the evidence, so that a chain of modules, each importing the
+-- previous, presents itself as one checked unit over the chain's base.
 -- The chain's results accumulate.
 --
 -- This is what lets two chains over a shared base be checked in parallel
@@ -557,11 +557,11 @@ checkModuleAfter range (CheckedModule ext env results) m =
     CheckedModule ext' env' results' ->
       CheckedModule (Blocks.composeExtWithin ext ext') env' (results <> results')
 
--- | Link two units checked independently against the same environment — two
+-- | Link two units checked independently against the same environment: two
 -- modules, or two chains folded with 'checkModuleAfter'.
 --
--- The two scopes share exactly the names of the common environment — the
--- amalgamated part, identified rather than renamed apart — and extend it
+-- The two scopes share exactly the names of the common environment, the
+-- amalgamated part, identified rather than renamed apart, and extend it
 -- only within their reservations, so the whole disjointness obligation is
 -- one sweep over two range sets ('Blocks.withDisjointUnion'). Each side's
 -- tables are then sunk into the union, and the total maps are merged with
@@ -639,7 +639,7 @@ data Two a = Two a a
 -- | Allocate a module's parameters, extending the environment with them.
 --
 -- Parameters are allocated in 'localRegion', below every stripe, so they can
--- never collide with a declaration's name — which is what used to force them
+-- never collide with a declaration's name, which is what used to force them
 -- to be re-allocated per declaration. They are still elaborated afresh for
 -- each declaration, but now only for simplicity: a parameter block is a few
 -- small terms, and re-elaborating it keeps 'withDecls' a plain fold.
@@ -785,8 +785,8 @@ notInScope (UnresolvedName x inScope) =
                <> "; did you mean " <> intercalate ", " (map prettyVarIdent hints) <> "?"
 
 -- | Everything a block of declarations is checked in: the module's
--- 'Blocks.Block' — the stripe its names are allocated from, paired with the
--- linking evidence — and the environment. The scope indices are the module's
+-- 'Blocks.Block' (the stripe its names are allocated from, paired with the
+-- linking evidence) and the environment. The scope indices are the module's
 -- starting scope @c@ and the current scope @n@.
 data ModuleEnv c n = ModuleEnv
   { moduleBlock :: Blocks.Block c n
@@ -908,8 +908,8 @@ data Repl c where
 beginRepl :: Foil.Distinct c => Foil.NameRange -> Env c -> Repl c
 beginRepl range env = Repl (ModuleEnv (Blocks.beginBlock range) env)
 
--- | Feed one input — any run of declarations, including @check@ and
--- @compute@ — to the session.
+-- | Feed one input to the session: any run of declarations, including
+-- @check@ and @compute@.
 --
 -- A redefinition allocates a new name and rebinds the spelling, GHCi-style:
 -- a term that already refers to the old binding keeps it, since withholding
