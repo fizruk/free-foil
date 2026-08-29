@@ -9,7 +9,7 @@
 -- [«Free Foil: Generating Efficient and Scope-Safe Abstract Syntax»](https://arxiv.org/abs/2405.16384).
 --
 -- Since the representation of scopes and substitutions
--- is either 'IntMap' or 'IntSet', many of the operations
+-- is either @IntMap@ or @IntSet@, many of the operations
 -- have a worst-case complexity of \(O(\min(n,W))\).
 -- This means that the operation can become linear in the size of the scope \(n\) with a
 -- maximum of \(W\), the number of bits in an 'Int' (32 or 64).

@@ -39,7 +39,7 @@
 -- [«Free Foil: Generating Efficient and Scope-Safe Abstract Syntax»](https://arxiv.org/abs/2405.16384).
 --
 -- Since the representation of scopes and substitutions
--- is either 'IntMap' or 'IntSet', many of the operations
+-- is either @IntMap@ or @IntSet@, many of the operations
 -- have a worst-case complexity of \(O(\min(n,W))\).
 -- This means that the operation can become linear in the size of the scope \(n\) with a
 -- maximum of \(W\), the number of bits in an 'Int' (32 or 64).
@@ -78,11 +78,11 @@ data S
           -- All other scopes are represented with type variables,
           -- bound in rank-2 polymophic functions like 'withFreshBinder'.
 
--- | A safe scope, indexed by a type-level scope index 'n'.
+-- | A safe scope, indexed by a type-level scope index @n@.
 newtype Scope (n :: S) = UnsafeScope RawScope
   deriving newtype NFData
 
--- | A name in a safe scope, indexed by a type-level scope index 'n'.
+-- | A name in a safe scope, indexed by a type-level scope index @n@.
 newtype Name (n :: S) = UnsafeName RawName
   deriving newtype (NFData, Eq, Ord, Show)
 
@@ -154,7 +154,7 @@ nameOf :: NameBinder n l -> Name l
 nameOf (UnsafeNameBinder name) = name
 
 -- | Extract names from a pattern.
--- This is a more flexible version of 'namesOf'.
+-- This is a more flexible version of 'nameOf'.
 namesOfPattern
   :: forall pattern n l. (Distinct n, CoSinkable pattern) => pattern n l -> [Name l]
 namesOfPattern pat = withPattern @_ @n
@@ -239,7 +239,7 @@ tryWithFreshIn range (UnsafeScope rawScope) cont =
 
 -- | Rename a given pattern into a fresh version of it to extend a given scope.
 --
--- This is similar to 'withRefreshPattern', except here renaming always takes place.
+-- This is similar to 'withRefreshedPattern', except here renaming always takes place.
 withFreshPattern
   :: (Distinct o, CoSinkable pattern, Sinkable e, InjectName e)
   => Scope o      -- ^ Ambient scope.
@@ -580,7 +580,7 @@ unsinkNameSet binder (UnsafeNameSet names) = UnsafeNameSet (names IntSet.\\ boun
 -- | Cut a scope down to a subset of its names.
 --
 -- The names must be names of @n@; nothing checks it, which is why this is the
--- only entry point and takes a 'NameSet' rather than a bare 'IntSet'. The
+-- only entry point and takes a 'NameSet' rather than a bare @IntSet@. The
 -- continuation gets @'Ext' m n@, so anything living in the smaller scope can be
 -- 'sink'ed back into the larger one for free, and @'Distinct' m@, since a subset
 -- of distinct names is distinct.
@@ -770,7 +770,8 @@ rawNameBinderList (NameBinderListCons binder binders) =
 -- | Keep only those binders of a list whose names are in a given set.
 --
 -- This is the /thinning/ of a chain of binders, and it is what turns a support
--- into a smaller chain in one step. The alternative, asking 'unsinkAST' at
+-- into a smaller chain in one step. The alternative, asking
+-- 'Control.Monad.Free.Foil.unsinkAST' at
 -- every binder whether the term can do without it, walks the term once per
 -- binder, whereas a caller can compute the support once and thin against it.
 --
