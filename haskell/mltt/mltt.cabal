@@ -5,7 +5,7 @@ cabal-version: 1.24
 -- see: https://github.com/sol/hpack
 
 name:           mltt
-version:        0.3.3
+version:        0.4.0
 synopsis:       A minimal Martin-Löf type theory implemented via Free Foil.
 description:    Please see the README on GitHub at <https://github.com/fizruk/free-foil#readme>
 category:       Language
@@ -69,7 +69,7 @@ library
     , deepseq
     , directory
     , filepath
-    , free-foil >=0.3.3
+    , free-foil >=0.4.0
     , kind-generics-th
     , template-haskell
     , text >=1.2.3.1
@@ -97,7 +97,7 @@ executable mltt
     , deepseq
     , directory
     , filepath
-    , free-foil >=0.3.3
+    , free-foil >=0.4.0
     , kind-generics-th
     , mltt
     , template-haskell
@@ -127,7 +127,7 @@ test-suite doctests
     , directory
     , doctest-parallel
     , filepath
-    , free-foil >=0.3.3
+    , free-foil >=0.4.0
     , kind-generics-th
     , mltt
     , template-haskell

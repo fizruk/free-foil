@@ -26,7 +26,7 @@
 --
 -- The notion of "entity" is the same in both modes: a top-level type signature
 -- (each name of a multi-name signature counts), a top-level @data@, @newtype@,
--- @type@, @class@ or @pattern@ declaration, and a class method. Constructors
+-- @type@, @class@, or @pattern@ declaration, and a class method. Constructors
 -- and record fields are left to their type.
 
 {-# LANGUAGE LambdaCase #-}
