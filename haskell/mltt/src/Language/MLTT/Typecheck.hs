@@ -35,8 +35,8 @@
 --   and the Pfenning recipe that chooses the judgement, are a separate line of
 --   work.
 -- * __No metavariables.__ No holes, no unification, no higher-order matching.
---   Generic second-order matching, higher-order preunification and pattern
---   unification over free foil are Kudasov, Starikov, Ivanov and Afliatonov's,
+--   Generic second-order matching, higher-order preunification, and pattern
+--   unification over free foil are Kudasov, Starikov, Ivanov, and Afliatonov's,
 --   UNIF 2025 (<https://hal.science/hal-05148806 HAL record>), implemented in
 --   <https://github.com/fedor-ivn/free-foil-hou free-foil-hou>.
 --
