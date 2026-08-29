@@ -1,0 +1,392 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-pragma">{-# LANGUAGE DeriveGeneric #-}</span><span>
+</span><span id="line-2"></span><span class="hs-comment">-- | Name resolution: which surface spellings denote which declarations.</span><span>
+</span><span id="line-3"></span><span class="hs-comment">--</span><span>
+</span><span id="line-4"></span><span class="hs-comment">-- Nothing in this module mentions a scope, a 'Control.Monad.Foil.Name', or the</span><span>
+</span><span id="line-5"></span><span class="hs-comment">-- kind @S@, and that is the point. Resolution decides /which declaration/ an</span><span>
+</span><span id="line-6"></span><span class="hs-comment">-- identifier denotes; the foil decides /which index/ a binder has. The first</span><span>
+</span><span id="line-7"></span><span class="hs-comment">-- runs before the second and cannot know its answers, so the two are separated</span><span>
+</span><span id="line-8"></span><span class="hs-comment">-- here by a type parameter: a 'Table' maps a spelling to whatever the</span><span>
+</span><span id="line-9"></span><span class="hs-comment">-- elaborator wants to hand back, and this module never looks inside it.</span><span>
+</span><span id="line-10"></span><span class="hs-comment">--</span><span>
+</span><span id="line-11"></span><span class="hs-comment">-- The practical consequence for this demo is that restricting what a client can</span><span>
+</span><span id="line-12"></span><span class="hs-comment">-- name (@private@, and what an @import@ brings in) is a computation on</span><span>
+</span><span id="line-13"></span><span class="hs-comment">-- 'Table' alone. It never touches a term, so a private helper stays perfectly</span><span>
+</span><span id="line-14"></span><span class="hs-comment">-- reducible while being unnameable. That is the distinction between what can be</span><span>
+</span><span id="line-15"></span><span class="hs-comment">-- /named/ and what can be /reduced/, and it is why narrowing needs no support</span><span>
+</span><span id="line-16"></span><span class="hs-comment">-- from the library at all.</span><span>
+</span><span id="line-17"></span><span class="hs-comment">--</span><span>
+</span><span id="line-18"></span><span class="hs-comment">-- == Influences</span><span>
+</span><span id="line-19"></span><span class="hs-comment">--</span><span>
+</span><span id="line-20"></span><span class="hs-comment">-- * Separating resolution from everything downstream of it, and treating a</span><span>
+</span><span id="line-21"></span><span class="hs-comment">--   module as a construct that is named, encapsulates declarations and can be</span><span>
+</span><span id="line-22"></span><span class="hs-comment">--   imported rather than as a primitive, follows N&#233;ron, Tolmach, Visser and</span><span>
+</span><span id="line-23"></span><span class="hs-comment">--   Wachsmuth's</span><span>
+</span><span id="line-24"></span><span class="hs-comment">--   &lt;https://eelcovisser.org/publications/2015/NeronTVW15.pdf A Theory of Name Resolution&gt;</span><span>
+</span><span id="line-25"></span><span class="hs-comment">--   (ESOP 2015). None of the scope-graph machinery is reproduced here; the</span><span>
+</span><span id="line-26"></span><span class="hs-comment">--   two-stage split is.</span><span>
+</span><span id="line-27"></span><span class="hs-comment">-- * 'visibleAt' and 'openNamespace' follow Lean 4's</span><span>
+</span><span id="line-28"></span><span class="hs-comment">--   &lt;https://github.com/leanprover/lean4/blob/master/src/Lean/ResolveName.lean ResolveName&gt;</span><span>
+</span><span id="line-29"></span><span class="hs-comment">--   (@resolveUsingNamespace@, @resolveOpenDecls@), with one simplification:</span><span>
+</span><span id="line-30"></span><span class="hs-comment">--   Lean collects every candidate and reports an ambiguity, whereas here a</span><span>
+</span><span id="line-31"></span><span class="hs-comment">--   nearer declaration silently shadows a farther one.</span><span>
+</span><span id="line-32"></span><span class="hs-comment">-- * Restricting the resolver's table rather than the environment is Jon</span><span>
+</span><span id="line-33"></span><span class="hs-comment">--   Sterling's, from the &lt;https://jonmsterling.com/01HC/ Pterodactyl worklog&gt;,</span><span>
+</span><span id="line-34"></span><span class="hs-comment">--   where @NarrowToUnit@ runs before @ElaborateUnit@.</span><span>
+</span><span id="line-35"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Language.MLTT.Resolve</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-36"></span><span>
+</span><span id="line-37"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.Binary</span></span><span>              </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Binary</span></span><span class="hs-special">)</span><span>
+</span><span id="line-38"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.List</span></span><span>                </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">inits</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">intercalate</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">stripPrefix</span></span><span class="hs-special">)</span><span>
+</span><span id="line-39"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.Map</span></span><span>                 </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Map</span></span><span class="hs-special">)</span><span>
+</span><span id="line-40"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.Map</span></span><span>                 </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Map</span></span><span>
+</span><span id="line-41"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.Maybe</span></span><span>               </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">mapMaybe</span></span><span class="hs-special">)</span><span>
+</span><span id="line-42"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">GHC.Generics</span></span><span>             </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Generic</span></span><span class="hs-special">)</span><span>
+</span><span id="line-43"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html"><span class="hs-identifier">Language.MLTT.Syntax.Abs</span></a></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Raw</span></span><span>
+</span><span id="line-44"></span><span>
+</span><span id="line-45"></span><span class="hs-comment">-- $setup</span><span>
+</span><span id="line-46"></span><span class="hs-comment">-- &gt;&gt;&gt; import qualified Data.Map as Map</span><span>
+</span><span id="line-47"></span><span class="hs-comment">-- &gt;&gt;&gt; import qualified Language.MLTT.Syntax.Abs as Raw</span><span>
+</span><span id="line-48"></span><span class="hs-comment">-- &gt;&gt;&gt; let declared = Map.fromList [(Raw.VarIdent k, k) | k &lt;- [&quot;Nat.zero&quot;, &quot;Nat.Extra.double&quot;, &quot;Bool.true&quot;]]</span><span>
+</span><span id="line-49"></span><span>
+</span><span id="line-50"></span><span class="annot"><span class="hs-comment">-- * Paths</span></span><span>
+</span><span id="line-51"></span><span>
+</span><span id="line-52"></span><span class="hs-comment">-- | A namespace path, outermost segment first. The empty path is the top level</span><span>
+</span><span id="line-53"></span><span class="hs-comment">-- of a module.</span><span>
+</span><span id="line-54"></span><span class="hs-comment">--</span><span>
+</span><span id="line-55"></span><span class="hs-comment">-- A path has nothing to do with the file a declaration lives in: @module</span><span>
+</span><span id="line-56"></span><span class="hs-comment">-- Data.Nat@ may declare @namespace Peano@, and importers then say</span><span>
+</span><span id="line-57"></span><span class="hs-comment">-- @Peano.zero@. The module name orders the build; the namespace qualifies the</span><span>
+</span><span id="line-58"></span><span class="hs-comment">-- name.</span><span>
+</span><span id="line-59"></span><span class="hs-keyword">type</span><span> </span><span id="Path"><span class="annot"><a href="Language.MLTT.Resolve.html#Path"><span class="hs-identifier hs-var">Path</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span class="hs-special">]</span><span>
+</span><span id="line-60"></span><span>
+</span><span id="line-61"></span><span class="hs-comment">-- | Split a dotted identifier into its segments.</span><span>
+</span><span id="line-62"></span><span class="hs-comment">--</span><span>
+</span><span id="line-63"></span><span class="hs-comment">-- &gt;&gt;&gt; segments (Raw.VarIdent &quot;Data.Nat.zero&quot;)</span><span>
+</span><span id="line-64"></span><span class="hs-comment">-- [&quot;Data&quot;,&quot;Nat&quot;,&quot;zero&quot;]</span><span>
+</span><span id="line-65"></span><span class="annot"><a href="Language.MLTT.Resolve.html#segments"><span class="hs-identifier hs-type">segments</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span class="hs-special">]</span><span>
+</span><span id="line-66"></span><span id="segments"><span class="annot"><span class="annottext">segments :: VarIdent -&gt; [String]
+</span><a href="Language.MLTT.Resolve.html#segments"><span class="hs-identifier hs-var hs-var">segments</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span> </span><span id="local-6989586621679465990"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679465990"><span class="hs-identifier hs-var">x</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">String -&gt; [String]
+</span><a href="#local-6989586621679465991"><span class="hs-identifier hs-var">split</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679465990"><span class="hs-identifier hs-var">x</span></a></span><span>
+</span><span id="line-67"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-68"></span><span>    </span><span id="local-6989586621679465991"><span class="annot"><span class="annottext">split :: String -&gt; [String]
+</span><a href="#local-6989586621679465991"><span class="hs-identifier hs-var hs-var">split</span></a></span></span><span> </span><span id="local-6989586621679465993"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679465993"><span class="hs-identifier hs-var">s</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">case</span><span> </span><span class="annot"><span class="annottext">(Char -&gt; Bool) -&gt; String -&gt; (String, String)
+forall a. (a -&gt; Bool) -&gt; [a] -&gt; ([a], [a])
+</span><span class="hs-identifier hs-var">break</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Char -&gt; Char -&gt; Bool
+forall a. Eq a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">==</span></span><span> </span><span class="annot"><span class="annottext">Char
+</span><span class="hs-char">'.'</span></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679465993"><span class="hs-identifier hs-var">s</span></a></span><span> </span><span class="hs-keyword">of</span><span>
+</span><span id="line-69"></span><span>      </span><span class="hs-special">(</span><span id="local-6989586621679465995"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679465995"><span class="hs-identifier hs-var">seg</span></a></span></span><span class="hs-special">,</span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span class="hs-special">)</span><span>       </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679465995"><span class="hs-identifier hs-var">seg</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-70"></span><span>      </span><span class="hs-special">(</span><span id="local-6989586621679465996"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679465996"><span class="hs-identifier hs-var">seg</span></a></span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Char
+</span><span class="hs-identifier">_</span></span><span> </span><span class="annot"><span class="hs-glyph hs-type">:</span></span><span> </span><span id="local-6989586621679465997"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679465997"><span class="hs-identifier hs-var">rest</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679465996"><span class="hs-identifier hs-var">seg</span></a></span><span> </span><span class="annot"><span class="annottext">String -&gt; [String] -&gt; [String]
+forall a. a -&gt; [a] -&gt; [a]
+</span><span class="hs-glyph hs-var">:</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; [String]
+</span><a href="#local-6989586621679465991"><span class="hs-identifier hs-var">split</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679465997"><span class="hs-identifier hs-var">rest</span></a></span><span>
+</span><span id="line-71"></span><span>
+</span><span id="line-72"></span><span class="hs-comment">-- | Show a raw identifier as it was written.</span><span>
+</span><span id="line-73"></span><span class="hs-comment">--</span><span>
+</span><span id="line-74"></span><span class="hs-comment">-- &gt;&gt;&gt; prettyVarIdent (Raw.VarIdent &quot;Data.Nat.zero&quot;)</span><span>
+</span><span id="line-75"></span><span class="hs-comment">-- &quot;Data.Nat.zero&quot;</span><span>
+</span><span id="line-76"></span><span class="annot"><a href="Language.MLTT.Resolve.html#prettyVarIdent"><span class="hs-identifier hs-type">prettyVarIdent</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span>
+</span><span id="line-77"></span><span id="prettyVarIdent"><span class="annot"><span class="annottext">prettyVarIdent :: VarIdent -&gt; String
+</span><a href="Language.MLTT.Resolve.html#prettyVarIdent"><span class="hs-identifier hs-var hs-var">prettyVarIdent</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span> </span><span id="local-6989586621679465999"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679465999"><span class="hs-identifier hs-var">x</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679465999"><span class="hs-identifier hs-var">x</span></a></span><span>
+</span><span id="line-78"></span><span>
+</span><span id="line-79"></span><span class="hs-comment">-- | Join segments back into an identifier.</span><span>
+</span><span id="line-80"></span><span class="hs-comment">--</span><span>
+</span><span id="line-81"></span><span class="hs-comment">-- &gt;&gt;&gt; joinSegments [&quot;Data&quot;,&quot;Nat&quot;,&quot;zero&quot;]</span><span>
+</span><span id="line-82"></span><span class="hs-comment">-- VarIdent &quot;Data.Nat.zero&quot;</span><span>
+</span><span id="line-83"></span><span class="annot"><a href="Language.MLTT.Resolve.html#joinSegments"><span class="hs-identifier hs-type">joinSegments</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span>
+</span><span id="line-84"></span><span id="joinSegments"><span class="annot"><span class="annottext">joinSegments :: [String] -&gt; VarIdent
+</span><a href="Language.MLTT.Resolve.html#joinSegments"><span class="hs-identifier hs-var hs-var">joinSegments</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">String -&gt; VarIdent
+</span><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-var">Raw.VarIdent</span></a></span><span> </span><span class="annot"><span class="annottext">(String -&gt; VarIdent)
+-&gt; ([String] -&gt; String) -&gt; [String] -&gt; VarIdent
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; [String] -&gt; String
+forall a. [a] -&gt; [[a]] -&gt; [a]
+</span><span class="hs-identifier hs-var">intercalate</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;.&quot;</span></span><span>
+</span><span id="line-85"></span><span>
+</span><span id="line-86"></span><span class="hs-comment">-- | Qualify a name by a namespace path.</span><span>
+</span><span id="line-87"></span><span class="hs-comment">--</span><span>
+</span><span id="line-88"></span><span class="hs-comment">-- &gt;&gt;&gt; qualify [&quot;Data&quot;,&quot;Nat&quot;] (Raw.VarIdent &quot;zero&quot;)</span><span>
+</span><span id="line-89"></span><span class="hs-comment">-- VarIdent &quot;Data.Nat.zero&quot;</span><span>
+</span><span id="line-90"></span><span class="hs-comment">-- &gt;&gt;&gt; qualify [] (Raw.VarIdent &quot;zero&quot;)</span><span>
+</span><span id="line-91"></span><span class="hs-comment">-- VarIdent &quot;zero&quot;</span><span>
+</span><span id="line-92"></span><span class="annot"><a href="Language.MLTT.Resolve.html#qualify"><span class="hs-identifier hs-type">qualify</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.MLTT.Resolve.html#Path"><span class="hs-identifier hs-type">Path</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span>
+</span><span id="line-93"></span><span id="qualify"><span class="annot"><span class="annottext">qualify :: [String] -&gt; VarIdent -&gt; VarIdent
+</span><a href="Language.MLTT.Resolve.html#qualify"><span class="hs-identifier hs-var hs-var">qualify</span></a></span></span><span> </span><span id="local-6989586621679466003"><span class="annot"><span class="annottext">[String]
+</span><a href="#local-6989586621679466003"><span class="hs-identifier hs-var">path</span></a></span></span><span> </span><span id="local-6989586621679466004"><span class="annot"><span class="annottext">VarIdent
+</span><a href="#local-6989586621679466004"><span class="hs-identifier hs-var">name</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">[String] -&gt; VarIdent
+</span><a href="Language.MLTT.Resolve.html#joinSegments"><span class="hs-identifier hs-var">joinSegments</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[String]
+</span><a href="#local-6989586621679466003"><span class="hs-identifier hs-var">path</span></a></span><span> </span><span class="annot"><span class="annottext">[String] -&gt; [String] -&gt; [String]
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">VarIdent -&gt; [String]
+</span><a href="Language.MLTT.Resolve.html#segments"><span class="hs-identifier hs-var">segments</span></a></span><span> </span><span class="annot"><span class="annottext">VarIdent
+</span><a href="#local-6989586621679466004"><span class="hs-identifier hs-var">name</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-94"></span><span>
+</span><span id="line-95"></span><span class="annot"><span class="hs-comment">-- * Name tables</span></span><span>
+</span><span id="line-96"></span><span>
+</span><span id="line-97"></span><span class="hs-comment">-- | Every spelling nameable in some context, and what it denotes.</span><span>
+</span><span id="line-98"></span><span class="hs-comment">--</span><span>
+</span><span id="line-99"></span><span class="hs-comment">-- The type of what it denotes is a parameter: the elaborator uses this at</span><span>
+</span><span id="line-100"></span><span class="hs-comment">-- @'Control.Monad.Foil.Name' n@, and the doctests here use it at 'String'.</span><span>
+</span><span id="line-101"></span><span class="hs-keyword">type</span><span> </span><span id="Table"><span class="annot"><a href="Language.MLTT.Resolve.html#Table"><span class="hs-identifier hs-var">Table</span></a></span></span><span> </span><span id="local-6989586621679466005"><span class="annot"><a href="#local-6989586621679466005"><span class="hs-identifier hs-type">v</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Map</span></span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679466005"><span class="hs-identifier hs-type">v</span></a></span><span>
+</span><span id="line-102"></span><span>
+</span><span id="line-103"></span><span class="hs-comment">-- | Which spellings a table of /fully qualified/ names offers at a given</span><span>
+</span><span id="line-104"></span><span class="hs-comment">-- namespace path.</span><span>
+</span><span id="line-105"></span><span class="hs-comment">--</span><span>
+</span><span id="line-106"></span><span class="hs-comment">-- A declaration @A.B.f@ is nameable as @f@ from inside @A.B@, as @B.f@ from</span><span>
+</span><span id="line-107"></span><span class="hs-comment">-- inside @A@, and as @A.B.f@ from anywhere. The rule is one line: strip any</span><span>
+</span><span id="line-108"></span><span class="hs-comment">-- prefix of the current path. Longer prefixes are applied later and so win, so</span><span>
+</span><span id="line-109"></span><span class="hs-comment">-- a nearer declaration shadows a farther one of the same spelling.</span><span>
+</span><span id="line-110"></span><span class="hs-comment">--</span><span>
+</span><span id="line-111"></span><span class="hs-comment">-- &gt;&gt;&gt; Map.keys (visibleAt [] declared)</span><span>
+</span><span id="line-112"></span><span class="hs-comment">-- [VarIdent &quot;Bool.true&quot;,VarIdent &quot;Nat.Extra.double&quot;,VarIdent &quot;Nat.zero&quot;]</span><span>
+</span><span id="line-113"></span><span class="hs-comment">-- &gt;&gt;&gt; Map.keys (visibleAt [&quot;Nat&quot;] declared)</span><span>
+</span><span id="line-114"></span><span class="hs-comment">-- [VarIdent &quot;Bool.true&quot;,VarIdent &quot;Extra.double&quot;,VarIdent &quot;Nat.Extra.double&quot;,VarIdent &quot;Nat.zero&quot;,VarIdent &quot;zero&quot;]</span><span>
+</span><span id="line-115"></span><span class="hs-comment">-- &gt;&gt;&gt; Map.keys (visibleAt [&quot;Nat&quot;,&quot;Extra&quot;] declared)</span><span>
+</span><span id="line-116"></span><span class="hs-comment">-- [VarIdent &quot;Bool.true&quot;,VarIdent &quot;Extra.double&quot;,VarIdent &quot;Nat.Extra.double&quot;,VarIdent &quot;Nat.zero&quot;,VarIdent &quot;double&quot;,VarIdent &quot;zero&quot;]</span><span>
+</span><span id="line-117"></span><span id="local-6989586621679465912"><span class="annot"><a href="Language.MLTT.Resolve.html#visibleAt"><span class="hs-identifier hs-type">visibleAt</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.MLTT.Resolve.html#Path"><span class="hs-identifier hs-type">Path</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Resolve.html#Table"><span class="hs-identifier hs-type">Table</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679465912"><span class="hs-identifier hs-type">v</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Resolve.html#Table"><span class="hs-identifier hs-type">Table</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679465912"><span class="hs-identifier hs-type">v</span></a></span></span><span>
+</span><span id="line-118"></span><span id="visibleAt"><span class="annot"><span class="annottext">visibleAt :: forall v. [String] -&gt; Table v -&gt; Table v
+</span><a href="Language.MLTT.Resolve.html#visibleAt"><span class="hs-identifier hs-var hs-var">visibleAt</span></a></span></span><span> </span><span id="local-6989586621679466011"><span class="annot"><span class="annottext">[String]
+</span><a href="#local-6989586621679466011"><span class="hs-identifier hs-var">path</span></a></span></span><span> </span><span id="local-6989586621679466012"><span class="annot"><span class="annottext">Table v
+</span><a href="#local-6989586621679466012"><span class="hs-identifier hs-var">declared</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">[(VarIdent, v)] -&gt; Table v
+forall k a. Ord k =&gt; [(k, a)] -&gt; Map k a
+</span><span class="hs-identifier hs-var">Map.fromList</span></span><span>
+</span><span id="line-119"></span><span>  </span><span class="hs-special">[</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[String] -&gt; VarIdent
+</span><a href="Language.MLTT.Resolve.html#joinSegments"><span class="hs-identifier hs-var">joinSegments</span></a></span><span> </span><span class="annot"><span class="annottext">[String]
+</span><a href="#local-6989586621679466014"><span class="hs-identifier hs-var">suffix</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">v
+</span><a href="#local-6989586621679466015"><span class="hs-identifier hs-var">v</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-120"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="local-6989586621679466016"><span class="annot"><span class="annottext">[String]
+</span><a href="#local-6989586621679466016"><span class="hs-identifier hs-var">prefix</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">[String] -&gt; [[String]]
+forall a. [a] -&gt; [[a]]
+</span><span class="hs-identifier hs-var">inits</span></span><span> </span><span class="annot"><span class="annottext">[String]
+</span><a href="#local-6989586621679466011"><span class="hs-identifier hs-var">path</span></a></span><span>                       </span><span class="hs-comment">-- shortest first, so nearest wins</span><span>
+</span><span id="line-121"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679466017"><span class="annot"><span class="annottext">VarIdent
+</span><a href="#local-6989586621679466017"><span class="hs-identifier hs-var">name</span></a></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679466015"><span class="annot"><span class="annottext">v
+</span><a href="#local-6989586621679466015"><span class="hs-identifier hs-var">v</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Table v -&gt; [(VarIdent, v)]
+forall k a. Map k a -&gt; [(k, a)]
+</span><span class="hs-identifier hs-var">Map.toList</span></span><span> </span><span class="annot"><span class="annottext">Table v
+</span><a href="#local-6989586621679466012"><span class="hs-identifier hs-var">declared</span></a></span><span>
+</span><span id="line-122"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Just</span></span><span> </span><span id="local-6989586621679466014"><span class="annot"><span class="annottext">[String]
+</span><a href="#local-6989586621679466014"><span class="hs-identifier hs-var">suffix</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="hs-special">[</span><span class="annot"><span class="annottext">[String] -&gt; [String] -&gt; Maybe [String]
+forall a. Eq a =&gt; [a] -&gt; [a] -&gt; Maybe [a]
+</span><span class="hs-identifier hs-var">stripPrefix</span></span><span> </span><span class="annot"><span class="annottext">[String]
+</span><a href="#local-6989586621679466016"><span class="hs-identifier hs-var">prefix</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">VarIdent -&gt; [String]
+</span><a href="Language.MLTT.Resolve.html#segments"><span class="hs-identifier hs-var">segments</span></a></span><span> </span><span class="annot"><span class="annottext">VarIdent
+</span><a href="#local-6989586621679466017"><span class="hs-identifier hs-var">name</span></a></span><span class="hs-special">)</span><span class="hs-special">]</span><span>
+</span><span id="line-123"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Bool -&gt; Bool
+</span><span class="hs-identifier hs-var">not</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[String] -&gt; Bool
+forall a. [a] -&gt; Bool
+forall (t :: * -&gt; *) a. Foldable t =&gt; t a -&gt; Bool
+</span><span class="hs-identifier hs-var">null</span></span><span> </span><span class="annot"><span class="annottext">[String]
+</span><a href="#local-6989586621679466014"><span class="hs-identifier hs-var">suffix</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-124"></span><span>  </span><span class="hs-special">]</span><span>
+</span><span id="line-125"></span><span>
+</span><span id="line-126"></span><span class="hs-comment">-- | Bring the contents of a namespace into scope unqualified.</span><span>
+</span><span id="line-127"></span><span class="hs-comment">--</span><span>
+</span><span id="line-128"></span><span class="hs-comment">-- Every spelling starting with the given prefix gains a second spelling with</span><span>
+</span><span id="line-129"></span><span class="hs-comment">-- that prefix stripped. The qualified spellings stay, so @open Nat@ never</span><span>
+</span><span id="line-130"></span><span class="hs-comment">-- hides @Nat.zero@.</span><span>
+</span><span id="line-131"></span><span class="hs-comment">--</span><span>
+</span><span id="line-132"></span><span class="hs-comment">-- &gt;&gt;&gt; Map.keys (openNamespace (Raw.VarIdent &quot;Nat&quot;) (visibleAt [] declared))</span><span>
+</span><span id="line-133"></span><span class="hs-comment">-- [VarIdent &quot;Bool.true&quot;,VarIdent &quot;Extra.double&quot;,VarIdent &quot;Nat.Extra.double&quot;,VarIdent &quot;Nat.zero&quot;,VarIdent &quot;zero&quot;]</span><span>
+</span><span id="line-134"></span><span class="hs-comment">--</span><span>
+</span><span id="line-135"></span><span class="hs-comment">-- Opening a namespace that does not exist brings in nothing, and is not an</span><span>
+</span><span id="line-136"></span><span class="hs-comment">-- error:</span><span>
+</span><span id="line-137"></span><span class="hs-comment">--</span><span>
+</span><span id="line-138"></span><span class="hs-comment">-- &gt;&gt;&gt; Map.keys (openNamespace (Raw.VarIdent &quot;Missing&quot;) declared) == Map.keys declared</span><span>
+</span><span id="line-139"></span><span class="hs-comment">-- True</span><span>
+</span><span id="line-140"></span><span id="local-6989586621679465924"><span class="annot"><a href="Language.MLTT.Resolve.html#openNamespace"><span class="hs-identifier hs-type">openNamespace</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Resolve.html#Table"><span class="hs-identifier hs-type">Table</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679465924"><span class="hs-identifier hs-type">v</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Resolve.html#Table"><span class="hs-identifier hs-type">Table</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679465924"><span class="hs-identifier hs-type">v</span></a></span></span><span>
+</span><span id="line-141"></span><span id="openNamespace"><span class="annot"><span class="annottext">openNamespace :: forall v. VarIdent -&gt; Table v -&gt; Table v
+</span><a href="Language.MLTT.Resolve.html#openNamespace"><span class="hs-identifier hs-var hs-var">openNamespace</span></a></span></span><span> </span><span id="local-6989586621679466023"><span class="annot"><span class="annottext">VarIdent
+</span><a href="#local-6989586621679466023"><span class="hs-identifier hs-var">prefix</span></a></span></span><span> </span><span id="local-6989586621679466024"><span class="annot"><span class="annottext">Table v
+</span><a href="#local-6989586621679466024"><span class="hs-identifier hs-var">t</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Table v -&gt; Table v -&gt; Table v
+forall k a. Ord k =&gt; Map k a -&gt; Map k a -&gt; Map k a
+</span><span class="hs-identifier hs-var">Map.union</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[(VarIdent, v)] -&gt; Table v
+forall k a. Ord k =&gt; [(k, a)] -&gt; Map k a
+</span><span class="hs-identifier hs-var">Map.fromList</span></span><span> </span><span class="annot"><span class="annottext">[(VarIdent, v)]
+</span><a href="#local-6989586621679466026"><span class="hs-identifier hs-var">opened</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">Table v
+</span><a href="#local-6989586621679466024"><span class="hs-identifier hs-var">t</span></a></span><span>
+</span><span id="line-142"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-143"></span><span>    </span><span id="local-6989586621679466027"><span class="annot"><span class="annottext">prefixSegments :: [String]
+</span><a href="#local-6989586621679466027"><span class="hs-identifier hs-var hs-var">prefixSegments</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">VarIdent -&gt; [String]
+</span><a href="Language.MLTT.Resolve.html#segments"><span class="hs-identifier hs-var">segments</span></a></span><span> </span><span class="annot"><span class="annottext">VarIdent
+</span><a href="#local-6989586621679466023"><span class="hs-identifier hs-var">prefix</span></a></span><span>
+</span><span id="line-144"></span><span>    </span><span id="local-6989586621679466026"><span class="annot"><span class="annottext">opened :: [(VarIdent, v)]
+</span><a href="#local-6989586621679466026"><span class="hs-identifier hs-var hs-var">opened</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">((VarIdent, v) -&gt; Maybe (VarIdent, v))
+-&gt; [(VarIdent, v)] -&gt; [(VarIdent, v)]
+forall a b. (a -&gt; Maybe b) -&gt; [a] -&gt; [b]
+</span><span class="hs-identifier hs-var">mapMaybe</span></span><span> </span><span class="annot"><span class="annottext">(VarIdent, v) -&gt; Maybe (VarIdent, v)
+forall {b}. (VarIdent, b) -&gt; Maybe (VarIdent, b)
+</span><a href="#local-6989586621679466028"><span class="hs-identifier hs-var">strip</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Table v -&gt; [(VarIdent, v)]
+forall k a. Map k a -&gt; [(k, a)]
+</span><span class="hs-identifier hs-var">Map.toList</span></span><span> </span><span class="annot"><span class="annottext">Table v
+</span><a href="#local-6989586621679466024"><span class="hs-identifier hs-var">t</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-145"></span><span>    </span><span id="local-6989586621679466028"><span class="annot"><span class="annottext">strip :: (VarIdent, b) -&gt; Maybe (VarIdent, b)
+</span><a href="#local-6989586621679466028"><span class="hs-identifier hs-var hs-var">strip</span></a></span></span><span> </span><span class="hs-special">(</span><span id="local-6989586621679466033"><span class="annot"><span class="annottext">VarIdent
+</span><a href="#local-6989586621679466033"><span class="hs-identifier hs-var">name</span></a></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679466034"><span class="annot"><span class="annottext">b
+</span><a href="#local-6989586621679466034"><span class="hs-identifier hs-var">v</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-146"></span><span>      </span><span id="local-6989586621679466035"><span class="annot"><span class="annottext">[String]
+</span><a href="#local-6989586621679466035"><span class="hs-identifier hs-var">suffix</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">[String] -&gt; [String] -&gt; Maybe [String]
+forall a. Eq a =&gt; [a] -&gt; [a] -&gt; Maybe [a]
+</span><span class="hs-identifier hs-var">stripPrefix</span></span><span> </span><span class="annot"><span class="annottext">[String]
+</span><a href="#local-6989586621679466027"><span class="hs-identifier hs-var">prefixSegments</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">VarIdent -&gt; [String]
+</span><a href="Language.MLTT.Resolve.html#segments"><span class="hs-identifier hs-var">segments</span></a></span><span> </span><span class="annot"><span class="annottext">VarIdent
+</span><a href="#local-6989586621679466033"><span class="hs-identifier hs-var">name</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-147"></span><span>      </span><span class="hs-keyword">case</span><span> </span><span class="annot"><span class="annottext">[String]
+</span><a href="#local-6989586621679466035"><span class="hs-identifier hs-var">suffix</span></a></span><span> </span><span class="hs-keyword">of</span><span>
+</span><span id="line-148"></span><span>        </span><span class="hs-special">[</span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Maybe (VarIdent, b)
+forall a. Maybe a
+</span><span class="hs-identifier hs-var">Nothing</span></span><span>
+</span><span id="line-149"></span><span>        </span><span class="annot"><span class="annottext">[String]
+</span><span class="hs-identifier">_</span></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">(VarIdent, b) -&gt; Maybe (VarIdent, b)
+forall a. a -&gt; Maybe a
+</span><span class="hs-identifier hs-var">Just</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[String] -&gt; VarIdent
+</span><a href="Language.MLTT.Resolve.html#joinSegments"><span class="hs-identifier hs-var">joinSegments</span></a></span><span> </span><span class="annot"><span class="annottext">[String]
+</span><a href="#local-6989586621679466035"><span class="hs-identifier hs-var">suffix</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">b
+</span><a href="#local-6989586621679466034"><span class="hs-identifier hs-var">v</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-150"></span><span>
+</span><span id="line-151"></span><span class="annot"><span class="hs-comment">-- * Visibility</span></span><span>
+</span><span id="line-152"></span><span>
+</span><span id="line-153"></span><span class="annot"><span class="hs-comment">-- | Whether a declaration leaves the module that declares it.</span></span><span>
+</span><span id="line-154"></span><span class="hs-keyword">data</span><span> </span><span id="Visibility"><span class="annot"><a href="Language.MLTT.Resolve.html#Visibility"><span class="hs-identifier hs-var">Visibility</span></a></span></span><span>
+</span><span id="line-155"></span><span>  </span><span class="hs-glyph">=</span><span> </span><span id="Public"><span class="annot"><a href="Language.MLTT.Resolve.html#Public"><span class="hs-identifier hs-var">Public</span></a></span></span><span>
+</span><span id="line-156"></span><span>    </span><span class="annot"><span class="hs-comment">-- ^ Exported: an importing module may name it.</span></span><span>
+</span><span id="line-157"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="Private"><span class="annot"><a href="Language.MLTT.Resolve.html#Private"><span class="hs-identifier hs-var">Private</span></a></span></span><span>
+</span><span id="line-158"></span><span>    </span><span class="hs-comment">-- ^ Not exported. An importing module cannot /name/ it, and can still</span><span>
+</span><span id="line-159"></span><span>    </span><span class="hs-comment">-- /reduce/ through it, since withholding a spelling touches no term.</span><span>
+</span><span id="line-160"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679466039"><span id="local-6989586621679466041"><span class="annot"><span class="annottext">Visibility -&gt; Visibility -&gt; Bool
+(Visibility -&gt; Visibility -&gt; Bool)
+-&gt; (Visibility -&gt; Visibility -&gt; Bool) -&gt; Eq Visibility
+forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
+$c== :: Visibility -&gt; Visibility -&gt; Bool
+== :: Visibility -&gt; Visibility -&gt; Bool
+$c/= :: Visibility -&gt; Visibility -&gt; Bool
+/= :: Visibility -&gt; Visibility -&gt; Bool
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679466046"><span id="local-6989586621679466048"><span id="local-6989586621679466052"><span class="annot"><span class="annottext">Int -&gt; Visibility -&gt; ShowS
+[Visibility] -&gt; ShowS
+Visibility -&gt; String
+(Int -&gt; Visibility -&gt; ShowS)
+-&gt; (Visibility -&gt; String)
+-&gt; ([Visibility] -&gt; ShowS)
+-&gt; Show Visibility
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; Visibility -&gt; ShowS
+showsPrec :: Int -&gt; Visibility -&gt; ShowS
+$cshow :: Visibility -&gt; String
+show :: Visibility -&gt; String
+$cshowList :: [Visibility] -&gt; ShowS
+showList :: [Visibility] -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679466056"><span id="local-6989586621679466060"><span id="local-6989586621679466063"><span id="local-6989586621679466068"><span class="annot"><span class="annottext">ReadPrec [Visibility]
+ReadPrec Visibility
+Int -&gt; ReadS Visibility
+ReadS [Visibility]
+(Int -&gt; ReadS Visibility)
+-&gt; ReadS [Visibility]
+-&gt; ReadPrec Visibility
+-&gt; ReadPrec [Visibility]
+-&gt; Read Visibility
+forall a.
+(Int -&gt; ReadS a)
+-&gt; ReadS [a] -&gt; ReadPrec a -&gt; ReadPrec [a] -&gt; Read a
+$creadsPrec :: Int -&gt; ReadS Visibility
+readsPrec :: Int -&gt; ReadS Visibility
+$creadList :: ReadS [Visibility]
+readList :: ReadS [Visibility]
+$creadPrec :: ReadPrec Visibility
+readPrec :: ReadPrec Visibility
+$creadListPrec :: ReadPrec [Visibility]
+readListPrec :: ReadPrec [Visibility]
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Read</span></span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679466072"><span id="local-6989586621679466074"><span class="annot"><span class="annottext">(forall x. Visibility -&gt; Rep Visibility x)
+-&gt; (forall x. Rep Visibility x -&gt; Visibility) -&gt; Generic Visibility
+forall x. Rep Visibility x -&gt; Visibility
+forall x. Visibility -&gt; Rep Visibility x
+forall a.
+(forall x. a -&gt; Rep a x) -&gt; (forall x. Rep a x -&gt; a) -&gt; Generic a
+$cfrom :: forall x. Visibility -&gt; Rep Visibility x
+from :: forall x. Visibility -&gt; Rep Visibility x
+$cto :: forall x. Rep Visibility x -&gt; Visibility
+to :: forall x. Rep Visibility x -&gt; Visibility
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Generic</span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-161"></span><span>
+</span><span id="line-162"></span><span class="annot"><span class="hs-comment">-- | One tag byte, from the 'Generic' shape.</span></span><span>
+</span><span id="line-163"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679466078"><span id="local-6989586621679466085"><span id="local-6989586621679466091"><span class="annot"><span class="hs-identifier hs-type">Binary</span></span><span> </span><span class="annot"><a href="Language.MLTT.Resolve.html#Visibility"><span class="hs-identifier hs-type">Visibility</span></a></span></span></span></span><span>
+</span><span id="line-164"></span><span>
+</span><span id="line-165"></span><span class="hs-comment">-- | Add a declaration to what a module exports, if it is public.</span><span>
+</span><span id="line-166"></span><span class="hs-comment">--</span><span>
+</span><span id="line-167"></span><span class="hs-comment">-- &gt;&gt;&gt; Map.keys (export Public (Raw.VarIdent &quot;Nat.two&quot;) &quot;Nat.two&quot; Map.empty)</span><span>
+</span><span id="line-168"></span><span class="hs-comment">-- [VarIdent &quot;Nat.two&quot;]</span><span>
+</span><span id="line-169"></span><span class="hs-comment">-- &gt;&gt;&gt; Map.keys (export Private (Raw.VarIdent &quot;Nat.two&quot;) &quot;Nat.two&quot; Map.empty)</span><span>
+</span><span id="line-170"></span><span class="hs-comment">-- []</span><span>
+</span><span id="line-171"></span><span id="local-6989586621679465966"><span class="annot"><a href="Language.MLTT.Resolve.html#export"><span class="hs-keyword hs-type">export</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.MLTT.Resolve.html#Visibility"><span class="hs-identifier hs-type">Visibility</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679465966"><span class="hs-identifier hs-type">v</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Resolve.html#Table"><span class="hs-identifier hs-type">Table</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679465966"><span class="hs-identifier hs-type">v</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Resolve.html#Table"><span class="hs-identifier hs-type">Table</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679465966"><span class="hs-identifier hs-type">v</span></a></span></span><span>
+</span><span id="line-172"></span><span id="export"><span class="annot"><span class="annottext">export :: forall v. Visibility -&gt; VarIdent -&gt; v -&gt; Table v -&gt; Table v
+</span><a href="Language.MLTT.Resolve.html#export"><span class="hs-keyword hs-var hs-var">export</span></a></span></span><span> </span><span class="annot"><span class="annottext">Visibility
+</span><a href="Language.MLTT.Resolve.html#Public"><span class="hs-identifier hs-var">Public</span></a></span><span>  </span><span id="local-6989586621679466117"><span class="annot"><span class="annottext">VarIdent
+</span><a href="#local-6989586621679466117"><span class="hs-identifier hs-var">name</span></a></span></span><span> </span><span id="local-6989586621679466118"><span class="annot"><span class="annottext">v
+</span><a href="#local-6989586621679466118"><span class="hs-identifier hs-var">v</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">VarIdent -&gt; v -&gt; Map VarIdent v -&gt; Map VarIdent v
+forall k a. Ord k =&gt; k -&gt; a -&gt; Map k a -&gt; Map k a
+</span><span class="hs-identifier hs-var">Map.insert</span></span><span> </span><span class="annot"><span class="annottext">VarIdent
+</span><a href="#local-6989586621679466117"><span class="hs-identifier hs-var">name</span></a></span><span> </span><span class="annot"><span class="annottext">v
+</span><a href="#local-6989586621679466118"><span class="hs-identifier hs-var">v</span></a></span><span>
+</span><span id="line-173"></span><span class="annot"><a href="Language.MLTT.Resolve.html#export"><span class="hs-keyword hs-var">export</span></a></span><span> </span><span class="annot"><span class="annottext">Visibility
+</span><a href="Language.MLTT.Resolve.html#Private"><span class="hs-identifier hs-var">Private</span></a></span><span> </span><span class="annot"><span class="annottext">VarIdent
+</span><span class="hs-identifier">_</span></span><span>    </span><span class="annot"><span class="annottext">v
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Map VarIdent v -&gt; Map VarIdent v
+forall a. a -&gt; a
+</span><span class="hs-identifier hs-var">id</span></span><span>
+</span><span id="line-174"></span><span>
+</span><span id="line-175"></span><span class="annot"><span class="hs-comment">-- * Suggestions</span></span><span>
+</span><span id="line-176"></span><span>
+</span><span id="line-177"></span><span class="hs-comment">-- | Spellings in scope that end in the same segment as an unresolved one.</span><span>
+</span><span id="line-178"></span><span class="hs-comment">--</span><span>
+</span><span id="line-179"></span><span class="hs-comment">-- @Nat.quadruple@ is a plausible thing to have meant by @quadruple@, and in a</span><span>
+</span><span id="line-180"></span><span class="hs-comment">-- language with namespaces it is usually the only useful hint there is.</span><span>
+</span><span id="line-181"></span><span class="hs-comment">--</span><span>
+</span><span id="line-182"></span><span class="hs-comment">-- &gt;&gt;&gt; suggestions (Raw.VarIdent &quot;double&quot;) (Map.keys declared)</span><span>
+</span><span id="line-183"></span><span class="hs-comment">-- [VarIdent &quot;Nat.Extra.double&quot;]</span><span>
+</span><span id="line-184"></span><span class="hs-comment">-- &gt;&gt;&gt; suggestions (Raw.VarIdent &quot;nope&quot;) (Map.keys declared)</span><span>
+</span><span id="line-185"></span><span class="hs-comment">-- []</span><span>
+</span><span id="line-186"></span><span class="annot"><a href="Language.MLTT.Resolve.html#suggestions"><span class="hs-identifier hs-type">suggestions</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-187"></span><span id="suggestions"><span class="annot"><span class="annottext">suggestions :: VarIdent -&gt; [VarIdent] -&gt; [VarIdent]
+</span><a href="Language.MLTT.Resolve.html#suggestions"><span class="hs-identifier hs-var hs-var">suggestions</span></a></span></span><span> </span><span id="local-6989586621679466122"><span class="annot"><span class="annottext">VarIdent
+</span><a href="#local-6989586621679466122"><span class="hs-identifier hs-var">name</span></a></span></span><span> </span><span id="local-6989586621679466123"><span class="annot"><span class="annottext">[VarIdent]
+</span><a href="#local-6989586621679466123"><span class="hs-identifier hs-var">inScope</span></a></span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-188"></span><span>    </span><span class="hs-special">[</span><span> </span><span class="annot"><span class="annottext">VarIdent
+</span><a href="#local-6989586621679466124"><span class="hs-identifier hs-var">candidate</span></a></span><span>
+</span><span id="line-189"></span><span>    </span><span class="hs-glyph">|</span><span> </span><span id="local-6989586621679466124"><span class="annot"><span class="annottext">VarIdent
+</span><a href="#local-6989586621679466124"><span class="hs-identifier hs-var">candidate</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">[VarIdent]
+</span><a href="#local-6989586621679466123"><span class="hs-identifier hs-var">inScope</span></a></span><span>
+</span><span id="line-190"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">VarIdent
+</span><a href="#local-6989586621679466124"><span class="hs-identifier hs-var">candidate</span></a></span><span> </span><span class="annot"><span class="annottext">VarIdent -&gt; VarIdent -&gt; Bool
+forall a. Eq a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">/=</span></span><span> </span><span class="annot"><span class="annottext">VarIdent
+</span><a href="#local-6989586621679466122"><span class="hs-identifier hs-var">name</span></a></span><span>
+</span><span id="line-191"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">VarIdent -&gt; String
+</span><a href="#local-6989586621679466126"><span class="hs-identifier hs-var">lastSegment</span></a></span><span> </span><span class="annot"><span class="annottext">VarIdent
+</span><a href="#local-6989586621679466124"><span class="hs-identifier hs-var">candidate</span></a></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; Bool
+forall a. Eq a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">==</span></span><span> </span><span class="annot"><span class="annottext">VarIdent -&gt; String
+</span><a href="#local-6989586621679466126"><span class="hs-identifier hs-var">lastSegment</span></a></span><span> </span><span class="annot"><span class="annottext">VarIdent
+</span><a href="#local-6989586621679466122"><span class="hs-identifier hs-var">name</span></a></span><span> </span><span class="hs-special">]</span><span>
+</span><span id="line-192"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-193"></span><span>    </span><span id="local-6989586621679466126"><span class="annot"><span class="annottext">lastSegment :: VarIdent -&gt; String
+</span><a href="#local-6989586621679466126"><span class="hs-identifier hs-var hs-var">lastSegment</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">[String] -&gt; String
+forall a. HasCallStack =&gt; [a] -&gt; a
+</span><span class="hs-identifier hs-var">last</span></span><span> </span><span class="annot"><span class="annottext">([String] -&gt; String)
+-&gt; (VarIdent -&gt; [String]) -&gt; VarIdent -&gt; String
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">VarIdent -&gt; [String]
+</span><a href="Language.MLTT.Resolve.html#segments"><span class="hs-identifier hs-var">segments</span></a></span><span>
+</span><span id="line-194"></span></pre></body></html>

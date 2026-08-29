@@ -1,0 +1,1354 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-pragma">{-# LANGUAGE DataKinds           #-}</span><span>
+</span><span id="line-2"></span><span class="hs-pragma">{-# LANGUAGE DeriveGeneric       #-}</span><span>
+</span><span id="line-3"></span><span class="hs-pragma">{-# LANGUAGE GADTs               #-}</span><span>
+</span><span id="line-4"></span><span class="hs-pragma">{-# LANGUAGE LambdaCase          #-}</span><span>
+</span><span id="line-5"></span><span class="hs-pragma">{-# LANGUAGE RankNTypes          #-}</span><span>
+</span><span id="line-6"></span><span class="hs-pragma">{-# LANGUAGE ScopedTypeVariables #-}</span><span>
+</span><span id="line-7"></span><span class="hs-comment">-- | Serialisation of checked modules, built from the parts in</span><span>
+</span><span id="line-8"></span><span class="hs-comment">-- &quot;Control.Monad.Free.Foil.Artifact&quot;; what remains here is the artifact</span><span>
+</span><span id="line-9"></span><span class="hs-comment">-- record, its envelope, and the driver logic.</span><span>
+</span><span id="line-10"></span><span class="hs-comment">--</span><span>
+</span><span id="line-11"></span><span class="hs-comment">-- A raw name of a /constant/ is a registry artefact. The artifact therefore</span><span>
+</span><span id="line-12"></span><span class="hs-comment">-- records the constants' qualified spellings, and loading judges them once,</span><span>
+</span><span id="line-13"></span><span class="hs-comment">-- at the artifact level ('constantRelocation'). In the usual case every</span><span>
+</span><span id="line-14"></span><span class="hs-comment">-- constant already means here what it meant at check time, and the terms</span><span>
+</span><span id="line-15"></span><span class="hs-comment">-- are used exactly as decoded; no term is walked at all. Where the registry</span><span>
+</span><span id="line-16"></span><span class="hs-comment">-- moved, one total relocation pass touches the references. A loaded module</span><span>
+</span><span id="line-17"></span><span class="hs-comment">-- is an ordinary 'CheckedModule': it links, and further modules check</span><span>
+</span><span id="line-18"></span><span class="hs-comment">-- against it, exactly as if it had just been checked.</span><span>
+</span><span id="line-19"></span><span class="hs-comment">--</span><span>
+</span><span id="line-20"></span><span class="hs-comment">-- What makes the cache valid is recorded alongside the terms:</span><span>
+</span><span id="line-21"></span><span class="hs-comment">--</span><span>
+</span><span id="line-22"></span><span class="hs-comment">-- * the name ranges at check time: the actual names of the module's own</span><span>
+</span><span id="line-23"></span><span class="hs-comment">--   constants, and of its locals. These are ranges rather than a stripe</span><span>
+</span><span id="line-24"></span><span class="hs-comment">--   index, so the artifact does not depend on the loading build's stripe</span><span>
+</span><span id="line-25"></span><span class="hs-comment">--   policy. A run whose registry agrees reconstructs the very same raw</span><span>
+</span><span id="line-26"></span><span class="hs-comment">--   names, and one whose registry moved the reservation still loads, with</span><span>
+</span><span id="line-27"></span><span class="hs-comment">--   the names landing where the new range says. Moreover, the no-overlap</span><span>
+</span><span id="line-28"></span><span class="hs-comment">--   assumption the verbatim terms rest on is checked from the recorded</span><span>
+</span><span id="line-29"></span><span class="hs-comment">--   ranges, never from the terms;</span><span>
+</span><span id="line-30"></span><span class="hs-comment">-- * the content hash of each import at check time, so a changed dependency</span><span>
+</span><span id="line-31"></span><span class="hs-comment">--   is detected and the artifact rejected rather than linked stale.</span><span>
+</span><span id="line-32"></span><span class="hs-comment">--</span><span>
+</span><span id="line-33"></span><span class="hs-comment">-- __Loading trusts the artifact's terms__: nothing is re-checked. This</span><span>
+</span><span id="line-34"></span><span class="hs-comment">-- covers the typing, and equally the locals and their scoping. What is</span><span>
+</span><span id="line-35"></span><span class="hs-comment">-- judged is the constants' boundary, and it is judged from the spelling</span><span>
+</span><span id="line-36"></span><span class="hs-comment">-- table alone, not from the terms. Integrity comes from the hash chain,</span><span>
+</span><span id="line-37"></span><span class="hs-comment">-- and the hash is 'contentHash', a plain FNV-1a over the stored content:</span><span>
+</span><span id="line-38"></span><span class="hs-comment">-- collision resistance enough for a build cache, not for an adversary.</span><span>
+</span><span id="line-39"></span><span class="hs-comment">--</span><span>
+</span><span id="line-40"></span><span class="hs-comment">-- Terms are stored verbatim ('encodeTerm'). The name layout's sign</span><span>
+</span><span id="line-41"></span><span class="hs-comment">-- invariant is what makes the raw ids meaningful: a negative name is an</span><span>
+</span><span id="line-42"></span><span class="hs-comment">-- interned constant, resolved by spelling on load, and a non-negative one</span><span>
+</span><span id="line-43"></span><span class="hs-comment">-- is a local, canonical by elaboration. Nothing is parsed on load, no</span><span>
+</span><span id="line-44"></span><span class="hs-comment">-- spelling ever needs escaping, and the bytes do not depend on what else</span><span>
+</span><span id="line-45"></span><span class="hs-comment">-- was in scope at check time. Thus the same module produces an identical</span><span>
+</span><span id="line-46"></span><span class="hs-comment">-- artifact, and an identical hash, whatever world it is checked in.</span><span>
+</span><span id="line-47"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Language.MLTT.Artifact</span><span> </span><span class="hs-special">(</span><span>
+</span><span id="line-48"></span><span>  </span><span class="annot"><a href="Language.MLTT.Artifact.html#ModuleArtifact"><span class="hs-identifier">ModuleArtifact</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-49"></span><span>  </span><span class="annot"><a href="Language.MLTT.Artifact.html#ArtifactDecl"><span class="hs-identifier">ArtifactDecl</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-50"></span><span>  </span><span class="annot"><a href="Language.MLTT.Artifact.html#ContentHash"><span class="hs-identifier">ContentHash</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-51"></span><span>  </span><span class="annot"><span class="hs-identifier">StoredTerm</span></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span>
+</span><span id="line-52"></span><span>  </span><span class="annot"><a href="Language.MLTT.Artifact.html#ArtifactError"><span class="hs-identifier">ArtifactError</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-53"></span><span>  </span><span class="annot"><a href="Language.MLTT.Artifact.html#makeArtifact"><span class="hs-identifier">makeArtifact</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-54"></span><span>  </span><span class="annot"><a href="Language.MLTT.Artifact.html#loadArtifact"><span class="hs-identifier">loadArtifact</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-55"></span><span>  </span><span class="annot"><a href="Language.MLTT.Artifact.html#loadArtifactAfter"><span class="hs-identifier">loadArtifactAfter</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-56"></span><span>  </span><span class="annot"><a href="Language.MLTT.Artifact.html#encodeArtifact"><span class="hs-identifier">encodeArtifact</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-57"></span><span>  </span><span class="annot"><a href="Language.MLTT.Artifact.html#decodeArtifact"><span class="hs-identifier">decodeArtifact</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-58"></span><span>  </span><span class="annot"><a href="Language.MLTT.Artifact.html#contentHash"><span class="hs-identifier">contentHash</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-59"></span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-60"></span><span>
+</span><span id="line-61"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Monad</span></span><span>             </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">unless</span></span><span class="hs-special">)</span><span>
+</span><span id="line-62"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad.Foil</span></span><span>        </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Foil</span></span><span>
+</span><span id="line-63"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Monad.Free.Foil.Artifact</span></span><span> </span><span class="hs-keyword">hiding</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">ArtifactError</span></span><span class="hs-special">)</span><span>
+</span><span id="line-64"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad.Free.Foil.Artifact</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Stored</span></span><span>
+</span><span id="line-65"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Monad.Free.Foil.Binary</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-66"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad.Foil.Blocks</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Blocks</span></span><span>
+</span><span id="line-67"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.Binary</span></span><span>               </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Binary</span></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-68"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.Binary.Get</span></span><span>           </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">runGetOrFail</span></span><span class="hs-special">)</span><span>
+</span><span id="line-69"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.Binary.Get</span></span><span>           </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Get</span></span><span>
+</span><span id="line-70"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.Binary.Put</span></span><span>           </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">runPut</span></span><span class="hs-special">)</span><span>
+</span><span id="line-71"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.Binary.Put</span></span><span>           </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Put</span></span><span>
+</span><span id="line-72"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.Bits</span></span><span>                 </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">xor</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-operator">(.&amp;.)</span></span><span class="hs-special">)</span><span>
+</span><span id="line-73"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.ByteString.Lazy</span></span><span>       </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">BSL</span></span><span>
+</span><span id="line-74"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.ByteString.Lazy.Char8</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">BSL8</span></span><span>
+</span><span id="line-75"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.List</span></span><span>                 </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">foldl'</span></span><span class="hs-special">)</span><span>
+</span><span id="line-76"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.Map</span></span><span>                  </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Map</span></span><span class="hs-special">)</span><span>
+</span><span id="line-77"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">GHC.Generics</span></span><span>              </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Generic</span></span><span class="hs-special">)</span><span>
+</span><span id="line-78"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.Map</span></span><span>                  </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Map</span></span><span>
+</span><span id="line-79"></span><span>
+</span><span id="line-80"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><a href="Language.MLTT.Eval.html"><span class="hs-identifier">Language.MLTT.Eval</span></a></span><span>        </span><span class="hs-special">(</span><span class="annot"><a href="Language.MLTT.Eval.html#Def"><span class="hs-identifier">Def</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-81"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><a href="Language.MLTT.Impl.html"><span class="hs-identifier">Language.MLTT.Impl</span></a></span><span>
+</span><span id="line-82"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><a href="Language.MLTT.Impl.Generated.html"><span class="hs-identifier">Language.MLTT.Impl.Generated</span></a></span><span>
+</span><span id="line-83"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><a href="Language.MLTT.Resolve.html"><span class="hs-identifier">Language.MLTT.Resolve</span></a></span><span>     </span><span class="hs-special">(</span><span class="annot"><a href="Language.MLTT.Resolve.html#Visibility"><span class="hs-identifier">Visibility</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Language.MLTT.Resolve.html#prettyVarIdent"><span class="hs-identifier">prettyVarIdent</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-84"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html"><span class="hs-identifier">Language.MLTT.Syntax.Abs</span></a></span><span>  </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Raw</span></span><span>
+</span><span id="line-85"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><a href="Language.MLTT.Typecheck.html"><span class="hs-identifier">Language.MLTT.Typecheck</span></a></span><span>   </span><span class="hs-special">(</span><span class="annot"><a href="Language.MLTT.Typecheck.html#Ctx"><span class="hs-identifier">Ctx</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Language.MLTT.Typecheck.html#extend"><span class="hs-identifier">extend</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-86"></span><span>
+</span><span id="line-87"></span><span class="annot"><span class="hs-comment">-- * The artifact</span></span><span>
+</span><span id="line-88"></span><span>
+</span><span id="line-89"></span><span class="annot"><span class="hs-comment">-- | A checked module, as written to disk.</span></span><span>
+</span><span id="line-90"></span><span class="hs-keyword">data</span><span> </span><span id="ModuleArtifact"><span class="annot"><a href="Language.MLTT.Artifact.html#ModuleArtifact"><span class="hs-identifier hs-var">ModuleArtifact</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="ModuleArtifact"><span class="annot"><a href="Language.MLTT.Artifact.html#ModuleArtifact"><span class="hs-identifier hs-var">ModuleArtifact</span></a></span></span><span>
+</span><span id="line-91"></span><span>  </span><span class="hs-special">{</span><span> </span><span id="artifactModule"><span class="annot"><span class="annottext">ModuleArtifact -&gt; VarIdent
+</span><a href="Language.MLTT.Artifact.html#artifactModule"><span class="hs-identifier hs-var hs-var">artifactModule</span></a></span></span><span>  </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span>  </span><span class="annot"><span class="hs-comment">-- ^ The module's qualified name.</span></span><span>
+</span><span id="line-92"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="artifactLayout"><span class="annot"><span class="annottext">ModuleArtifact -&gt; StoredLayout
+</span><a href="Language.MLTT.Artifact.html#artifactLayout"><span class="hs-identifier hs-var hs-var">artifactLayout</span></a></span></span><span>  </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">StoredLayout</span></span><span>
+</span><span id="line-93"></span><span>      </span><span class="hs-comment">-- ^ The actual names of the module's own constants and of its</span><span>
+</span><span id="line-94"></span><span>      </span><span class="hs-comment">-- locals. Thus the artifact depends neither on the loading build's</span><span>
+</span><span id="line-95"></span><span>      </span><span class="hs-comment">-- stripe policy nor on the writer's reservation size, and it loads</span><span>
+</span><span id="line-96"></span><span>      </span><span class="hs-comment">-- anywhere its names actually fit; the no-overlap assumption the</span><span>
+</span><span id="line-97"></span><span>      </span><span class="hs-comment">-- verbatim terms rest on is a checkable fact of the artifact, and</span><span>
+</span><span id="line-98"></span><span>      </span><span class="hs-comment">-- the check is tight.</span><span>
+</span><span id="line-99"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="artifactSource"><span class="annot"><span class="annottext">ModuleArtifact -&gt; ContentHash
+</span><a href="Language.MLTT.Artifact.html#artifactSource"><span class="hs-identifier hs-var hs-var">artifactSource</span></a></span></span><span>  </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#ContentHash"><span class="hs-identifier hs-type">ContentHash</span></a></span><span>   </span><span class="hs-comment">-- ^ Of the module's printed source:</span><span>
+</span><span id="line-100"></span><span>                                     </span><span class="hs-comment">-- what an incremental rebuild compares.</span><span>
+</span><span id="line-101"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="artifactImports"><span class="annot"><span class="annottext">ModuleArtifact -&gt; [(VarIdent, ContentHash)]
+</span><a href="Language.MLTT.Artifact.html#artifactImports"><span class="hs-identifier hs-var hs-var">artifactImports</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">[</span><span class="hs-special">(</span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#ContentHash"><span class="hs-identifier hs-type">ContentHash</span></a></span><span class="hs-special">)</span><span class="hs-special">]</span><span>
+</span><span id="line-102"></span><span>      </span><span class="annot"><span class="hs-comment">-- ^ Each import, with its content hash at check time.</span></span><span>
+</span><span id="line-103"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="artifactHash"><span class="annot"><span class="annottext">ModuleArtifact -&gt; ContentHash
+</span><a href="Language.MLTT.Artifact.html#artifactHash"><span class="hs-identifier hs-var hs-var">artifactHash</span></a></span></span><span>    </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#ContentHash"><span class="hs-identifier hs-type">ContentHash</span></a></span><span>   </span><span class="annot"><span class="hs-comment">-- ^ Over the spellings and declarations below.</span></span><span>
+</span><span id="line-104"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="artifactSpellings"><span class="annot"><span class="annottext">ModuleArtifact -&gt; Map Int VarIdent
+</span><a href="Language.MLTT.Artifact.html#artifactSpellings"><span class="hs-identifier hs-var hs-var">artifactSpellings</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Map</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.RawName</span></span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span>
+</span><span id="line-105"></span><span>      </span><span class="hs-comment">-- ^ The fully qualified spelling of every constant the stored terms</span><span>
+</span><span id="line-106"></span><span>      </span><span class="hs-comment">-- reference. There is one table for the whole artifact, since the</span><span>
+</span><span id="line-107"></span><span>      </span><span class="hs-comment">-- module's declarations largely reference the same imports.</span><span>
+</span><span id="line-108"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="artifactDecls"><span class="annot"><span class="annottext">ModuleArtifact -&gt; [ArtifactDecl]
+</span><a href="Language.MLTT.Artifact.html#artifactDecls"><span class="hs-identifier hs-var hs-var">artifactDecls</span></a></span></span><span>   </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Language.MLTT.Artifact.html#ArtifactDecl"><span class="hs-identifier hs-type">ArtifactDecl</span></a></span><span class="hs-special">]</span><span> </span><span class="annot"><span class="hs-comment">-- ^ In declaration (= allocation) order.</span></span><span>
+</span><span id="line-109"></span><span>  </span><span class="hs-special">}</span><span>
+</span><span id="line-110"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679475510"><span id="local-6989586621679475527"><span class="annot"><span class="annottext">ModuleArtifact -&gt; ModuleArtifact -&gt; Bool
+(ModuleArtifact -&gt; ModuleArtifact -&gt; Bool)
+-&gt; (ModuleArtifact -&gt; ModuleArtifact -&gt; Bool) -&gt; Eq ModuleArtifact
+forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
+$c== :: ModuleArtifact -&gt; ModuleArtifact -&gt; Bool
+== :: ModuleArtifact -&gt; ModuleArtifact -&gt; Bool
+$c/= :: ModuleArtifact -&gt; ModuleArtifact -&gt; Bool
+/= :: ModuleArtifact -&gt; ModuleArtifact -&gt; Bool
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679475535"><span id="local-6989586621679475554"><span id="local-6989586621679475558"><span class="annot"><span class="annottext">Int -&gt; ModuleArtifact -&gt; ShowS
+[ModuleArtifact] -&gt; ShowS
+ModuleArtifact -&gt; ArtifactError
+(Int -&gt; ModuleArtifact -&gt; ShowS)
+-&gt; (ModuleArtifact -&gt; ArtifactError)
+-&gt; ([ModuleArtifact] -&gt; ShowS)
+-&gt; Show ModuleArtifact
+forall a.
+(Int -&gt; a -&gt; ShowS)
+-&gt; (a -&gt; ArtifactError) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; ModuleArtifact -&gt; ShowS
+showsPrec :: Int -&gt; ModuleArtifact -&gt; ShowS
+$cshow :: ModuleArtifact -&gt; ArtifactError
+show :: ModuleArtifact -&gt; ArtifactError
+$cshowList :: [ModuleArtifact] -&gt; ShowS
+showList :: [ModuleArtifact] -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679475565"><span id="local-6989586621679475567"><span class="annot"><span class="annottext">(forall x. ModuleArtifact -&gt; Rep ModuleArtifact x)
+-&gt; (forall x. Rep ModuleArtifact x -&gt; ModuleArtifact)
+-&gt; Generic ModuleArtifact
+forall x. Rep ModuleArtifact x -&gt; ModuleArtifact
+forall x. ModuleArtifact -&gt; Rep ModuleArtifact x
+forall a.
+(forall x. a -&gt; Rep a x) -&gt; (forall x. Rep a x -&gt; a) -&gt; Generic a
+$cfrom :: forall x. ModuleArtifact -&gt; Rep ModuleArtifact x
+from :: forall x. ModuleArtifact -&gt; Rep ModuleArtifact x
+$cto :: forall x. Rep ModuleArtifact x -&gt; ModuleArtifact
+to :: forall x. Rep ModuleArtifact x -&gt; ModuleArtifact
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Generic</span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-111"></span><span>
+</span><span id="line-112"></span><span class="hs-comment">-- | Field order from the 'Generic' shape; 'encodeArtifact' adds the</span><span>
+</span><span id="line-113"></span><span class="hs-comment">-- envelope.</span><span>
+</span><span id="line-114"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679475571"><span id="local-6989586621679475577"><span id="local-6989586621679475583"><span class="annot"><span class="hs-identifier hs-type">Binary</span></span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#ModuleArtifact"><span class="hs-identifier hs-type">ModuleArtifact</span></a></span></span></span></span><span>
+</span><span id="line-115"></span><span>
+</span><span id="line-116"></span><span class="annot"><span class="hs-comment">-- | One declaration: everything the environment needs to hold for it.</span></span><span>
+</span><span id="line-117"></span><span class="hs-keyword">data</span><span> </span><span id="ArtifactDecl"><span class="annot"><a href="Language.MLTT.Artifact.html#ArtifactDecl"><span class="hs-identifier hs-var">ArtifactDecl</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="ArtifactDecl"><span class="annot"><a href="Language.MLTT.Artifact.html#ArtifactDecl"><span class="hs-identifier hs-var">ArtifactDecl</span></a></span></span><span>
+</span><span id="line-118"></span><span>  </span><span class="hs-special">{</span><span> </span><span id="adSpelling"><span class="annot"><span class="annottext">ArtifactDecl -&gt; VarIdent
+</span><a href="Language.MLTT.Artifact.html#adSpelling"><span class="hs-identifier hs-var hs-var">adSpelling</span></a></span></span><span>   </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span>  </span><span class="annot"><span class="hs-comment">-- ^ Fully qualified.</span></span><span>
+</span><span id="line-119"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="adVisibility"><span class="annot"><span class="annottext">ArtifactDecl -&gt; Visibility
+</span><a href="Language.MLTT.Artifact.html#adVisibility"><span class="hs-identifier hs-var hs-var">adVisibility</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.MLTT.Resolve.html#Visibility"><span class="hs-identifier hs-type">Visibility</span></a></span><span>
+</span><span id="line-120"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="adType"><span class="annot"><span class="annottext">ArtifactDecl -&gt; StoredTerm
+</span><a href="Language.MLTT.Artifact.html#adType"><span class="hs-identifier hs-var hs-var">adType</span></a></span></span><span>       </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">StoredTerm</span></span><span>
+</span><span id="line-121"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="adValue"><span class="annot"><span class="annottext">ArtifactDecl -&gt; StoredTerm
+</span><a href="Language.MLTT.Artifact.html#adValue"><span class="hs-identifier hs-var hs-var">adValue</span></a></span></span><span>      </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">StoredTerm</span></span><span>
+</span><span id="line-122"></span><span>  </span><span class="hs-special">}</span><span>
+</span><span id="line-123"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679475664"><span id="local-6989586621679475672"><span class="annot"><span class="annottext">ArtifactDecl -&gt; ArtifactDecl -&gt; Bool
+(ArtifactDecl -&gt; ArtifactDecl -&gt; Bool)
+-&gt; (ArtifactDecl -&gt; ArtifactDecl -&gt; Bool) -&gt; Eq ArtifactDecl
+forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
+$c== :: ArtifactDecl -&gt; ArtifactDecl -&gt; Bool
+== :: ArtifactDecl -&gt; ArtifactDecl -&gt; Bool
+$c/= :: ArtifactDecl -&gt; ArtifactDecl -&gt; Bool
+/= :: ArtifactDecl -&gt; ArtifactDecl -&gt; Bool
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679475675"><span id="local-6989586621679475684"><span id="local-6989586621679475687"><span class="annot"><span class="annottext">Int -&gt; ArtifactDecl -&gt; ShowS
+[ArtifactDecl] -&gt; ShowS
+ArtifactDecl -&gt; ArtifactError
+(Int -&gt; ArtifactDecl -&gt; ShowS)
+-&gt; (ArtifactDecl -&gt; ArtifactError)
+-&gt; ([ArtifactDecl] -&gt; ShowS)
+-&gt; Show ArtifactDecl
+forall a.
+(Int -&gt; a -&gt; ShowS)
+-&gt; (a -&gt; ArtifactError) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; ArtifactDecl -&gt; ShowS
+showsPrec :: Int -&gt; ArtifactDecl -&gt; ShowS
+$cshow :: ArtifactDecl -&gt; ArtifactError
+show :: ArtifactDecl -&gt; ArtifactError
+$cshowList :: [ArtifactDecl] -&gt; ShowS
+showList :: [ArtifactDecl] -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679475690"><span id="local-6989586621679475692"><span class="annot"><span class="annottext">(forall x. ArtifactDecl -&gt; Rep ArtifactDecl x)
+-&gt; (forall x. Rep ArtifactDecl x -&gt; ArtifactDecl)
+-&gt; Generic ArtifactDecl
+forall x. Rep ArtifactDecl x -&gt; ArtifactDecl
+forall x. ArtifactDecl -&gt; Rep ArtifactDecl x
+forall a.
+(forall x. a -&gt; Rep a x) -&gt; (forall x. Rep a x -&gt; a) -&gt; Generic a
+$cfrom :: forall x. ArtifactDecl -&gt; Rep ArtifactDecl x
+from :: forall x. ArtifactDecl -&gt; Rep ArtifactDecl x
+$cto :: forall x. Rep ArtifactDecl x -&gt; ArtifactDecl
+to :: forall x. Rep ArtifactDecl x -&gt; ArtifactDecl
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Generic</span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-124"></span><span>
+</span><span id="line-125"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679475695"><span id="local-6989586621679475701"><span id="local-6989586621679475707"><span class="annot"><span class="hs-identifier hs-type">Binary</span></span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#ArtifactDecl"><span class="hs-identifier hs-type">ArtifactDecl</span></a></span></span></span></span><span>
+</span><span id="line-126"></span><span>
+</span><span id="line-127"></span><span class="annot"><span class="hs-comment">-- | The 64-bit FNV-1a of some rendered content; see 'contentHash'.</span></span><span>
+</span><span id="line-128"></span><span class="hs-keyword">newtype</span><span> </span><span id="ContentHash"><span class="annot"><a href="Language.MLTT.Artifact.html#ContentHash"><span class="hs-identifier hs-var">ContentHash</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="ContentHash"><span class="annot"><a href="Language.MLTT.Artifact.html#ContentHash"><span class="hs-identifier hs-var">ContentHash</span></a></span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Integer</span></span><span>
+</span><span id="line-129"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679475741"><span id="local-6989586621679475746"><span class="annot"><span class="annottext">ContentHash -&gt; ContentHash -&gt; Bool
+(ContentHash -&gt; ContentHash -&gt; Bool)
+-&gt; (ContentHash -&gt; ContentHash -&gt; Bool) -&gt; Eq ContentHash
+forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
+$c== :: ContentHash -&gt; ContentHash -&gt; Bool
+== :: ContentHash -&gt; ContentHash -&gt; Bool
+$c/= :: ContentHash -&gt; ContentHash -&gt; Bool
+/= :: ContentHash -&gt; ContentHash -&gt; Bool
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679475750"><span id="local-6989586621679475755"><span id="local-6989586621679475758"><span class="annot"><span class="annottext">Int -&gt; ContentHash -&gt; ShowS
+[ContentHash] -&gt; ShowS
+ContentHash -&gt; ArtifactError
+(Int -&gt; ContentHash -&gt; ShowS)
+-&gt; (ContentHash -&gt; ArtifactError)
+-&gt; ([ContentHash] -&gt; ShowS)
+-&gt; Show ContentHash
+forall a.
+(Int -&gt; a -&gt; ShowS)
+-&gt; (a -&gt; ArtifactError) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; ContentHash -&gt; ShowS
+showsPrec :: Int -&gt; ContentHash -&gt; ShowS
+$cshow :: ContentHash -&gt; ArtifactError
+show :: ContentHash -&gt; ArtifactError
+$cshowList :: [ContentHash] -&gt; ShowS
+showList :: [ContentHash] -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679475761"><span id="local-6989586621679475763"><span class="annot"><span class="annottext">(forall x. ContentHash -&gt; Rep ContentHash x)
+-&gt; (forall x. Rep ContentHash x -&gt; ContentHash)
+-&gt; Generic ContentHash
+forall x. Rep ContentHash x -&gt; ContentHash
+forall x. ContentHash -&gt; Rep ContentHash x
+forall a.
+(forall x. a -&gt; Rep a x) -&gt; (forall x. Rep a x -&gt; a) -&gt; Generic a
+$cfrom :: forall x. ContentHash -&gt; Rep ContentHash x
+from :: forall x. ContentHash -&gt; Rep ContentHash x
+$cto :: forall x. Rep ContentHash x -&gt; ContentHash
+to :: forall x. Rep ContentHash x -&gt; ContentHash
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Generic</span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-130"></span><span>
+</span><span id="line-131"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679475766"><span id="local-6989586621679475772"><span id="local-6989586621679475778"><span class="annot"><span class="hs-identifier hs-type">Binary</span></span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#ContentHash"><span class="hs-identifier hs-type">ContentHash</span></a></span></span></span></span><span>
+</span><span id="line-132"></span><span>
+</span><span id="line-133"></span><span class="hs-comment">-- | What reading or loading an artifact can report: malformed wire bytes, a</span><span>
+</span><span id="line-134"></span><span class="hs-comment">-- stale import hash, or a stored term that no longer resolves.</span><span>
+</span><span id="line-135"></span><span class="hs-keyword">type</span><span> </span><span id="ArtifactError"><span class="annot"><a href="Language.MLTT.Artifact.html#ArtifactError"><span class="hs-identifier hs-var">ArtifactError</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span>
+</span><span id="line-136"></span><span>
+</span><span id="line-137"></span><span class="annot"><span class="hs-comment">-- | Render a library-side error with mltt's spellings.</span></span><span>
+</span><span id="line-138"></span><span class="annot"><a href="Language.MLTT.Artifact.html#renderArtifactError"><span class="hs-identifier hs-type">renderArtifactError</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Stored.ArtifactError</span></span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span>
+</span><span id="line-139"></span><span id="renderArtifactError"><span class="annot"><span class="annottext">renderArtifactError :: ArtifactError VarIdent -&gt; ArtifactError
+</span><a href="Language.MLTT.Artifact.html#renderArtifactError"><span class="hs-identifier hs-var hs-var">renderArtifactError</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(VarIdent -&gt; ArtifactError)
+-&gt; ArtifactError VarIdent -&gt; ArtifactError
+forall ident.
+(ident -&gt; ArtifactError) -&gt; ArtifactError ident -&gt; ArtifactError
+</span><span class="hs-identifier hs-var">prettyArtifactError</span></span><span> </span><span class="annot"><span class="annottext">VarIdent -&gt; ArtifactError
+</span><a href="Language.MLTT.Resolve.html#prettyVarIdent"><span class="hs-identifier hs-var">prettyVarIdent</span></a></span><span>
+</span><span id="line-140"></span><span>
+</span><span id="line-141"></span><span class="annot"><span class="hs-comment">-- | FNV-1a over a string, 64 bits. A build-cache checksum, not a defence.</span></span><span>
+</span><span id="line-142"></span><span class="annot"><a href="Language.MLTT.Artifact.html#contentHash"><span class="hs-identifier hs-type">contentHash</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#ContentHash"><span class="hs-identifier hs-type">ContentHash</span></a></span><span>
+</span><span id="line-143"></span><span id="contentHash"><span class="annot"><span class="annottext">contentHash :: ArtifactError -&gt; ContentHash
+</span><a href="Language.MLTT.Artifact.html#contentHash"><span class="hs-identifier hs-var hs-var">contentHash</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Integer -&gt; ContentHash
+</span><a href="Language.MLTT.Artifact.html#ContentHash"><span class="hs-identifier hs-var">ContentHash</span></a></span><span> </span><span class="annot"><span class="annottext">(Integer -&gt; ContentHash)
+-&gt; (ArtifactError -&gt; Integer) -&gt; ArtifactError -&gt; ContentHash
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">(Integer -&gt; Int -&gt; Integer) -&gt; Integer -&gt; [Int] -&gt; Integer
+forall b a. (b -&gt; a -&gt; b) -&gt; b -&gt; [a] -&gt; b
+forall (t :: * -&gt; *) b a.
+Foldable t =&gt;
+(b -&gt; a -&gt; b) -&gt; b -&gt; t a -&gt; b
+</span><span class="hs-identifier hs-var">foldl'</span></span><span> </span><span class="annot"><span class="annottext">Integer -&gt; Int -&gt; Integer
+forall {a}. Integral a =&gt; Integer -&gt; a -&gt; Integer
+</span><a href="#local-6989586621679475792"><span class="hs-identifier hs-var">step</span></a></span><span> </span><span class="annot"><span class="annottext">Integer
+</span><a href="Language.MLTT.Artifact.html#fnvBasis"><span class="hs-identifier hs-var">fnvBasis</span></a></span><span> </span><span class="annot"><span class="annottext">([Int] -&gt; Integer)
+-&gt; (ArtifactError -&gt; [Int]) -&gt; ArtifactError -&gt; Integer
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">(Char -&gt; Int) -&gt; ArtifactError -&gt; [Int]
+forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
+</span><span class="hs-identifier hs-var">map</span></span><span> </span><span class="annot"><span class="annottext">Char -&gt; Int
+forall a. Enum a =&gt; a -&gt; Int
+</span><span class="hs-identifier hs-var">fromEnum</span></span><span>
+</span><span id="line-144"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-145"></span><span>    </span><span id="local-6989586621679475792"><span class="annot"><span class="annottext">step :: Integer -&gt; a -&gt; Integer
+</span><a href="#local-6989586621679475792"><span class="hs-identifier hs-var hs-var">step</span></a></span></span><span> </span><span id="local-6989586621679475813"><span class="annot"><span class="annottext">Integer
+</span><a href="#local-6989586621679475813"><span class="hs-identifier hs-var">h</span></a></span></span><span> </span><span id="local-6989586621679475814"><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679475814"><span class="hs-identifier hs-var">c</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Integer -&gt; Integer -&gt; Integer
+</span><a href="Language.MLTT.Artifact.html#fnvStep"><span class="hs-identifier hs-var">fnvStep</span></a></span><span> </span><span class="annot"><span class="annottext">Integer
+</span><a href="#local-6989586621679475813"><span class="hs-identifier hs-var">h</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">a -&gt; Integer
+forall a b. (Integral a, Num b) =&gt; a -&gt; b
+</span><span class="hs-identifier hs-var">fromIntegral</span></span><span> </span><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679475814"><span class="hs-identifier hs-var">c</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-146"></span><span>
+</span><span id="line-147"></span><span class="hs-comment">-- | The same FNV-1a, over bytes: what the artifact hash uses, so that the</span><span>
+</span><span id="line-148"></span><span class="hs-comment">-- hash covers exactly the stored representation.</span><span>
+</span><span id="line-149"></span><span class="annot"><a href="Language.MLTT.Artifact.html#contentHashBytes"><span class="hs-identifier hs-type">contentHashBytes</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">BSL.ByteString</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#ContentHash"><span class="hs-identifier hs-type">ContentHash</span></a></span><span>
+</span><span id="line-150"></span><span id="contentHashBytes"><span class="annot"><span class="annottext">contentHashBytes :: ByteString -&gt; ContentHash
+</span><a href="Language.MLTT.Artifact.html#contentHashBytes"><span class="hs-identifier hs-var hs-var">contentHashBytes</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Integer -&gt; ContentHash
+</span><a href="Language.MLTT.Artifact.html#ContentHash"><span class="hs-identifier hs-var">ContentHash</span></a></span><span> </span><span class="annot"><span class="annottext">(Integer -&gt; ContentHash)
+-&gt; (ByteString -&gt; Integer) -&gt; ByteString -&gt; ContentHash
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">(Integer -&gt; Word8 -&gt; Integer) -&gt; Integer -&gt; ByteString -&gt; Integer
+forall a. (a -&gt; Word8 -&gt; a) -&gt; a -&gt; ByteString -&gt; a
+</span><span class="hs-identifier hs-var">BSL.foldl'</span></span><span> </span><span class="annot"><span class="annottext">Integer -&gt; Word8 -&gt; Integer
+forall {a}. Integral a =&gt; Integer -&gt; a -&gt; Integer
+</span><a href="#local-6989586621679475818"><span class="hs-identifier hs-var">step</span></a></span><span> </span><span class="annot"><span class="annottext">Integer
+</span><a href="Language.MLTT.Artifact.html#fnvBasis"><span class="hs-identifier hs-var">fnvBasis</span></a></span><span>
+</span><span id="line-151"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-152"></span><span>    </span><span id="local-6989586621679475818"><span class="annot"><span class="annottext">step :: Integer -&gt; a -&gt; Integer
+</span><a href="#local-6989586621679475818"><span class="hs-identifier hs-var hs-var">step</span></a></span></span><span> </span><span id="local-6989586621679475832"><span class="annot"><span class="annottext">Integer
+</span><a href="#local-6989586621679475832"><span class="hs-identifier hs-var">h</span></a></span></span><span> </span><span id="local-6989586621679475833"><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679475833"><span class="hs-identifier hs-var">w</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Integer -&gt; Integer -&gt; Integer
+</span><a href="Language.MLTT.Artifact.html#fnvStep"><span class="hs-identifier hs-var">fnvStep</span></a></span><span> </span><span class="annot"><span class="annottext">Integer
+</span><a href="#local-6989586621679475832"><span class="hs-identifier hs-var">h</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">a -&gt; Integer
+forall a b. (Integral a, Num b) =&gt; a -&gt; b
+</span><span class="hs-identifier hs-var">fromIntegral</span></span><span> </span><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679475833"><span class="hs-identifier hs-var">w</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-153"></span><span>
+</span><span id="line-154"></span><span class="annot"><a href="Language.MLTT.Artifact.html#fnvBasis"><span class="hs-identifier hs-type">fnvBasis</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Integer</span></span><span>
+</span><span id="line-155"></span><span id="fnvBasis"><span class="annot"><span class="annottext">fnvBasis :: Integer
+</span><a href="Language.MLTT.Artifact.html#fnvBasis"><span class="hs-identifier hs-var hs-var">fnvBasis</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Integer
+</span><span class="hs-number">0xcbf29ce484222325</span></span><span>
+</span><span id="line-156"></span><span>
+</span><span id="line-157"></span><span class="annot"><a href="Language.MLTT.Artifact.html#fnvStep"><span class="hs-identifier hs-type">fnvStep</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Integer</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Integer</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Integer</span></span><span>
+</span><span id="line-158"></span><span id="fnvStep"><span class="annot"><span class="annottext">fnvStep :: Integer -&gt; Integer -&gt; Integer
+</span><a href="Language.MLTT.Artifact.html#fnvStep"><span class="hs-identifier hs-var hs-var">fnvStep</span></a></span></span><span> </span><span id="local-6989586621679475834"><span class="annot"><span class="annottext">Integer
+</span><a href="#local-6989586621679475834"><span class="hs-identifier hs-var">h</span></a></span></span><span> </span><span id="local-6989586621679475835"><span class="annot"><span class="annottext">Integer
+</span><a href="#local-6989586621679475835"><span class="hs-identifier hs-var">x</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">(</span><span class="hs-special">(</span><span class="annot"><span class="annottext">Integer
+</span><a href="#local-6989586621679475834"><span class="hs-identifier hs-var">h</span></a></span><span> </span><span class="annot"><span class="annottext">Integer -&gt; Integer -&gt; Integer
+forall a. Bits a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">`xor`</span></span><span> </span><span class="annot"><span class="annottext">Integer
+</span><a href="#local-6989586621679475835"><span class="hs-identifier hs-var">x</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">Integer -&gt; Integer -&gt; Integer
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">*</span></span><span> </span><span class="annot"><span class="annottext">Integer
+</span><span class="hs-number">0x100000001b3</span></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">Integer -&gt; Integer -&gt; Integer
+forall a. Bits a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">.&amp;.</span></span><span> </span><span class="annot"><span class="annottext">Integer
+</span><span class="hs-number">0xffffffffffffffff</span></span><span>
+</span><span id="line-159"></span><span>
+</span><span id="line-160"></span><span class="annot"><span class="hs-comment">-- * The envelope</span></span><span>
+</span><span id="line-161"></span><span>
+</span><span id="line-162"></span><span class="hs-comment">-- | The first bytes of an artifact file: decoding /is/ the check, so a file</span><span>
+</span><span id="line-163"></span><span class="hs-comment">-- that is not an artifact is reported rather than misread.</span><span>
+</span><span id="line-164"></span><span class="hs-keyword">data</span><span> </span><span id="WireMagic"><span class="annot"><a href="Language.MLTT.Artifact.html#WireMagic"><span class="hs-identifier hs-var">WireMagic</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="WireMagic"><span class="annot"><a href="Language.MLTT.Artifact.html#WireMagic"><span class="hs-identifier hs-var">WireMagic</span></a></span></span><span>
+</span><span id="line-165"></span><span>
+</span><span id="line-166"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679475841"><span class="annot"><span class="hs-identifier hs-type">Binary</span></span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#WireMagic"><span class="hs-identifier hs-type">WireMagic</span></a></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-167"></span><span>  </span><span id="local-6989586621679475843"><span class="annot"><span class="annottext">put :: WireMagic -&gt; Put
+</span><a href="#local-6989586621679475843"><span class="hs-identifier hs-var hs-var hs-var hs-var">put</span></a></span></span><span> </span><span class="annot"><span class="annottext">WireMagic
+</span><a href="Language.MLTT.Artifact.html#WireMagic"><span class="hs-identifier hs-var">WireMagic</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ByteString -&gt; Put
+</span><span class="hs-identifier hs-var">Put.putLazyByteString</span></span><span> </span><span class="annot"><span class="annottext">ByteString
+</span><a href="Language.MLTT.Artifact.html#magicBytes"><span class="hs-identifier hs-var">magicBytes</span></a></span><span>
+</span><span id="line-168"></span><span>  </span><span id="local-6989586621679475857"><span class="annot"><span class="annottext">get :: Get WireMagic
+</span><a href="#local-6989586621679475857"><span class="hs-identifier hs-var hs-var hs-var hs-var">get</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-169"></span><span>    </span><span id="local-6989586621679475859"><span class="annot"><span class="annottext">ByteString
+</span><a href="#local-6989586621679475859"><span class="hs-identifier hs-var">bytes</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Int64 -&gt; Get ByteString
+</span><span class="hs-identifier hs-var">Get.getLazyByteString</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ByteString -&gt; Int64
+</span><span class="hs-identifier hs-var">BSL.length</span></span><span> </span><span class="annot"><span class="annottext">ByteString
+</span><a href="Language.MLTT.Artifact.html#magicBytes"><span class="hs-identifier hs-var">magicBytes</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-170"></span><span>    </span><span class="annot"><span class="annottext">Bool -&gt; Get () -&gt; Get ()
+forall (f :: * -&gt; *). Applicative f =&gt; Bool -&gt; f () -&gt; f ()
+</span><span class="hs-identifier hs-var">unless</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ByteString
+</span><a href="#local-6989586621679475859"><span class="hs-identifier hs-var">bytes</span></a></span><span> </span><span class="annot"><span class="annottext">ByteString -&gt; ByteString -&gt; Bool
+forall a. Eq a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">==</span></span><span> </span><span class="annot"><span class="annottext">ByteString
+</span><a href="Language.MLTT.Artifact.html#magicBytes"><span class="hs-identifier hs-var">magicBytes</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ArtifactError -&gt; Get ()
+forall a. ArtifactError -&gt; Get a
+forall (m :: * -&gt; *) a. MonadFail m =&gt; ArtifactError -&gt; m a
+</span><span class="hs-identifier hs-var">fail</span></span><span> </span><span class="annot"><span class="annottext">ArtifactError
+</span><span class="hs-string">&quot;not an MLTT artifact&quot;</span></span><span class="hs-special">)</span><span>
+</span><span id="line-171"></span><span>    </span><span class="annot"><span class="annottext">WireMagic -&gt; Get WireMagic
+forall a. a -&gt; Get a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">WireMagic
+</span><a href="Language.MLTT.Artifact.html#WireMagic"><span class="hs-identifier hs-var">WireMagic</span></a></span><span>
+</span><span id="line-172"></span><span>
+</span><span id="line-173"></span><span class="annot"><a href="Language.MLTT.Artifact.html#magicBytes"><span class="hs-identifier hs-type">magicBytes</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">BSL.ByteString</span></span><span>
+</span><span id="line-174"></span><span id="magicBytes"><span class="annot"><span class="annottext">magicBytes :: ByteString
+</span><a href="Language.MLTT.Artifact.html#magicBytes"><span class="hs-identifier hs-var hs-var">magicBytes</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ArtifactError -&gt; ByteString
+</span><span class="hs-identifier hs-var">BSL8.pack</span></span><span> </span><span class="annot"><span class="annottext">ArtifactError
+</span><span class="hs-string">&quot;MLTTA&quot;</span></span><span>
+</span><span id="line-175"></span><span>
+</span><span id="line-176"></span><span class="hs-comment">-- | Bumped when the format changes shape; decoding any other version fails,</span><span>
+</span><span id="line-177"></span><span class="hs-comment">-- and the cache treats the artifact as absent, so it is rebuilt.</span><span>
+</span><span id="line-178"></span><span class="hs-keyword">data</span><span> </span><span id="WireVersion"><span class="annot"><a href="Language.MLTT.Artifact.html#WireVersion"><span class="hs-identifier hs-var">WireVersion</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="WireVersion"><span class="annot"><a href="Language.MLTT.Artifact.html#WireVersion"><span class="hs-identifier hs-var">WireVersion</span></a></span></span><span>
+</span><span id="line-179"></span><span>
+</span><span id="line-180"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679475867"><span class="annot"><span class="hs-identifier hs-type">Binary</span></span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#WireVersion"><span class="hs-identifier hs-type">WireVersion</span></a></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-181"></span><span>  </span><span id="local-6989586621679475871"><span class="annot"><span class="annottext">put :: WireVersion -&gt; Put
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var">put</span></span></span><span> </span><span class="annot"><span class="annottext">WireVersion
+</span><a href="Language.MLTT.Artifact.html#WireVersion"><span class="hs-identifier hs-var">WireVersion</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Word -&gt; Put
+forall t. Binary t =&gt; t -&gt; Put
+</span><span class="hs-identifier hs-var">put</span></span><span> </span><span class="annot"><span class="annottext">Word
+</span><a href="Language.MLTT.Artifact.html#wireVersion"><span class="hs-identifier hs-var">wireVersion</span></a></span><span>
+</span><span id="line-182"></span><span>  </span><span id="local-6989586621679475887"><span class="annot"><span class="annottext">get :: Get WireVersion
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var">get</span></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-183"></span><span>    </span><span id="local-6989586621679475888"><span class="annot"><span class="annottext">Word
+</span><a href="#local-6989586621679475888"><span class="hs-identifier hs-var">version</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Get Word
+forall t. Binary t =&gt; Get t
+</span><span class="hs-identifier hs-var">get</span></span><span>
+</span><span id="line-184"></span><span>    </span><span class="annot"><span class="annottext">Bool -&gt; Get () -&gt; Get ()
+forall (f :: * -&gt; *). Applicative f =&gt; Bool -&gt; f () -&gt; f ()
+</span><span class="hs-identifier hs-var">unless</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Word
+</span><a href="#local-6989586621679475888"><span class="hs-identifier hs-var">version</span></a></span><span> </span><span class="annot"><span class="annottext">Word -&gt; Word -&gt; Bool
+forall a. Eq a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">==</span></span><span> </span><span class="annot"><span class="annottext">Word
+</span><a href="Language.MLTT.Artifact.html#wireVersion"><span class="hs-identifier hs-var">wireVersion</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(Get () -&gt; Get ()) -&gt; Get () -&gt; Get ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span>
+</span><span id="line-185"></span><span>      </span><span class="annot"><span class="annottext">ArtifactError -&gt; Get ()
+forall a. ArtifactError -&gt; Get a
+forall (m :: * -&gt; *) a. MonadFail m =&gt; ArtifactError -&gt; m a
+</span><span class="hs-identifier hs-var">fail</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ArtifactError
+</span><span class="hs-string">&quot;format version &quot;</span></span><span> </span><span class="annot"><span class="annottext">ArtifactError -&gt; ShowS
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">Word -&gt; ArtifactError
+forall a. Show a =&gt; a -&gt; ArtifactError
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">Word
+</span><a href="#local-6989586621679475888"><span class="hs-identifier hs-var">version</span></a></span><span>
+</span><span id="line-186"></span><span>              </span><span class="annot"><span class="annottext">ArtifactError -&gt; ShowS
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">ArtifactError
+</span><span class="hs-string">&quot;, but this build reads version &quot;</span></span><span> </span><span class="annot"><span class="annottext">ArtifactError -&gt; ShowS
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">Word -&gt; ArtifactError
+forall a. Show a =&gt; a -&gt; ArtifactError
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">Word
+</span><a href="Language.MLTT.Artifact.html#wireVersion"><span class="hs-identifier hs-var">wireVersion</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-187"></span><span>    </span><span class="annot"><span class="annottext">WireVersion -&gt; Get WireVersion
+forall a. a -&gt; Get a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">WireVersion
+</span><a href="Language.MLTT.Artifact.html#WireVersion"><span class="hs-identifier hs-var">WireVersion</span></a></span><span>
+</span><span id="line-188"></span><span>
+</span><span id="line-189"></span><span class="annot"><a href="Language.MLTT.Artifact.html#wireVersion"><span class="hs-identifier hs-type">wireVersion</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Word</span></span><span>
+</span><span id="line-190"></span><span id="wireVersion"><span class="annot"><span class="annottext">wireVersion :: Word
+</span><a href="Language.MLTT.Artifact.html#wireVersion"><span class="hs-identifier hs-var hs-var">wireVersion</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Word
+</span><span class="hs-number">1</span></span><span>
+</span><span id="line-191"></span><span>
+</span><span id="line-192"></span><span class="hs-comment">-- | Encode an artifact for writing: the envelope, then the derived</span><span>
+</span><span id="line-193"></span><span class="hs-comment">-- instances. 'decodeArtifact' is its inverse.</span><span>
+</span><span id="line-194"></span><span class="annot"><a href="Language.MLTT.Artifact.html#encodeArtifact"><span class="hs-identifier hs-type">encodeArtifact</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#ModuleArtifact"><span class="hs-identifier hs-type">ModuleArtifact</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">BSL.ByteString</span></span><span>
+</span><span id="line-195"></span><span id="encodeArtifact"><span class="annot"><span class="annottext">encodeArtifact :: ModuleArtifact -&gt; ByteString
+</span><a href="Language.MLTT.Artifact.html#encodeArtifact"><span class="hs-identifier hs-var hs-var">encodeArtifact</span></a></span></span><span> </span><span id="local-6989586621679475890"><span class="annot"><span class="annottext">ModuleArtifact
+</span><a href="#local-6989586621679475890"><span class="hs-identifier hs-var">a</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Put -&gt; ByteString
+</span><span class="hs-identifier hs-var">runPut</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">(WireMagic, WireVersion, ModuleArtifact) -&gt; Put
+forall t. Binary t =&gt; t -&gt; Put
+</span><span class="hs-identifier hs-var">put</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">WireMagic
+</span><a href="Language.MLTT.Artifact.html#WireMagic"><span class="hs-identifier hs-var">WireMagic</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">WireVersion
+</span><a href="Language.MLTT.Artifact.html#WireVersion"><span class="hs-identifier hs-var">WireVersion</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">ModuleArtifact
+</span><a href="#local-6989586621679475890"><span class="hs-identifier hs-var">a</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-196"></span><span>
+</span><span id="line-197"></span><span class="hs-comment">-- | Decode an artifact; reports rather than crashes on anything that is not</span><span>
+</span><span id="line-198"></span><span class="hs-comment">-- a current-version artifact. Beyond the envelope, the one shape check the</span><span>
+</span><span id="line-199"></span><span class="hs-comment">-- instances cannot express: a spelling-table entry for a non-negative name</span><span>
+</span><span id="line-200"></span><span class="hs-comment">-- would spell a non-constant.</span><span>
+</span><span id="line-201"></span><span class="annot"><a href="Language.MLTT.Artifact.html#decodeArtifact"><span class="hs-identifier hs-type">decodeArtifact</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">BSL.ByteString</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Either</span></span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#ArtifactError"><span class="hs-identifier hs-type">ArtifactError</span></a></span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#ModuleArtifact"><span class="hs-identifier hs-type">ModuleArtifact</span></a></span><span>
+</span><span id="line-202"></span><span id="decodeArtifact"><span class="annot"><span class="annottext">decodeArtifact :: ByteString -&gt; Either ArtifactError ModuleArtifact
+</span><a href="Language.MLTT.Artifact.html#decodeArtifact"><span class="hs-identifier hs-var hs-var">decodeArtifact</span></a></span></span><span> </span><span id="local-6989586621679475891"><span class="annot"><span class="annottext">ByteString
+</span><a href="#local-6989586621679475891"><span class="hs-identifier hs-var">input</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">case</span><span> </span><span class="annot"><span class="annottext">Get (WireMagic, WireVersion, ModuleArtifact)
+-&gt; ByteString
+-&gt; Either
+     (ByteString, Int64, ArtifactError)
+     (ByteString, Int64, (WireMagic, WireVersion, ModuleArtifact))
+forall a.
+Get a
+-&gt; ByteString
+-&gt; Either (ByteString, Int64, ArtifactError) (ByteString, Int64, a)
+</span><span class="hs-identifier hs-var">runGetOrFail</span></span><span> </span><span class="annot"><span class="annottext">Get (WireMagic, WireVersion, ModuleArtifact)
+forall t. Binary t =&gt; Get t
+</span><span class="hs-identifier hs-var">get</span></span><span> </span><span class="annot"><span class="annottext">ByteString
+</span><a href="#local-6989586621679475891"><span class="hs-identifier hs-var">input</span></a></span><span> </span><span class="hs-keyword">of</span><span>
+</span><span id="line-203"></span><span>  </span><span class="annot"><span class="hs-identifier hs-type">Left</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ByteString
+</span><span class="hs-identifier">_</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Int64
+</span><span class="hs-identifier">_</span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679475892"><span class="annot"><span class="annottext">ArtifactError
+</span><a href="#local-6989586621679475892"><span class="hs-identifier hs-var">err</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">ArtifactError -&gt; Either ArtifactError ModuleArtifact
+forall a b. a -&gt; Either a b
+</span><span class="hs-identifier hs-var">Left</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ArtifactError
+</span><span class="hs-string">&quot;malformed artifact: &quot;</span></span><span> </span><span class="annot"><span class="annottext">ArtifactError -&gt; ShowS
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">ArtifactError
+</span><a href="#local-6989586621679475892"><span class="hs-identifier hs-var">err</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-204"></span><span>  </span><span class="annot"><span class="hs-identifier hs-type">Right</span></span><span> </span><span class="hs-special">(</span><span id="local-6989586621679475893"><span class="annot"><span class="annottext">ByteString
+</span><a href="#local-6989586621679475893"><span class="hs-identifier hs-var">rest</span></a></span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Int64
+</span><span class="hs-identifier">_</span></span><span class="hs-special">,</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">WireMagic
+</span><a href="Language.MLTT.Artifact.html#WireMagic"><span class="hs-identifier hs-var">WireMagic</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">WireVersion
+</span><a href="Language.MLTT.Artifact.html#WireVersion"><span class="hs-identifier hs-var">WireVersion</span></a></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679475894"><span class="annot"><span class="annottext">ModuleArtifact
+</span><a href="#local-6989586621679475894"><span class="hs-identifier hs-var">a</span></a></span></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-205"></span><span>    </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="annottext">Bool -&gt; Bool
+</span><span class="hs-identifier hs-var">not</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ByteString -&gt; Bool
+</span><span class="hs-identifier hs-var">BSL.null</span></span><span> </span><span class="annot"><span class="annottext">ByteString
+</span><a href="#local-6989586621679475893"><span class="hs-identifier hs-var">rest</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">ArtifactError -&gt; Either ArtifactError ModuleArtifact
+forall a b. a -&gt; Either a b
+</span><span class="hs-identifier hs-var">Left</span></span><span> </span><span class="annot"><span class="annottext">ArtifactError
+</span><span class="hs-string">&quot;malformed artifact: trailing bytes&quot;</span></span><span>
+</span><span id="line-206"></span><span>    </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">otherwise</span></span><span> </span><span class="hs-glyph">-&gt;</span><span>
+</span><span id="line-207"></span><span>        </span><span class="hs-keyword">case</span><span> </span><span class="annot"><span class="annottext">StoredLayout
+-&gt; Map Int VarIdent -&gt; Int -&gt; Either (ArtifactError VarIdent) ()
+forall ident.
+StoredLayout
+-&gt; Map Int ident -&gt; Int -&gt; Either (ArtifactError ident) ()
+</span><span class="hs-identifier hs-var">checkStoredLayout</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ModuleArtifact -&gt; StoredLayout
+</span><a href="Language.MLTT.Artifact.html#artifactLayout"><span class="hs-identifier hs-var">artifactLayout</span></a></span><span> </span><span class="annot"><span class="annottext">ModuleArtifact
+</span><a href="#local-6989586621679475894"><span class="hs-identifier hs-var">a</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-208"></span><span>                               </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ModuleArtifact -&gt; Map Int VarIdent
+</span><a href="Language.MLTT.Artifact.html#artifactSpellings"><span class="hs-identifier hs-var">artifactSpellings</span></a></span><span> </span><span class="annot"><span class="annottext">ModuleArtifact
+</span><a href="#local-6989586621679475894"><span class="hs-identifier hs-var">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[ArtifactDecl] -&gt; Int
+forall a. [a] -&gt; Int
+forall (t :: * -&gt; *) a. Foldable t =&gt; t a -&gt; Int
+</span><span class="hs-identifier hs-var">length</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ModuleArtifact -&gt; [ArtifactDecl]
+</span><a href="Language.MLTT.Artifact.html#artifactDecls"><span class="hs-identifier hs-var">artifactDecls</span></a></span><span> </span><span class="annot"><span class="annottext">ModuleArtifact
+</span><a href="#local-6989586621679475894"><span class="hs-identifier hs-var">a</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-keyword">of</span><span>
+</span><span id="line-209"></span><span>          </span><span class="annot"><span class="hs-identifier hs-type">Left</span></span><span> </span><span id="local-6989586621679475899"><span class="annot"><span class="annottext">ArtifactError VarIdent
+</span><a href="#local-6989586621679475899"><span class="hs-identifier hs-var">err</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">ArtifactError -&gt; Either ArtifactError ModuleArtifact
+forall a b. a -&gt; Either a b
+</span><span class="hs-identifier hs-var">Left</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ArtifactError
+</span><span class="hs-string">&quot;malformed artifact: &quot;</span></span><span> </span><span class="annot"><span class="annottext">ArtifactError -&gt; ShowS
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">ArtifactError VarIdent -&gt; ArtifactError
+</span><a href="Language.MLTT.Artifact.html#renderArtifactError"><span class="hs-identifier hs-var">renderArtifactError</span></a></span><span> </span><span class="annot"><span class="annottext">ArtifactError VarIdent
+</span><a href="#local-6989586621679475899"><span class="hs-identifier hs-var">err</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-210"></span><span>          </span><span class="annot"><span class="hs-identifier hs-type">Right</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">ModuleArtifact -&gt; Either ArtifactError ModuleArtifact
+forall a b. b -&gt; Either a b
+</span><span class="hs-identifier hs-var">Right</span></span><span> </span><span class="annot"><span class="annottext">ModuleArtifact
+</span><a href="#local-6989586621679475894"><span class="hs-identifier hs-var">a</span></a></span><span>
+</span><span id="line-211"></span><span>
+</span><span id="line-212"></span><span class="annot"><span class="hs-comment">-- * Writing</span></span><span>
+</span><span id="line-213"></span><span>
+</span><span id="line-214"></span><span class="hs-comment">-- | Serialise a checked module.</span><span>
+</span><span id="line-215"></span><span class="hs-comment">--</span><span>
+</span><span id="line-216"></span><span class="hs-comment">-- The declarations are exactly the names the module allocated in its stripe,</span><span>
+</span><span id="line-217"></span><span class="hs-comment">-- in ascending order, which is declaration order; their spellings come from</span><span>
+</span><span id="line-218"></span><span class="hs-comment">-- 'envDisplay' and are fully qualified, so the artifact does not depend on</span><span>
+</span><span id="line-219"></span><span class="hs-comment">-- what was visible under which shorter spelling at check time.</span><span>
+</span><span id="line-220"></span><span id="local-6989586621679475290"><span class="annot"><a href="Language.MLTT.Artifact.html#makeArtifact"><span class="hs-identifier hs-type">makeArtifact</span></a></span><span>
+</span><span id="line-221"></span><span>  </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span>               </span><span class="annot"><span class="hs-comment">-- ^ The module's name.</span></span><span>
+</span><span id="line-222"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.NameRange</span></span><span>             </span><span class="annot"><span class="hs-comment">-- ^ Its reservation, from the registry.</span></span><span>
+</span><span id="line-223"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#ContentHash"><span class="hs-identifier hs-type">ContentHash</span></a></span><span>                </span><span class="annot"><span class="hs-comment">-- ^ Of the module's printed source.</span></span><span>
+</span><span id="line-224"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="hs-special">(</span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#ContentHash"><span class="hs-identifier hs-type">ContentHash</span></a></span><span class="hs-special">)</span><span class="hs-special">]</span><span> </span><span class="annot"><span class="hs-comment">-- ^ Its imports, with their content hashes.</span></span><span>
+</span><span id="line-225"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Impl.html#CheckedModule"><span class="hs-identifier hs-type">CheckedModule</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679475290"><span class="hs-identifier hs-type">c</span></a></span><span>
+</span><span id="line-226"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#ModuleArtifact"><span class="hs-identifier hs-type">ModuleArtifact</span></a></span></span><span>
+</span><span id="line-227"></span><span id="makeArtifact"><span class="annot"><span class="annottext">makeArtifact :: forall (c :: S).
+VarIdent
+-&gt; NameRange
+-&gt; ContentHash
+-&gt; [(VarIdent, ContentHash)]
+-&gt; CheckedModule c
+-&gt; ModuleArtifact
+</span><a href="Language.MLTT.Artifact.html#makeArtifact"><span class="hs-identifier hs-var hs-var">makeArtifact</span></a></span></span><span> </span><span id="local-6989586621679475901"><span class="annot"><span class="annottext">VarIdent
+</span><a href="#local-6989586621679475901"><span class="hs-identifier hs-var">name</span></a></span></span><span> </span><span id="local-6989586621679475902"><span class="annot"><span class="annottext">NameRange
+</span><a href="#local-6989586621679475902"><span class="hs-identifier hs-var">reservation</span></a></span></span><span> </span><span id="local-6989586621679475903"><span class="annot"><span class="annottext">ContentHash
+</span><a href="#local-6989586621679475903"><span class="hs-identifier hs-var">source</span></a></span></span><span> </span><span id="local-6989586621679475904"><span class="annot"><span class="annottext">[(VarIdent, ContentHash)]
+</span><a href="#local-6989586621679475904"><span class="hs-identifier hs-var">imports</span></a></span></span><span> </span><span id="local-6989586621679475905"><span class="annot"><span class="annottext">CheckedModule c
+</span><a href="#local-6989586621679475905"><span class="hs-identifier hs-var">cm</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">CheckedModule c
+-&gt; (forall {n :: S}.
+    DExt c n =&gt;
+    ExtWithin c n -&gt; Env n -&gt; [CommandResult] -&gt; ModuleArtifact)
+-&gt; ModuleArtifact
+forall (c :: S) r.
+CheckedModule c
+-&gt; (forall (n :: S).
+    DExt c n =&gt;
+    ExtWithin c n -&gt; Env n -&gt; [CommandResult] -&gt; r)
+-&gt; r
+</span><a href="Language.MLTT.Impl.html#withCheckedModule"><span class="hs-identifier hs-var">withCheckedModule</span></a></span><span> </span><span class="annot"><span class="annottext">CheckedModule c
+</span><a href="#local-6989586621679475905"><span class="hs-identifier hs-var">cm</span></a></span><span> </span><span class="annot"><span class="annottext">((forall {n :: S}.
+  DExt c n =&gt;
+  ExtWithin c n -&gt; Env n -&gt; [CommandResult] -&gt; ModuleArtifact)
+ -&gt; ModuleArtifact)
+-&gt; (forall {n :: S}.
+    DExt c n =&gt;
+    ExtWithin c n -&gt; Env n -&gt; [CommandResult] -&gt; ModuleArtifact)
+-&gt; ModuleArtifact
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-glyph">\</span><span class="annot"><span class="annottext">ExtWithin c n
+</span><span class="hs-identifier">_</span></span><span> </span><span id="local-6989586621679475947"><span class="annot"><span class="annottext">Env n
+</span><a href="#local-6989586621679475947"><span class="hs-identifier hs-var">env</span></a></span></span><span> </span><span class="annot"><span class="annottext">[CommandResult]
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">-&gt;</span><span>
+</span><span id="line-228"></span><span>  </span><span class="hs-keyword">let</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.NameRange</span></span><span> </span><span id="local-6989586621679475949"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679475949"><span class="hs-identifier hs-var">lo</span></a></span></span><span> </span><span id="local-6989586621679475950"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679475950"><span class="hs-identifier hs-var">hi</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">NameRange
+</span><a href="#local-6989586621679475902"><span class="hs-identifier hs-var">reservation</span></a></span><span>
+</span><span id="line-229"></span><span>      </span><span id="local-6989586621679475954"><span class="annot"><span class="annottext">emptyAt :: Int -&gt; NameRange
+</span><a href="#local-6989586621679475954"><span class="hs-identifier hs-var hs-var">emptyAt</span></a></span></span><span> </span><span id="local-6989586621679475955"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679475955"><span class="hs-identifier hs-var">base</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; NameRange
+</span><span class="hs-identifier hs-var">Foil.NameRange</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679475955"><span class="hs-identifier hs-var">base</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679475955"><span class="hs-identifier hs-var">base</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Int
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-glyph hs-var">-</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">1</span></span><span class="hs-special">)</span><span>
+</span><span id="line-230"></span><span>      </span><span id="local-6989586621679475956"><span class="annot"><span class="annottext">layout :: StoredLayout
+</span><a href="#local-6989586621679475956"><span class="hs-identifier hs-var hs-var">layout</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-identifier hs-type">StoredLayout</span></span><span>
+</span><span id="line-231"></span><span>        </span><span class="hs-special">{</span><span> </span><span class="annot"><span class="annottext">storedConstants :: NameRange
+</span><span class="hs-identifier hs-var">storedConstants</span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-232"></span><span>            </span><span class="annot"><span class="annottext">NameRange
+-&gt; (NameRange -&gt; NameRange) -&gt; Maybe NameRange -&gt; NameRange
+forall b a. b -&gt; (a -&gt; b) -&gt; Maybe a -&gt; b
+</span><span class="hs-identifier hs-var">maybe</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Int -&gt; NameRange
+</span><a href="#local-6989586621679475954"><span class="hs-identifier hs-var">emptyAt</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679475949"><span class="hs-identifier hs-var">lo</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">NameRange -&gt; NameRange
+forall a. a -&gt; a
+</span><span class="hs-identifier hs-var">id</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[Int] -&gt; Maybe NameRange
+</span><span class="hs-identifier hs-var">spanOfNames</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">(Name n -&gt; Int) -&gt; [Name n] -&gt; [Int]
+forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
+</span><span class="hs-identifier hs-var">map</span></span><span> </span><span class="annot"><span class="annottext">Name n -&gt; Int
+forall (l :: S). Name l -&gt; Int
+</span><span class="hs-identifier hs-var">Foil.nameId</span></span><span> </span><span class="annot"><span class="annottext">[Name n]
+</span><a href="#local-6989586621679475963"><span class="hs-identifier hs-var">own</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-233"></span><span>        </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">storedLocals :: NameRange
+</span><span class="hs-identifier hs-var">storedLocals</span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-234"></span><span>            </span><span class="annot"><span class="annottext">NameRange
+-&gt; (NameRange -&gt; NameRange) -&gt; Maybe NameRange -&gt; NameRange
+forall b a. b -&gt; (a -&gt; b) -&gt; Maybe a -&gt; b
+</span><span class="hs-identifier hs-var">maybe</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Int -&gt; NameRange
+</span><a href="#local-6989586621679475954"><span class="hs-identifier hs-var">emptyAt</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">0</span></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">NameRange -&gt; NameRange
+forall a. a -&gt; a
+</span><span class="hs-identifier hs-var">id</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[Int] -&gt; Maybe NameRange
+</span><span class="hs-identifier hs-var">spanOfNames</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[[Int]] -&gt; [Int]
+forall (t :: * -&gt; *) a. Foldable t =&gt; t [a] -&gt; [a]
+</span><span class="hs-identifier hs-var">concat</span></span><span> </span><span class="annot"><span class="annottext">[[Int]]
+</span><a href="#local-6989586621679475966"><span class="hs-identifier hs-var">localIds</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-235"></span><span>        </span><span class="hs-special">}</span><span>
+</span><span id="line-236"></span><span>      </span><span id="local-6989586621679475967"><span class="annot"><span class="annottext">ctx :: Ctx BNFC'Position n
+</span><a href="#local-6989586621679475967"><span class="hs-identifier hs-var hs-var">ctx</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Env n -&gt; Ctx BNFC'Position n
+forall (n :: S). Env n -&gt; Ctx BNFC'Position n
+</span><a href="Language.MLTT.Impl.html#envCtx"><span class="hs-identifier hs-var">envCtx</span></a></span><span> </span><span class="annot"><span class="annottext">Env n
+</span><a href="#local-6989586621679475947"><span class="hs-identifier hs-var">env</span></a></span><span>
+</span><span id="line-237"></span><span>      </span><span id="local-6989586621679475963"><span class="annot"><span class="annottext">own :: [Name n]
+</span><a href="#local-6989586621679475963"><span class="hs-identifier hs-var hs-var">own</span></a></span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-238"></span><span>        </span><span class="hs-special">[</span><span> </span><span class="annot"><span class="annottext">Name n
+</span><a href="#local-6989586621679475969"><span class="hs-identifier hs-var">x</span></a></span><span>
+</span><span id="line-239"></span><span>        </span><span class="hs-glyph">|</span><span> </span><span id="local-6989586621679475969"><span class="annot"><span class="annottext">Name n
+</span><a href="#local-6989586621679475969"><span class="hs-identifier hs-var">x</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">NameSet n -&gt; [Name n]
+forall (n :: S). NameSet n -&gt; [Name n]
+</span><span class="hs-identifier hs-var">Foil.nameSetToList</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Scope n -&gt; NameSet n
+forall (n :: S). Scope n -&gt; NameSet n
+</span><span class="hs-identifier hs-var">Foil.scopeToNameSet</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Ctx BNFC'Position n -&gt; Scope n
+forall a (n :: S). Ctx a n -&gt; Scope n
+</span><a href="Language.MLTT.Typecheck.html#ctxScope"><span class="hs-identifier hs-var">ctxScope</span></a></span><span> </span><span class="annot"><span class="annottext">Ctx BNFC'Position n
+</span><a href="#local-6989586621679475967"><span class="hs-identifier hs-var">ctx</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-240"></span><span>        </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679475949"><span class="hs-identifier hs-var">lo</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Bool
+forall a. Ord a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">&lt;=</span></span><span> </span><span class="annot"><span class="annottext">Name n -&gt; Int
+forall (l :: S). Name l -&gt; Int
+</span><span class="hs-identifier hs-var">Foil.nameId</span></span><span> </span><span class="annot"><span class="annottext">Name n
+</span><a href="#local-6989586621679475969"><span class="hs-identifier hs-var">x</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Name n -&gt; Int
+forall (l :: S). Name l -&gt; Int
+</span><span class="hs-identifier hs-var">Foil.nameId</span></span><span> </span><span class="annot"><span class="annottext">Name n
+</span><a href="#local-6989586621679475969"><span class="hs-identifier hs-var">x</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Bool
+forall a. Ord a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">&lt;=</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679475950"><span class="hs-identifier hs-var">hi</span></a></span><span>
+</span><span id="line-241"></span><span>        </span><span class="hs-special">]</span><span>
+</span><span id="line-242"></span><span>      </span><span class="hs-special">(</span><span id="local-6989586621679475974"><span class="annot"><span class="annottext">[ArtifactDecl]
+</span><a href="#local-6989586621679475974"><span class="hs-identifier hs-var">decls</span></a></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679475975"><span class="annot"><span class="annottext">[Map Int VarIdent]
+</span><a href="#local-6989586621679475975"><span class="hs-identifier hs-var">spellingsPer</span></a></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679475966"><span class="annot"><span class="annottext">[[Int]]
+</span><a href="#local-6989586621679475966"><span class="hs-identifier hs-var">localIds</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">[(ArtifactDecl, Map Int VarIdent, [Int])]
+-&gt; ([ArtifactDecl], [Map Int VarIdent], [[Int]])
+forall a b c. [(a, b, c)] -&gt; ([a], [b], [c])
+</span><span class="hs-identifier hs-var">unzip3</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">(Name n -&gt; (ArtifactDecl, Map Int VarIdent, [Int]))
+-&gt; [Name n] -&gt; [(ArtifactDecl, Map Int VarIdent, [Int])]
+forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
+</span><span class="hs-identifier hs-var">map</span></span><span> </span><span class="annot"><span class="annottext">Name n -&gt; (ArtifactDecl, Map Int VarIdent, [Int])
+</span><a href="#local-6989586621679475977"><span class="hs-identifier hs-var">declOf</span></a></span><span> </span><span class="annot"><span class="annottext">[Name n]
+</span><a href="#local-6989586621679475963"><span class="hs-identifier hs-var">own</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-243"></span><span>      </span><span class="hs-comment">-- Only the referenced constants enter the table: it is hashed, so an</span><span>
+</span><span id="line-244"></span><span>      </span><span class="hs-comment">-- unused import must not change the artifact, or content-defined</span><span>
+</span><span id="line-245"></span><span>      </span><span class="hs-comment">-- early cutoff dies. See 'termSpellings'.</span><span>
+</span><span id="line-246"></span><span>      </span><span id="local-6989586621679475978"><span class="annot"><span class="annottext">spellings :: Map Int VarIdent
+</span><a href="#local-6989586621679475978"><span class="hs-identifier hs-var hs-var">spellings</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">[Map Int VarIdent] -&gt; Map Int VarIdent
+forall (f :: * -&gt; *) k a.
+(Foldable f, Ord k) =&gt;
+f (Map k a) -&gt; Map k a
+</span><span class="hs-identifier hs-var">Map.unions</span></span><span> </span><span class="annot"><span class="annottext">[Map Int VarIdent]
+</span><a href="#local-6989586621679475975"><span class="hs-identifier hs-var">spellingsPer</span></a></span><span>
+</span><span id="line-247"></span><span>      </span><span id="local-6989586621679475977"><span class="annot"><span class="annottext">declOf :: Name n -&gt; (ArtifactDecl, Map Int VarIdent, [Int])
+</span><a href="#local-6989586621679475977"><span class="hs-identifier hs-var hs-var">declOf</span></a></span></span><span> </span><span id="local-6989586621679475980"><span class="annot"><span class="annottext">Name n
+</span><a href="#local-6989586621679475980"><span class="hs-identifier hs-var">x</span></a></span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-248"></span><span>        </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679475981"><span class="annot"><span class="annottext">ty :: AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) n
+</span><a href="#local-6989586621679475981"><span class="hs-identifier hs-var hs-var">ty</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Name n
+-&gt; NameMap
+     n (AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) n)
+-&gt; AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) n
+forall (n :: S) a. Name n -&gt; NameMap n a -&gt; a
+</span><span class="hs-identifier hs-var">Foil.lookupName</span></span><span> </span><span class="annot"><span class="annottext">Name n
+</span><a href="#local-6989586621679475980"><span class="hs-identifier hs-var">x</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Ctx BNFC'Position n
+-&gt; NameMap
+     n (AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) n)
+forall a (n :: S). Ctx a n -&gt; NameMap n (Term' a n)
+</span><a href="Language.MLTT.Typecheck.html#ctxTypes"><span class="hs-identifier hs-var">ctxTypes</span></a></span><span> </span><span class="annot"><span class="annottext">Ctx BNFC'Position n
+</span><a href="#local-6989586621679475967"><span class="hs-identifier hs-var">ctx</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-249"></span><span>            </span><span id="local-6989586621679475984"><span class="annot"><span class="annottext">value :: AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) n
+</span><a href="#local-6989586621679475984"><span class="hs-identifier hs-var hs-var">value</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">case</span><span> </span><span class="annot"><span class="annottext">Def BNFC'Position n
+-&gt; Maybe (AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) n)
+forall a (n :: S). Def a n -&gt; Maybe (Term' a n)
+</span><a href="Language.MLTT.Eval.html#getDef"><span class="hs-identifier hs-var">getDef</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Name n -&gt; NameMap n (Def BNFC'Position n) -&gt; Def BNFC'Position n
+forall (n :: S) a. Name n -&gt; NameMap n a -&gt; a
+</span><span class="hs-identifier hs-var">Foil.lookupName</span></span><span> </span><span class="annot"><span class="annottext">Name n
+</span><a href="#local-6989586621679475980"><span class="hs-identifier hs-var">x</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Ctx BNFC'Position n -&gt; NameMap n (Def BNFC'Position n)
+forall a (n :: S). Ctx a n -&gt; Defs a n
+</span><a href="Language.MLTT.Typecheck.html#ctxDefs"><span class="hs-identifier hs-var">ctxDefs</span></a></span><span> </span><span class="annot"><span class="annottext">Ctx BNFC'Position n
+</span><a href="#local-6989586621679475967"><span class="hs-identifier hs-var">ctx</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-keyword">of</span><span>
+</span><span id="line-250"></span><span>              </span><span class="annot"><span class="hs-identifier hs-type">Just</span></span><span> </span><span id="local-6989586621679475987"><span class="annot"><span class="annottext">AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) n
+</span><a href="#local-6989586621679475987"><span class="hs-identifier hs-var">v</span></a></span></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) n
+</span><a href="#local-6989586621679475987"><span class="hs-identifier hs-var">v</span></a></span><span>
+</span><span id="line-251"></span><span>              </span><span class="annot"><span class="annottext">Maybe (AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) n)
+</span><span class="hs-identifier hs-var">Nothing</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">ArtifactError
+-&gt; AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) n
+forall a. HasCallStack =&gt; ArtifactError -&gt; a
+</span><span class="hs-identifier hs-var">error</span></span><span> </span><span class="annot"><span class="annottext">ArtifactError
+</span><span class="hs-string">&quot;impossible: a top-level name with no definition&quot;</span></span><span>
+</span><span id="line-252"></span><span>            </span><span id="local-6989586621679475989"><span class="annot"><span class="annottext">spelling :: VarIdent
+</span><a href="#local-6989586621679475989"><span class="hs-identifier hs-var hs-var">spelling</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Name n -&gt; NameMap n VarIdent -&gt; VarIdent
+forall (n :: S) a. Name n -&gt; NameMap n a -&gt; a
+</span><span class="hs-identifier hs-var">Foil.lookupName</span></span><span> </span><span class="annot"><span class="annottext">Name n
+</span><a href="#local-6989586621679475980"><span class="hs-identifier hs-var">x</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Env n -&gt; NameMap n VarIdent
+forall (n :: S). Env n -&gt; Display n VarIdent
+</span><a href="Language.MLTT.Impl.html#envDisplay"><span class="hs-identifier hs-var">envDisplay</span></a></span><span> </span><span class="annot"><span class="annottext">Env n
+</span><a href="#local-6989586621679475947"><span class="hs-identifier hs-var">env</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-253"></span><span>         </span><span class="hs-keyword">in</span><span> </span><span class="hs-special">(</span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#ArtifactDecl"><span class="hs-identifier hs-type">ArtifactDecl</span></a></span><span>
+</span><span id="line-254"></span><span>                </span><span class="hs-special">{</span><span> </span><span class="annot"><span class="annottext">adSpelling :: VarIdent
+</span><a href="Language.MLTT.Artifact.html#adSpelling"><span class="hs-identifier hs-var">adSpelling</span></a></span><span>   </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">VarIdent
+</span><a href="#local-6989586621679475989"><span class="hs-identifier hs-var">spelling</span></a></span><span>
+</span><span id="line-255"></span><span>                </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">adVisibility :: Visibility
+</span><a href="Language.MLTT.Artifact.html#adVisibility"><span class="hs-identifier hs-var">adVisibility</span></a></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-256"></span><span>                    </span><span class="hs-keyword">if</span><span> </span><span class="annot"><span class="annottext">VarIdent -&gt; Map VarIdent (Name n) -&gt; Bool
+forall k a. Ord k =&gt; k -&gt; Map k a -&gt; Bool
+</span><span class="hs-identifier hs-var">Map.member</span></span><span> </span><span class="annot"><span class="annottext">VarIdent
+</span><a href="#local-6989586621679475989"><span class="hs-identifier hs-var">spelling</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Env n -&gt; Map VarIdent (Name n)
+forall (n :: S). Env n -&gt; Table (Name n)
+</span><a href="Language.MLTT.Impl.html#envExports"><span class="hs-identifier hs-var">envExports</span></a></span><span> </span><span class="annot"><span class="annottext">Env n
+</span><a href="#local-6989586621679475947"><span class="hs-identifier hs-var">env</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-keyword">then</span><span> </span><span class="annot"><span class="annottext">Visibility
+</span><a href="Language.MLTT.Resolve.html#Public"><span class="hs-identifier hs-var">Public</span></a></span><span> </span><span class="hs-keyword">else</span><span> </span><span class="annot"><span class="annottext">Visibility
+</span><a href="Language.MLTT.Resolve.html#Private"><span class="hs-identifier hs-var">Private</span></a></span><span>
+</span><span id="line-257"></span><span>                </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">adType :: StoredTerm
+</span><a href="Language.MLTT.Artifact.html#adType"><span class="hs-identifier hs-var">adType</span></a></span><span>       </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) n
+-&gt; StoredTerm
+forall (binder :: S -&gt; S -&gt; *) (sig :: * -&gt; * -&gt; *) (n :: S).
+Binary (AST binder sig n) =&gt;
+AST binder sig n -&gt; StoredTerm
+</span><span class="hs-identifier hs-var">storeTerm</span></span><span> </span><span class="annot"><span class="annottext">AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) n
+</span><a href="#local-6989586621679475981"><span class="hs-identifier hs-var">ty</span></a></span><span>
+</span><span id="line-258"></span><span>                </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">adValue :: StoredTerm
+</span><a href="Language.MLTT.Artifact.html#adValue"><span class="hs-identifier hs-var">adValue</span></a></span><span>      </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) n
+-&gt; StoredTerm
+forall (binder :: S -&gt; S -&gt; *) (sig :: * -&gt; * -&gt; *) (n :: S).
+Binary (AST binder sig n) =&gt;
+AST binder sig n -&gt; StoredTerm
+</span><span class="hs-identifier hs-var">storeTerm</span></span><span> </span><span class="annot"><span class="annottext">AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) n
+</span><a href="#local-6989586621679475984"><span class="hs-identifier hs-var">value</span></a></span><span>
+</span><span id="line-259"></span><span>                </span><span class="hs-special">}</span><span>
+</span><span id="line-260"></span><span>            </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">NameMap n VarIdent
+-&gt; AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) n
+-&gt; Map Int VarIdent
+forall (n :: S) (binder :: S -&gt; S -&gt; *) (sig :: * -&gt; * -&gt; *) ident.
+(Distinct n, CoSinkable binder, Bifoldable sig) =&gt;
+NameMap n ident -&gt; AST binder sig n -&gt; Map Int ident
+</span><span class="hs-identifier hs-var">termSpellings</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Env n -&gt; NameMap n VarIdent
+forall (n :: S). Env n -&gt; Display n VarIdent
+</span><a href="Language.MLTT.Impl.html#envDisplay"><span class="hs-identifier hs-var">envDisplay</span></a></span><span> </span><span class="annot"><span class="annottext">Env n
+</span><a href="#local-6989586621679475947"><span class="hs-identifier hs-var">env</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) n
+</span><a href="#local-6989586621679475981"><span class="hs-identifier hs-var">ty</span></a></span><span>
+</span><span id="line-261"></span><span>                </span><span class="annot"><span class="annottext">Map Int VarIdent -&gt; Map Int VarIdent -&gt; Map Int VarIdent
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">NameMap n VarIdent
+-&gt; AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) n
+-&gt; Map Int VarIdent
+forall (n :: S) (binder :: S -&gt; S -&gt; *) (sig :: * -&gt; * -&gt; *) ident.
+(Distinct n, CoSinkable binder, Bifoldable sig) =&gt;
+NameMap n ident -&gt; AST binder sig n -&gt; Map Int ident
+</span><span class="hs-identifier hs-var">termSpellings</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Env n -&gt; NameMap n VarIdent
+forall (n :: S). Env n -&gt; Display n VarIdent
+</span><a href="Language.MLTT.Impl.html#envDisplay"><span class="hs-identifier hs-var">envDisplay</span></a></span><span> </span><span class="annot"><span class="annottext">Env n
+</span><a href="#local-6989586621679475947"><span class="hs-identifier hs-var">env</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) n
+</span><a href="#local-6989586621679475984"><span class="hs-identifier hs-var">value</span></a></span><span>
+</span><span id="line-262"></span><span>            </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) n -&gt; [Int]
+forall (sig :: * -&gt; * -&gt; *) (binder :: S -&gt; S -&gt; *) (n :: S).
+(Bifoldable sig, HasNameBinders binder) =&gt;
+AST binder sig n -&gt; [Int]
+</span><span class="hs-identifier hs-var">localsOf</span></span><span> </span><span class="annot"><span class="annottext">AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) n
+</span><a href="#local-6989586621679475981"><span class="hs-identifier hs-var">ty</span></a></span><span> </span><span class="annot"><span class="annottext">[Int] -&gt; [Int] -&gt; [Int]
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) n -&gt; [Int]
+forall (sig :: * -&gt; * -&gt; *) (binder :: S -&gt; S -&gt; *) (n :: S).
+(Bifoldable sig, HasNameBinders binder) =&gt;
+AST binder sig n -&gt; [Int]
+</span><span class="hs-identifier hs-var">localsOf</span></span><span> </span><span class="annot"><span class="annottext">AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) n
+</span><a href="#local-6989586621679475984"><span class="hs-identifier hs-var">value</span></a></span><span> </span><span class="hs-special">)</span><span>
+</span><span id="line-263"></span><span>   </span><span class="hs-keyword">in</span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#ModuleArtifact"><span class="hs-identifier hs-type">ModuleArtifact</span></a></span><span>
+</span><span id="line-264"></span><span>        </span><span class="hs-special">{</span><span> </span><span class="annot"><span class="annottext">artifactModule :: VarIdent
+</span><a href="Language.MLTT.Artifact.html#artifactModule"><span class="hs-identifier hs-var">artifactModule</span></a></span><span>  </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">VarIdent
+</span><a href="#local-6989586621679475901"><span class="hs-identifier hs-var">name</span></a></span><span>
+</span><span id="line-265"></span><span>        </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">artifactLayout :: StoredLayout
+</span><a href="Language.MLTT.Artifact.html#artifactLayout"><span class="hs-identifier hs-var">artifactLayout</span></a></span><span>  </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">StoredLayout
+</span><a href="#local-6989586621679475956"><span class="hs-identifier hs-var">layout</span></a></span><span>
+</span><span id="line-266"></span><span>        </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">artifactSource :: ContentHash
+</span><a href="Language.MLTT.Artifact.html#artifactSource"><span class="hs-identifier hs-var">artifactSource</span></a></span><span>  </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ContentHash
+</span><a href="#local-6989586621679475903"><span class="hs-identifier hs-var">source</span></a></span><span>
+</span><span id="line-267"></span><span>        </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">artifactImports :: [(VarIdent, ContentHash)]
+</span><a href="Language.MLTT.Artifact.html#artifactImports"><span class="hs-identifier hs-var">artifactImports</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">[(VarIdent, ContentHash)]
+</span><a href="#local-6989586621679475904"><span class="hs-identifier hs-var">imports</span></a></span><span>
+</span><span id="line-268"></span><span>        </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">artifactHash :: ContentHash
+</span><a href="Language.MLTT.Artifact.html#artifactHash"><span class="hs-identifier hs-var">artifactHash</span></a></span><span>    </span><span class="hs-glyph">=</span><span>
+</span><span id="line-269"></span><span>            </span><span class="annot"><span class="annottext">ByteString -&gt; ContentHash
+</span><a href="Language.MLTT.Artifact.html#contentHashBytes"><span class="hs-identifier hs-var">contentHashBytes</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Put -&gt; ByteString
+</span><span class="hs-identifier hs-var">runPut</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Map Int VarIdent -&gt; Put
+forall t. Binary t =&gt; t -&gt; Put
+</span><span class="hs-identifier hs-var">put</span></span><span> </span><span class="annot"><span class="annottext">Map Int VarIdent
+</span><a href="#local-6989586621679475978"><span class="hs-identifier hs-var">spellings</span></a></span><span> </span><span class="annot"><span class="annottext">Put -&gt; Put -&gt; Put
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">[ArtifactDecl] -&gt; Put
+forall t. Binary t =&gt; t -&gt; Put
+</span><span class="hs-identifier hs-var">put</span></span><span> </span><span class="annot"><span class="annottext">[ArtifactDecl]
+</span><a href="#local-6989586621679475974"><span class="hs-identifier hs-var">decls</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-270"></span><span>        </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">artifactSpellings :: Map Int VarIdent
+</span><a href="Language.MLTT.Artifact.html#artifactSpellings"><span class="hs-identifier hs-var">artifactSpellings</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Map Int VarIdent
+</span><a href="#local-6989586621679475978"><span class="hs-identifier hs-var">spellings</span></a></span><span>
+</span><span id="line-271"></span><span>        </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">artifactDecls :: [ArtifactDecl]
+</span><a href="Language.MLTT.Artifact.html#artifactDecls"><span class="hs-identifier hs-var">artifactDecls</span></a></span><span>   </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">[ArtifactDecl]
+</span><a href="#local-6989586621679475974"><span class="hs-identifier hs-var">decls</span></a></span><span>
+</span><span id="line-272"></span><span>        </span><span class="hs-special">}</span><span>
+</span><span id="line-273"></span><span>
+</span><span id="line-274"></span><span class="annot"><span class="hs-comment">-- * Loading</span></span><span>
+</span><span id="line-275"></span><span>
+</span><span id="line-276"></span><span class="hs-comment">-- | Load a checked module from its artifact, into an environment holding</span><span>
+</span><span id="line-277"></span><span class="hs-comment">-- what its imports export: the same starting point 'checkModule' has.</span><span>
+</span><span id="line-278"></span><span class="hs-comment">--</span><span>
+</span><span id="line-279"></span><span class="hs-comment">-- The load fails if an import's recorded content hash disagrees with the one</span><span>
+</span><span id="line-280"></span><span class="hs-comment">-- supplied, which is how a stale artifact is detected. It does not compare</span><span>
+</span><span id="line-281"></span><span class="hs-comment">-- the artifact's stripe with the range supplied: a registry that moved the</span><span>
+</span><span id="line-282"></span><span class="hs-comment">-- stripe is the relocation case, and the module simply loads at its new</span><span>
+</span><span id="line-283"></span><span class="hs-comment">-- names, consistently with everything else in this run.</span><span>
+</span><span id="line-284"></span><span class="annot"><a href="Language.MLTT.Artifact.html#loadArtifact"><span class="hs-identifier hs-type">loadArtifact</span></a></span><span>
+</span><span id="line-285"></span><span>  </span><span class="hs-glyph">::</span><span> </span><span class="hs-keyword">forall</span><span> </span><span id="local-6989586621679475374"><span class="annot"><a href="#local-6989586621679475374"><span class="hs-identifier hs-type">c</span></a></span></span><span class="hs-operator">.</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.Distinct</span></span><span> </span><span class="annot"><a href="#local-6989586621679475374"><span class="hs-identifier hs-type">c</span></a></span><span>
+</span><span id="line-286"></span><span>  </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Map</span></span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#ContentHash"><span class="hs-identifier hs-type">ContentHash</span></a></span><span>
+</span><span id="line-287"></span><span>     </span><span class="annot"><span class="hs-comment">-- ^ Content hashes of the modules loaded or checked so far.</span></span><span>
+</span><span id="line-288"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.NameRange</span></span><span>       </span><span class="annot"><span class="hs-comment">-- ^ The module's stripe, from this run's registry.</span></span><span>
+</span><span id="line-289"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Impl.html#Env"><span class="hs-identifier hs-type">Env</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679475374"><span class="hs-identifier hs-type">c</span></a></span><span>                </span><span class="annot"><span class="hs-comment">-- ^ Environment holding what its imports export.</span></span><span>
+</span><span id="line-290"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#ModuleArtifact"><span class="hs-identifier hs-type">ModuleArtifact</span></a></span><span>
+</span><span id="line-291"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Either</span></span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#ArtifactError"><span class="hs-identifier hs-type">ArtifactError</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.MLTT.Impl.html#CheckedModule"><span class="hs-identifier hs-type">CheckedModule</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679475374"><span class="hs-identifier hs-type">c</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-292"></span><span id="loadArtifact"><span class="annot"><span class="annottext">loadArtifact :: forall (c :: S).
+Distinct c =&gt;
+Map VarIdent ContentHash
+-&gt; NameRange
+-&gt; Env c
+-&gt; ModuleArtifact
+-&gt; Either ArtifactError (CheckedModule c)
+</span><a href="Language.MLTT.Artifact.html#loadArtifact"><span class="hs-identifier hs-var hs-var">loadArtifact</span></a></span></span><span> </span><span id="local-6989586621679476023"><span class="annot"><span class="annottext">Map VarIdent ContentHash
+</span><a href="#local-6989586621679476023"><span class="hs-identifier hs-var">hashes</span></a></span></span><span> </span><span id="local-6989586621679476024"><span class="annot"><span class="annottext">NameRange
+</span><a href="#local-6989586621679476024"><span class="hs-identifier hs-var">range</span></a></span></span><span> </span><span id="local-6989586621679476025"><span class="annot"><span class="annottext">Env c
+</span><a href="#local-6989586621679476025"><span class="hs-identifier hs-var">env</span></a></span></span><span> </span><span id="local-6989586621679476026"><span class="annot"><span class="annottext">ModuleArtifact
+</span><a href="#local-6989586621679476026"><span class="hs-identifier hs-var">artifact</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-293"></span><span>  </span><span class="annot"><span class="annottext">((VarIdent, ContentHash) -&gt; Either ArtifactError ())
+-&gt; [(VarIdent, ContentHash)] -&gt; Either ArtifactError ()
+forall (t :: * -&gt; *) (m :: * -&gt; *) a b.
+(Foldable t, Monad m) =&gt;
+(a -&gt; m b) -&gt; t a -&gt; m ()
+</span><span class="hs-identifier hs-var">mapM_</span></span><span> </span><span class="annot"><span class="annottext">(VarIdent, ContentHash) -&gt; Either ArtifactError ()
+</span><a href="#local-6989586621679476028"><span class="hs-identifier hs-var">checkImport</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ModuleArtifact -&gt; [(VarIdent, ContentHash)]
+</span><a href="Language.MLTT.Artifact.html#artifactImports"><span class="hs-identifier hs-var">artifactImports</span></a></span><span> </span><span class="annot"><span class="annottext">ModuleArtifact
+</span><a href="#local-6989586621679476026"><span class="hs-identifier hs-var">artifact</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-294"></span><span>  </span><span id="local-6989586621679476029"><span class="annot"><span class="annottext">Maybe (NameMap Any (Name c))
+</span><a href="#local-6989586621679476029"><span class="hs-identifier hs-var">relocation</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span>
+</span><span id="line-295"></span><span>    </span><span class="annot"><span class="annottext">(ArtifactError VarIdent
+ -&gt; Either ArtifactError (Maybe (NameMap Any (Name c))))
+-&gt; (Maybe (NameMap Any (Name c))
+    -&gt; Either ArtifactError (Maybe (NameMap Any (Name c))))
+-&gt; Either (ArtifactError VarIdent) (Maybe (NameMap Any (Name c)))
+-&gt; Either ArtifactError (Maybe (NameMap Any (Name c)))
+forall a c b. (a -&gt; c) -&gt; (b -&gt; c) -&gt; Either a b -&gt; c
+</span><span class="hs-identifier hs-var">either</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ArtifactError
+-&gt; Either ArtifactError (Maybe (NameMap Any (Name c)))
+forall a b. a -&gt; Either a b
+</span><span class="hs-identifier hs-var">Left</span></span><span> </span><span class="annot"><span class="annottext">(ArtifactError
+ -&gt; Either ArtifactError (Maybe (NameMap Any (Name c))))
+-&gt; (ArtifactError VarIdent -&gt; ArtifactError)
+-&gt; ArtifactError VarIdent
+-&gt; Either ArtifactError (Maybe (NameMap Any (Name c)))
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">ShowS
+</span><a href="#local-6989586621679476031"><span class="hs-identifier hs-var">located</span></a></span><span> </span><span class="annot"><span class="annottext">ShowS
+-&gt; (ArtifactError VarIdent -&gt; ArtifactError)
+-&gt; ArtifactError VarIdent
+-&gt; ArtifactError
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">ArtifactError VarIdent -&gt; ArtifactError
+</span><a href="Language.MLTT.Artifact.html#renderArtifactError"><span class="hs-identifier hs-var">renderArtifactError</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">Maybe (NameMap Any (Name c))
+-&gt; Either ArtifactError (Maybe (NameMap Any (Name c)))
+forall a b. b -&gt; Either a b
+</span><span class="hs-identifier hs-var">Right</span></span><span> </span><span class="annot"><span class="annottext">(Either (ArtifactError VarIdent) (Maybe (NameMap Any (Name c)))
+ -&gt; Either ArtifactError (Maybe (NameMap Any (Name c))))
+-&gt; Either (ArtifactError VarIdent) (Maybe (NameMap Any (Name c)))
+-&gt; Either ArtifactError (Maybe (NameMap Any (Name c)))
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span>
+</span><span id="line-296"></span><span>      </span><span class="annot"><span class="annottext">StoredLayout
+-&gt; NameRange
+-&gt; Map Int VarIdent
+-&gt; Map VarIdent (Name c)
+-&gt; Either (ArtifactError VarIdent) (Maybe (NameMap Any (Name c)))
+forall ident (n' :: S) (old :: S).
+Ord ident =&gt;
+StoredLayout
+-&gt; NameRange
+-&gt; Map Int ident
+-&gt; Map ident (Name n')
+-&gt; Either (ArtifactError ident) (Maybe (NameMap old (Name n')))
+</span><span class="hs-identifier hs-var">constantRelocation</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ModuleArtifact -&gt; StoredLayout
+</span><a href="Language.MLTT.Artifact.html#artifactLayout"><span class="hs-identifier hs-var">artifactLayout</span></a></span><span> </span><span class="annot"><span class="annottext">ModuleArtifact
+</span><a href="#local-6989586621679476026"><span class="hs-identifier hs-var">artifact</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">NameRange
+</span><a href="#local-6989586621679476024"><span class="hs-identifier hs-var">range</span></a></span><span>
+</span><span id="line-297"></span><span>                         </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ModuleArtifact -&gt; Map Int VarIdent
+</span><a href="Language.MLTT.Artifact.html#artifactSpellings"><span class="hs-identifier hs-var">artifactSpellings</span></a></span><span> </span><span class="annot"><span class="annottext">ModuleArtifact
+</span><a href="#local-6989586621679476026"><span class="hs-identifier hs-var">artifact</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Env c -&gt; Map VarIdent (Name c)
+forall (n :: S). Env n -&gt; Table (Name n)
+</span><a href="Language.MLTT.Impl.html#envDeclared"><span class="hs-identifier hs-var">envDeclared</span></a></span><span> </span><span class="annot"><span class="annottext">Env c
+</span><a href="#local-6989586621679476033"><span class="hs-identifier hs-var">env'</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-298"></span><span>  </span><span class="annot"><span class="annottext">Maybe (NameMap Any (Name c))
+-&gt; Block c c
+-&gt; Env c
+-&gt; [ArtifactDecl]
+-&gt; Either ArtifactError (CheckedModule c)
+forall (old :: S) (n :: S).
+DExt c n =&gt;
+Maybe (NameMap old (Name c))
+-&gt; Block c n
+-&gt; Env n
+-&gt; [ArtifactDecl]
+-&gt; Either ArtifactError (CheckedModule c)
+</span><a href="#local-6989586621679476034"><span class="hs-identifier hs-var">go</span></a></span><span> </span><span class="annot"><span class="annottext">Maybe (NameMap Any (Name c))
+</span><a href="#local-6989586621679476029"><span class="hs-identifier hs-var">relocation</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">NameRange -&gt; Block c c
+forall (c :: S). NameRange -&gt; Block c c
+</span><span class="hs-identifier hs-var">Blocks.beginBlock</span></span><span> </span><span class="annot"><span class="annottext">NameRange
+</span><a href="#local-6989586621679476024"><span class="hs-identifier hs-var">range</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">Env c
+</span><a href="#local-6989586621679476033"><span class="hs-identifier hs-var">env'</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ModuleArtifact -&gt; [ArtifactDecl]
+</span><a href="Language.MLTT.Artifact.html#artifactDecls"><span class="hs-identifier hs-var">artifactDecls</span></a></span><span> </span><span class="annot"><span class="annottext">ModuleArtifact
+</span><a href="#local-6989586621679476026"><span class="hs-identifier hs-var">artifact</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-299"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-300"></span><span>    </span><span id="local-6989586621679476028"><span class="annot"><span class="annottext">checkImport :: (VarIdent, ContentHash) -&gt; Either ArtifactError ()
+</span><a href="#local-6989586621679476028"><span class="hs-identifier hs-var hs-var">checkImport</span></a></span></span><span> </span><span class="hs-special">(</span><span id="local-6989586621679476036"><span class="annot"><span class="annottext">VarIdent
+</span><a href="#local-6989586621679476036"><span class="hs-identifier hs-var">m</span></a></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679476037"><span class="annot"><span class="annottext">ContentHash
+</span><a href="#local-6989586621679476037"><span class="hs-identifier hs-var">h</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">case</span><span> </span><span class="annot"><span class="annottext">VarIdent -&gt; Map VarIdent ContentHash -&gt; Maybe ContentHash
+forall k a. Ord k =&gt; k -&gt; Map k a -&gt; Maybe a
+</span><span class="hs-identifier hs-var">Map.lookup</span></span><span> </span><span class="annot"><span class="annottext">VarIdent
+</span><a href="#local-6989586621679476036"><span class="hs-identifier hs-var">m</span></a></span><span> </span><span class="annot"><span class="annottext">Map VarIdent ContentHash
+</span><a href="#local-6989586621679476023"><span class="hs-identifier hs-var">hashes</span></a></span><span> </span><span class="hs-keyword">of</span><span>
+</span><span id="line-301"></span><span>      </span><span class="annot"><span class="hs-identifier hs-type">Just</span></span><span> </span><span id="local-6989586621679476039"><span class="annot"><span class="annottext">ContentHash
+</span><a href="#local-6989586621679476039"><span class="hs-identifier hs-var">h'</span></a></span></span><span> </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="annottext">ContentHash
+</span><a href="#local-6989586621679476039"><span class="hs-identifier hs-var">h'</span></a></span><span> </span><span class="annot"><span class="annottext">ContentHash -&gt; ContentHash -&gt; Bool
+forall a. Eq a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">==</span></span><span> </span><span class="annot"><span class="annottext">ContentHash
+</span><a href="#local-6989586621679476037"><span class="hs-identifier hs-var">h</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">() -&gt; Either ArtifactError ()
+forall a b. b -&gt; Either a b
+</span><span class="hs-identifier hs-var">Right</span></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-302"></span><span>      </span><span class="annot"><span class="hs-identifier hs-type">Just</span></span><span> </span><span class="annot"><span class="annottext">ContentHash
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">ArtifactError -&gt; Either ArtifactError ()
+forall a b. a -&gt; Either a b
+</span><span class="hs-identifier hs-var">Left</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ArtifactError
+</span><a href="#local-6989586621679476040"><span class="hs-identifier hs-var">stale</span></a></span><span> </span><span class="annot"><span class="annottext">ArtifactError -&gt; ShowS
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">VarIdent -&gt; ArtifactError
+</span><a href="Language.MLTT.Resolve.html#prettyVarIdent"><span class="hs-identifier hs-var">prettyVarIdent</span></a></span><span> </span><span class="annot"><span class="annottext">VarIdent
+</span><a href="#local-6989586621679476036"><span class="hs-identifier hs-var">m</span></a></span><span> </span><span class="annot"><span class="annottext">ArtifactError -&gt; ShowS
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">ArtifactError
+</span><span class="hs-string">&quot; has changed since then&quot;</span></span><span class="hs-special">)</span><span>
+</span><span id="line-303"></span><span>      </span><span class="annot"><span class="annottext">Maybe ContentHash
+</span><span class="hs-identifier hs-var">Nothing</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">ArtifactError -&gt; Either ArtifactError ()
+forall a b. a -&gt; Either a b
+</span><span class="hs-identifier hs-var">Left</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ArtifactError
+</span><a href="#local-6989586621679476040"><span class="hs-identifier hs-var">stale</span></a></span><span> </span><span class="annot"><span class="annottext">ArtifactError -&gt; ShowS
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">VarIdent -&gt; ArtifactError
+</span><a href="Language.MLTT.Resolve.html#prettyVarIdent"><span class="hs-identifier hs-var">prettyVarIdent</span></a></span><span> </span><span class="annot"><span class="annottext">VarIdent
+</span><a href="#local-6989586621679476036"><span class="hs-identifier hs-var">m</span></a></span><span> </span><span class="annot"><span class="annottext">ArtifactError -&gt; ShowS
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">ArtifactError
+</span><span class="hs-string">&quot; is not among the modules loaded so far&quot;</span></span><span class="hs-special">)</span><span>
+</span><span id="line-304"></span><span>    </span><span id="local-6989586621679476040"><span class="annot"><span class="annottext">stale :: ArtifactError
+</span><a href="#local-6989586621679476040"><span class="hs-identifier hs-var hs-var">stale</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">ArtifactError
+</span><span class="hs-string">&quot;stale artifact for &quot;</span></span><span> </span><span class="annot"><span class="annottext">ArtifactError -&gt; ShowS
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">VarIdent -&gt; ArtifactError
+</span><a href="Language.MLTT.Resolve.html#prettyVarIdent"><span class="hs-identifier hs-var">prettyVarIdent</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ModuleArtifact -&gt; VarIdent
+</span><a href="Language.MLTT.Artifact.html#artifactModule"><span class="hs-identifier hs-var">artifactModule</span></a></span><span> </span><span class="annot"><span class="annottext">ModuleArtifact
+</span><a href="#local-6989586621679476026"><span class="hs-identifier hs-var">artifact</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">ArtifactError -&gt; ShowS
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">ArtifactError
+</span><span class="hs-string">&quot;: import &quot;</span></span><span>
+</span><span id="line-305"></span><span>
+</span><span id="line-306"></span><span>    </span><span class="hs-comment">-- Locate an error at this artifact.</span><span>
+</span><span id="line-307"></span><span>    </span><span class="annot"><a href="#local-6989586621679476031"><span class="hs-identifier hs-type">located</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#ArtifactError"><span class="hs-identifier hs-type">ArtifactError</span></a></span><span>
+</span><span id="line-308"></span><span>    </span><span id="local-6989586621679476031"><span class="annot"><span class="annottext">located :: ShowS
+</span><a href="#local-6989586621679476031"><span class="hs-identifier hs-var hs-var">located</span></a></span></span><span> </span><span id="local-6989586621679476041"><span class="annot"><span class="annottext">ArtifactError
+</span><a href="#local-6989586621679476041"><span class="hs-identifier hs-var">err</span></a></span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-309"></span><span>      </span><span class="annot"><span class="annottext">ArtifactError
+</span><span class="hs-string">&quot;artifact for &quot;</span></span><span> </span><span class="annot"><span class="annottext">ArtifactError -&gt; ShowS
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">VarIdent -&gt; ArtifactError
+</span><a href="Language.MLTT.Resolve.html#prettyVarIdent"><span class="hs-identifier hs-var">prettyVarIdent</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ModuleArtifact -&gt; VarIdent
+</span><a href="Language.MLTT.Artifact.html#artifactModule"><span class="hs-identifier hs-var">artifactModule</span></a></span><span> </span><span class="annot"><span class="annottext">ModuleArtifact
+</span><a href="#local-6989586621679476026"><span class="hs-identifier hs-var">artifact</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">ArtifactError -&gt; ShowS
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">ArtifactError
+</span><span class="hs-string">&quot;: &quot;</span></span><span> </span><span class="annot"><span class="annottext">ArtifactError -&gt; ShowS
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">ArtifactError
+</span><a href="#local-6989586621679476041"><span class="hs-identifier hs-var">err</span></a></span><span>
+</span><span id="line-310"></span><span>
+</span><span id="line-311"></span><span>    </span><span class="hs-comment">-- An import contributes the exporting module's public names, as in</span><span>
+</span><span id="line-312"></span><span>    </span><span class="hs-comment">-- 'checkModule'; the artifact's own references are fully qualified, so</span><span>
+</span><span id="line-313"></span><span>    </span><span class="hs-comment">-- no namespace-relative resolution is needed on top.</span><span>
+</span><span id="line-314"></span><span>    </span><span id="local-6989586621679476033"><span class="annot"><span class="annottext">env' :: Env c
+</span><a href="#local-6989586621679476033"><span class="hs-identifier hs-var hs-var">env'</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Env c
+</span><a href="#local-6989586621679476025"><span class="hs-identifier hs-var">env</span></a></span><span>
+</span><span id="line-315"></span><span>      </span><span class="hs-special">{</span><span> </span><span class="annot"><a href="Language.MLTT.Impl.html#envDeclared"><span class="hs-identifier hs-var">envDeclared</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Map.unions</span></span><span>
+</span><span id="line-316"></span><span>          </span><span class="hs-special">[</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Map.findWithDefault</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Map.empty</span></span><span> </span><span class="annot"><a href="#local-6989586621679476044"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.MLTT.Impl.html#envModules"><span class="hs-identifier hs-var">envModules</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679476025"><span class="hs-identifier hs-type">env</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-317"></span><span>          </span><span class="hs-glyph">|</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679476044"><span class="annot"><a href="#local-6989586621679476044"><span class="hs-identifier hs-var">m</span></a></span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">_</span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#artifactImports"><span class="hs-identifier hs-var">artifactImports</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679476026"><span class="hs-identifier hs-type">artifact</span></a></span><span> </span><span class="hs-special">]</span><span>
+</span><span id="line-318"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Language.MLTT.Impl.html#envExports"><span class="hs-identifier hs-var">envExports</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Map.empty</span></span><span>
+</span><span id="line-319"></span><span>      </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Language.MLTT.Impl.html#envClosedOver"><span class="hs-identifier hs-var">envClosedOver</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Map.empty</span></span><span>
+</span><span id="line-320"></span><span>      </span><span class="hs-special">}</span><span>
+</span><span id="line-321"></span><span>
+</span><span id="line-322"></span><span>    </span><span class="annot"><a href="#local-6989586621679476034"><span class="hs-identifier hs-type">go</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-keyword">forall</span><span> </span><span id="local-6989586621679475393"><span class="annot"><a href="#local-6989586621679475393"><span class="hs-identifier hs-type">old</span></a></span></span><span> </span><span id="local-6989586621679475392"><span class="annot"><a href="#local-6989586621679475392"><span class="hs-identifier hs-type">n</span></a></span></span><span class="hs-operator">.</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.DExt</span></span><span> </span><span class="annot"><a href="#local-6989586621679475374"><span class="hs-identifier hs-type">c</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679475392"><span class="hs-identifier hs-type">n</span></a></span><span>
+</span><span id="line-323"></span><span>       </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Maybe</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Foil.NameMap</span></span><span> </span><span class="annot"><a href="#local-6989586621679475393"><span class="hs-identifier hs-type">old</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Foil.Name</span></span><span> </span><span class="annot"><a href="#local-6989586621679475374"><span class="hs-identifier hs-type">c</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-324"></span><span>       </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Blocks.Block</span></span><span> </span><span class="annot"><a href="#local-6989586621679475374"><span class="hs-identifier hs-type">c</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679475392"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Impl.html#Env"><span class="hs-identifier hs-type">Env</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679475392"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Language.MLTT.Artifact.html#ArtifactDecl"><span class="hs-identifier hs-type">ArtifactDecl</span></a></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Either</span></span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#ArtifactError"><span class="hs-identifier hs-type">ArtifactError</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.MLTT.Impl.html#CheckedModule"><span class="hs-identifier hs-type">CheckedModule</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679475374"><span class="hs-identifier hs-type">c</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-325"></span><span>    </span><span id="local-6989586621679476034"><span class="annot"><span class="annottext">go :: forall (old :: S) (n :: S).
+DExt c n =&gt;
+Maybe (NameMap old (Name c))
+-&gt; Block c n
+-&gt; Env n
+-&gt; [ArtifactDecl]
+-&gt; Either ArtifactError (CheckedModule c)
+</span><a href="#local-6989586621679476034"><span class="hs-identifier hs-var hs-var">go</span></a></span></span><span> </span><span class="annot"><span class="annottext">Maybe (NameMap old (Name c))
+</span><span class="hs-identifier">_</span></span><span> </span><span id="local-6989586621679476062"><span class="annot"><span class="annottext">Block c n
+</span><a href="#local-6989586621679476062"><span class="hs-identifier hs-var">block</span></a></span></span><span> </span><span id="local-6989586621679476063"><span class="annot"><span class="annottext">Env n
+</span><a href="#local-6989586621679476063"><span class="hs-identifier hs-var">envN</span></a></span></span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-326"></span><span>      </span><span class="annot"><span class="annottext">CheckedModule c -&gt; Either ArtifactError (CheckedModule c)
+forall a b. b -&gt; Either a b
+</span><span class="hs-identifier hs-var">Right</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ExtWithin c n -&gt; Env n -&gt; [CommandResult] -&gt; CheckedModule c
+forall (c :: S) (n :: S).
+DExt c n =&gt;
+ExtWithin c n -&gt; Env n -&gt; [CommandResult] -&gt; CheckedModule c
+</span><a href="Language.MLTT.Impl.html#CheckedModule"><span class="hs-identifier hs-var">CheckedModule</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Block c n -&gt; ExtWithin c n
+forall (c :: S) (l :: S). Block c l -&gt; ExtWithin c l
+</span><span class="hs-identifier hs-var">Blocks.blockExt</span></span><span> </span><span class="annot"><span class="annottext">Block c n
+</span><a href="#local-6989586621679476062"><span class="hs-identifier hs-var">block</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-327"></span><span>                           </span><span class="hs-special">(</span><span class="annot"><span class="annottext">VarIdent -&gt; Env n -&gt; Env n
+forall (l :: S). VarIdent -&gt; Env l -&gt; Env l
+</span><a href="Language.MLTT.Impl.html#finishModule"><span class="hs-identifier hs-var">finishModule</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ModuleArtifact -&gt; VarIdent
+</span><a href="Language.MLTT.Artifact.html#artifactModule"><span class="hs-identifier hs-var">artifactModule</span></a></span><span> </span><span class="annot"><span class="annottext">ModuleArtifact
+</span><a href="#local-6989586621679476026"><span class="hs-identifier hs-var">artifact</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">Env n
+</span><a href="#local-6989586621679476063"><span class="hs-identifier hs-var">envN</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-328"></span><span>                           </span><span class="hs-special">[</span><span class="hs-special">]</span><span class="hs-special">)</span><span>
+</span><span id="line-329"></span><span>    </span><span class="annot"><a href="#local-6989586621679476034"><span class="hs-identifier hs-var">go</span></a></span><span> </span><span id="local-6989586621679476066"><span class="annot"><span class="annottext">Maybe (NameMap old (Name c))
+</span><a href="#local-6989586621679476066"><span class="hs-identifier hs-var">relocation</span></a></span></span><span> </span><span id="local-6989586621679476067"><span class="annot"><span class="annottext">Block c n
+</span><a href="#local-6989586621679476067"><span class="hs-identifier hs-var">block</span></a></span></span><span> </span><span id="local-6989586621679476068"><span class="annot"><span class="annottext">Env n
+</span><a href="#local-6989586621679476068"><span class="hs-identifier hs-var">envN</span></a></span></span><span> </span><span class="hs-special">(</span><span id="local-6989586621679476069"><span class="annot"><span class="annottext">ArtifactDecl
+</span><a href="#local-6989586621679476069"><span class="hs-identifier hs-var">d</span></a></span></span><span> </span><span class="annot"><span class="hs-glyph hs-type">:</span></span><span> </span><span id="local-6989586621679476070"><span class="annot"><span class="annottext">[ArtifactDecl]
+</span><a href="#local-6989586621679476070"><span class="hs-identifier hs-var">ds</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-330"></span><span>      </span><span id="local-6989586621679476071"><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679476071"><span class="hs-identifier hs-var">ty</span></a></span></span><span>    </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Maybe (NameMap old (Name c))
+-&gt; StoredTerm -&gt; Either ArtifactError (Term n)
+forall (old :: S) (m :: S).
+DExt c m =&gt;
+Maybe (NameMap old (Name c))
+-&gt; StoredTerm -&gt; Either ArtifactError (Term m)
+</span><a href="#local-6989586621679476072"><span class="hs-identifier hs-var">loadTerm</span></a></span><span> </span><span class="annot"><span class="annottext">Maybe (NameMap old (Name c))
+</span><a href="#local-6989586621679476066"><span class="hs-identifier hs-var">relocation</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ArtifactDecl -&gt; StoredTerm
+</span><a href="Language.MLTT.Artifact.html#adType"><span class="hs-identifier hs-var">adType</span></a></span><span> </span><span class="annot"><span class="annottext">ArtifactDecl
+</span><a href="#local-6989586621679476069"><span class="hs-identifier hs-var">d</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-331"></span><span>      </span><span id="local-6989586621679476073"><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679476073"><span class="hs-identifier hs-var">value</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Maybe (NameMap old (Name c))
+-&gt; StoredTerm -&gt; Either ArtifactError (Term n)
+forall (old :: S) (m :: S).
+DExt c m =&gt;
+Maybe (NameMap old (Name c))
+-&gt; StoredTerm -&gt; Either ArtifactError (Term m)
+</span><a href="#local-6989586621679476072"><span class="hs-identifier hs-var">loadTerm</span></a></span><span> </span><span class="annot"><span class="annottext">Maybe (NameMap old (Name c))
+</span><a href="#local-6989586621679476066"><span class="hs-identifier hs-var">relocation</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ArtifactDecl -&gt; StoredTerm
+</span><a href="Language.MLTT.Artifact.html#adValue"><span class="hs-identifier hs-var">adValue</span></a></span><span> </span><span class="annot"><span class="annottext">ArtifactDecl
+</span><a href="#local-6989586621679476069"><span class="hs-identifier hs-var">d</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-332"></span><span>      </span><span class="annot"><span class="annottext">Block c n
+-&gt; Scope n
+-&gt; (forall {l' :: S}.
+    DExt n l' =&gt;
+    NameBinder n l'
+    -&gt; Block c l' -&gt; Either ArtifactError (CheckedModule c))
+-&gt; Either ArtifactError (CheckedModule c)
+forall (l :: S) (c :: S) r.
+Distinct l =&gt;
+Block c l
+-&gt; Scope l
+-&gt; (forall (l' :: S).
+    DExt l l' =&gt;
+    NameBinder l l' -&gt; Block c l' -&gt; r)
+-&gt; r
+</span><span class="hs-identifier hs-var">Blocks.withFreshInBlock</span></span><span> </span><span class="annot"><span class="annottext">Block c n
+</span><a href="#local-6989586621679476067"><span class="hs-identifier hs-var">block</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Ctx BNFC'Position n -&gt; Scope n
+forall a (n :: S). Ctx a n -&gt; Scope n
+</span><a href="Language.MLTT.Typecheck.html#ctxScope"><span class="hs-identifier hs-var">ctxScope</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Env n -&gt; Ctx BNFC'Position n
+forall (n :: S). Env n -&gt; Ctx BNFC'Position n
+</span><a href="Language.MLTT.Impl.html#envCtx"><span class="hs-identifier hs-var">envCtx</span></a></span><span> </span><span class="annot"><span class="annottext">Env n
+</span><a href="#local-6989586621679476068"><span class="hs-identifier hs-var">envN</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">((forall {l' :: S}.
+  DExt n l' =&gt;
+  NameBinder n l'
+  -&gt; Block c l' -&gt; Either ArtifactError (CheckedModule c))
+ -&gt; Either ArtifactError (CheckedModule c))
+-&gt; (forall {l' :: S}.
+    DExt n l' =&gt;
+    NameBinder n l'
+    -&gt; Block c l' -&gt; Either ArtifactError (CheckedModule c))
+-&gt; Either ArtifactError (CheckedModule c)
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-glyph">\</span><span id="local-6989586621679476084"><span class="annot"><span class="annottext">NameBinder n l'
+</span><a href="#local-6989586621679476084"><span class="hs-identifier hs-var">binder</span></a></span></span><span> </span><span id="local-6989586621679476085"><span class="annot"><span class="annottext">Block c l'
+</span><a href="#local-6989586621679476085"><span class="hs-identifier hs-var">block'</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span>
+</span><span id="line-333"></span><span>        </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679476086"><span class="annot"><span class="annottext">ctx' :: Ctx BNFC'Position l'
+</span><a href="#local-6989586621679476086"><span class="hs-identifier hs-var hs-var">ctx'</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Ctx BNFC'Position n
+-&gt; NameBinder n l'
+-&gt; Term n
+-&gt; Maybe (Term n)
+-&gt; Ctx BNFC'Position l'
+forall (n :: S) (l :: S) a.
+DExt n l =&gt;
+Ctx a n
+-&gt; NameBinder n l -&gt; Term' a n -&gt; Maybe (Term' a n) -&gt; Ctx a l
+</span><a href="Language.MLTT.Typecheck.html#extend"><span class="hs-identifier hs-var">extend</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Env n -&gt; Ctx BNFC'Position n
+forall (n :: S). Env n -&gt; Ctx BNFC'Position n
+</span><a href="Language.MLTT.Impl.html#envCtx"><span class="hs-identifier hs-var">envCtx</span></a></span><span> </span><span class="annot"><span class="annottext">Env n
+</span><a href="#local-6989586621679476068"><span class="hs-identifier hs-var">envN</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">NameBinder n l'
+</span><a href="#local-6989586621679476084"><span class="hs-identifier hs-var">binder</span></a></span><span> </span><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679476071"><span class="hs-identifier hs-var">ty</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Term n -&gt; Maybe (Term n)
+forall a. a -&gt; Maybe a
+</span><span class="hs-identifier hs-var">Just</span></span><span> </span><span class="annot"><span class="annottext">Term n
+</span><a href="#local-6989586621679476073"><span class="hs-identifier hs-var">value</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-334"></span><span>            </span><span id="local-6989586621679476087"><span class="annot"><span class="annottext">envN' :: Env l'
+</span><a href="#local-6989586621679476087"><span class="hs-identifier hs-var hs-var">envN'</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Ctx BNFC'Position l'
+-&gt; NameBinder n l' -&gt; VarIdent -&gt; Visibility -&gt; Env n -&gt; Env l'
+forall (n :: S) (l :: S).
+DExt n l =&gt;
+Ctx BNFC'Position l
+-&gt; NameBinder n l -&gt; VarIdent -&gt; Visibility -&gt; Env n -&gt; Env l
+</span><a href="Language.MLTT.Impl.html#extendEnv"><span class="hs-identifier hs-var">extendEnv</span></a></span><span> </span><span class="annot"><span class="annottext">Ctx BNFC'Position l'
+</span><a href="#local-6989586621679476086"><span class="hs-identifier hs-var">ctx'</span></a></span><span> </span><span class="annot"><span class="annottext">NameBinder n l'
+</span><a href="#local-6989586621679476084"><span class="hs-identifier hs-var">binder</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ArtifactDecl -&gt; VarIdent
+</span><a href="Language.MLTT.Artifact.html#adSpelling"><span class="hs-identifier hs-var">adSpelling</span></a></span><span> </span><span class="annot"><span class="annottext">ArtifactDecl
+</span><a href="#local-6989586621679476069"><span class="hs-identifier hs-var">d</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ArtifactDecl -&gt; Visibility
+</span><a href="Language.MLTT.Artifact.html#adVisibility"><span class="hs-identifier hs-var">adVisibility</span></a></span><span> </span><span class="annot"><span class="annottext">ArtifactDecl
+</span><a href="#local-6989586621679476069"><span class="hs-identifier hs-var">d</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">Env n
+</span><a href="#local-6989586621679476068"><span class="hs-identifier hs-var">envN</span></a></span><span>
+</span><span id="line-335"></span><span>         </span><span class="hs-keyword">in</span><span> </span><span class="annot"><span class="annottext">Maybe (NameMap old (Name c))
+-&gt; Block c l'
+-&gt; Env l'
+-&gt; [ArtifactDecl]
+-&gt; Either ArtifactError (CheckedModule c)
+forall (old :: S) (n :: S).
+DExt c n =&gt;
+Maybe (NameMap old (Name c))
+-&gt; Block c n
+-&gt; Env n
+-&gt; [ArtifactDecl]
+-&gt; Either ArtifactError (CheckedModule c)
+</span><a href="#local-6989586621679476034"><span class="hs-identifier hs-var">go</span></a></span><span> </span><span class="annot"><span class="annottext">Maybe (NameMap old (Name c))
+</span><a href="#local-6989586621679476066"><span class="hs-identifier hs-var">relocation</span></a></span><span> </span><span class="annot"><span class="annottext">Block c l'
+</span><a href="#local-6989586621679476085"><span class="hs-identifier hs-var">block'</span></a></span><span> </span><span class="annot"><span class="annottext">Env l'
+</span><a href="#local-6989586621679476087"><span class="hs-identifier hs-var">envN'</span></a></span><span> </span><span class="annot"><span class="annottext">[ArtifactDecl]
+</span><a href="#local-6989586621679476070"><span class="hs-identifier hs-var">ds</span></a></span><span>
+</span><span id="line-336"></span><span>
+</span><span id="line-337"></span><span>    </span><span class="hs-comment">-- The stored term is the checked (hence desugared) one. On the fast</span><span>
+</span><span id="line-338"></span><span>    </span><span class="hs-comment">-- path it is used exactly as decoded, the phantom index being taken to</span><span>
+</span><span id="line-339"></span><span>    </span><span class="hs-comment">-- be the caller's. Where the registry moved, the term decodes</span><span>
+</span><span id="line-340"></span><span>    </span><span class="hs-comment">-- at the map's own phantom, relocates into the base world, and sinks to</span><span>
+</span><span id="line-341"></span><span>    </span><span class="hs-comment">-- the scope at hand.</span><span>
+</span><span id="line-342"></span><span>    </span><span class="annot"><a href="#local-6989586621679476072"><span class="hs-identifier hs-type">loadTerm</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-keyword">forall</span><span> </span><span id="local-6989586621679475413"><span class="annot"><a href="#local-6989586621679475413"><span class="hs-identifier hs-type">old</span></a></span></span><span> </span><span id="local-6989586621679475412"><span class="annot"><a href="#local-6989586621679475412"><span class="hs-identifier hs-type">m</span></a></span></span><span class="hs-operator">.</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.DExt</span></span><span> </span><span class="annot"><a href="#local-6989586621679475374"><span class="hs-identifier hs-type">c</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679475412"><span class="hs-identifier hs-type">m</span></a></span><span>
+</span><span id="line-343"></span><span>             </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Maybe</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Foil.NameMap</span></span><span> </span><span class="annot"><a href="#local-6989586621679475413"><span class="hs-identifier hs-type">old</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Foil.Name</span></span><span> </span><span class="annot"><a href="#local-6989586621679475374"><span class="hs-identifier hs-type">c</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">StoredTerm</span></span><span>
+</span><span id="line-344"></span><span>             </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Either</span></span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#ArtifactError"><span class="hs-identifier hs-type">ArtifactError</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#Term"><span class="hs-identifier hs-type">Term</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679475412"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-345"></span><span>    </span><span id="local-6989586621679476072"><span class="annot"><span class="annottext">loadTerm :: forall (old :: S) (m :: S).
+DExt c m =&gt;
+Maybe (NameMap old (Name c))
+-&gt; StoredTerm -&gt; Either ArtifactError (Term m)
+</span><a href="#local-6989586621679476072"><span class="hs-identifier hs-var hs-var">loadTerm</span></a></span></span><span> </span><span id="local-6989586621679476102"><span class="annot"><span class="annottext">Maybe (NameMap old (Name c))
+</span><a href="#local-6989586621679476102"><span class="hs-identifier hs-var">relocation</span></a></span></span><span> </span><span id="local-6989586621679476103"><span class="annot"><span class="annottext">StoredTerm
+</span><a href="#local-6989586621679476103"><span class="hs-identifier hs-var">stored</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">case</span><span> </span><span class="annot"><span class="annottext">Maybe (NameMap old (Name c))
+</span><a href="#local-6989586621679476102"><span class="hs-identifier hs-var">relocation</span></a></span><span> </span><span class="hs-keyword">of</span><span>
+</span><span id="line-346"></span><span>      </span><span class="annot"><span class="annottext">Maybe (NameMap old (Name c))
+</span><span class="hs-identifier hs-var">Nothing</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">StoredTerm -&gt; Either ArtifactError (Term m)
+forall (o :: S). StoredTerm -&gt; Either ArtifactError (Term o)
+</span><a href="#local-6989586621679476104"><span class="hs-identifier hs-var">decode</span></a></span><span> </span><span class="annot"><span class="annottext">StoredTerm
+</span><a href="#local-6989586621679476103"><span class="hs-identifier hs-var">stored</span></a></span><span>
+</span><span id="line-347"></span><span>      </span><span class="annot"><span class="hs-identifier hs-type">Just</span></span><span> </span><span id="local-6989586621679476105"><span class="annot"><span class="annottext">NameMap old (Name c)
+</span><a href="#local-6989586621679476105"><span class="hs-identifier hs-var">moved</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-348"></span><span>        </span><span id="local-6989586621679476106"><span class="annot"><span class="annottext">Term old
+</span><a href="#local-6989586621679476106"><span class="hs-identifier hs-var">t</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">StoredTerm -&gt; Either ArtifactError (Term old)
+forall (o :: S). StoredTerm -&gt; Either ArtifactError (Term o)
+</span><a href="#local-6989586621679476104"><span class="hs-identifier hs-var">decode</span></a></span><span> </span><span class="annot"><span class="annottext">StoredTerm
+</span><a href="#local-6989586621679476103"><span class="hs-identifier hs-var">stored</span></a></span><span>
+</span><span id="line-349"></span><span>        </span><span class="annot"><span class="annottext">Term m -&gt; Either ArtifactError (Term m)
+forall a. a -&gt; Either ArtifactError a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) c -&gt; Term m
+forall (e :: S -&gt; *) (n :: S) (l :: S).
+(Sinkable e, DExt n l) =&gt;
+e n -&gt; e l
+</span><span class="hs-identifier hs-var">Foil.sink</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">NameMap old (Name c)
+-&gt; Term old
+-&gt; AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) c
+forall (binder :: S -&gt; S -&gt; *) (sig :: * -&gt; * -&gt; *) (n :: S)
+       (n' :: S).
+Bifunctor sig =&gt;
+NameMap n (Name n') -&gt; AST binder sig n -&gt; AST binder sig n'
+</span><span class="hs-identifier hs-var">relocateConstants</span></span><span> </span><span class="annot"><span class="annottext">NameMap old (Name c)
+</span><a href="#local-6989586621679476105"><span class="hs-identifier hs-var">moved</span></a></span><span> </span><span class="annot"><span class="annottext">Term old
+</span><a href="#local-6989586621679476106"><span class="hs-identifier hs-var">t</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-350"></span><span>      </span><span class="hs-keyword">where</span><span>
+</span><span id="line-351"></span><span>        </span><span class="annot"><a href="#local-6989586621679476104"><span class="hs-identifier hs-type">decode</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-keyword">forall</span><span> </span><span id="local-6989586621679475436"><span class="annot"><a href="#local-6989586621679475436"><span class="hs-identifier hs-type">o</span></a></span></span><span class="hs-operator">.</span><span> </span><span class="annot"><span class="hs-identifier hs-type">StoredTerm</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Either</span></span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#ArtifactError"><span class="hs-identifier hs-type">ArtifactError</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#Term"><span class="hs-identifier hs-type">Term</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679475436"><span class="hs-identifier hs-type">o</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-352"></span><span>        </span><span id="local-6989586621679476104"><span class="annot"><span class="annottext">decode :: forall (o :: S). StoredTerm -&gt; Either ArtifactError (Term o)
+</span><a href="#local-6989586621679476104"><span class="hs-identifier hs-var hs-var">decode</span></a></span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-353"></span><span>          </span><span class="annot"><span class="annottext">(ArtifactError VarIdent
+ -&gt; Either
+      ArtifactError
+      (AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) o))
+-&gt; (AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) o
+    -&gt; Either
+         ArtifactError
+         (AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) o))
+-&gt; Either
+     (ArtifactError VarIdent)
+     (AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) o)
+-&gt; Either
+     ArtifactError
+     (AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) o)
+forall a c b. (a -&gt; c) -&gt; (b -&gt; c) -&gt; Either a b -&gt; c
+</span><span class="hs-identifier hs-var">either</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ArtifactError
+-&gt; Either
+     ArtifactError
+     (AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) o)
+forall a b. a -&gt; Either a b
+</span><span class="hs-identifier hs-var">Left</span></span><span> </span><span class="annot"><span class="annottext">(ArtifactError
+ -&gt; Either
+      ArtifactError
+      (AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) o))
+-&gt; (ArtifactError VarIdent -&gt; ArtifactError)
+-&gt; ArtifactError VarIdent
+-&gt; Either
+     ArtifactError
+     (AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) o)
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">ShowS
+</span><a href="#local-6989586621679476031"><span class="hs-identifier hs-var">located</span></a></span><span> </span><span class="annot"><span class="annottext">ShowS
+-&gt; (ArtifactError VarIdent -&gt; ArtifactError)
+-&gt; ArtifactError VarIdent
+-&gt; ArtifactError
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">ArtifactError VarIdent -&gt; ArtifactError
+</span><a href="Language.MLTT.Artifact.html#renderArtifactError"><span class="hs-identifier hs-var">renderArtifactError</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) o
+-&gt; Either
+     ArtifactError
+     (AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) o)
+forall a b. b -&gt; Either a b
+</span><span class="hs-identifier hs-var">Right</span></span><span> </span><span class="annot"><span class="annottext">(Either
+   (ArtifactError VarIdent)
+   (AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) o)
+ -&gt; Either
+      ArtifactError
+      (AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) o))
+-&gt; (StoredTerm
+    -&gt; Either
+         (ArtifactError VarIdent)
+         (AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) o))
+-&gt; StoredTerm
+-&gt; Either
+     ArtifactError
+     (AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) o)
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">StoredTerm
+-&gt; Either
+     (ArtifactError VarIdent)
+     (AST (Pattern' BNFC'Position) (Term'Sig BNFC'Position) o)
+forall (binder :: S -&gt; S -&gt; *) (sig :: * -&gt; * -&gt; *) (n :: S) ident.
+Binary (AST binder sig n) =&gt;
+StoredTerm -&gt; Either (ArtifactError ident) (AST binder sig n)
+</span><span class="hs-identifier hs-var">decodeStored</span></span><span>
+</span><span id="line-354"></span><span>
+</span><span id="line-355"></span><span class="hs-comment">-- | Load a module from its artifact into the environment of an already</span><span>
+</span><span id="line-356"></span><span class="hs-comment">-- loaded (or checked) unit, composing the evidence: the load-side mirror of</span><span>
+</span><span id="line-357"></span><span class="hs-comment">-- 'checkModuleAfter', so a chain of cached modules folds into one unit over</span><span>
+</span><span id="line-358"></span><span class="hs-comment">-- the chain's base and links like anything else.</span><span>
+</span><span id="line-359"></span><span id="local-6989586621679475449"><span class="annot"><a href="Language.MLTT.Artifact.html#loadArtifactAfter"><span class="hs-identifier hs-type">loadArtifactAfter</span></a></span><span>
+</span><span id="line-360"></span><span>  </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Map</span></span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#ContentHash"><span class="hs-identifier hs-type">ContentHash</span></a></span><span>
+</span><span id="line-361"></span><span>     </span><span class="annot"><span class="hs-comment">-- ^ Content hashes of the modules loaded or checked so far.</span></span><span>
+</span><span id="line-362"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.NameRange</span></span><span>       </span><span class="annot"><span class="hs-comment">-- ^ The next module's stripe, from this run's registry.</span></span><span>
+</span><span id="line-363"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Impl.html#CheckedModule"><span class="hs-identifier hs-type">CheckedModule</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679475449"><span class="hs-identifier hs-type">c</span></a></span><span>      </span><span class="annot"><span class="hs-comment">-- ^ The chain so far.</span></span><span>
+</span><span id="line-364"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#ModuleArtifact"><span class="hs-identifier hs-type">ModuleArtifact</span></a></span><span>
+</span><span id="line-365"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Either</span></span><span> </span><span class="annot"><a href="Language.MLTT.Artifact.html#ArtifactError"><span class="hs-identifier hs-type">ArtifactError</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.MLTT.Impl.html#CheckedModule"><span class="hs-identifier hs-type">CheckedModule</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679475449"><span class="hs-identifier hs-type">c</span></a></span><span class="hs-special">)</span></span><span>
+</span><span id="line-366"></span><span id="loadArtifactAfter"><span class="annot"><span class="annottext">loadArtifactAfter :: forall (c :: S).
+Map VarIdent ContentHash
+-&gt; NameRange
+-&gt; CheckedModule c
+-&gt; ModuleArtifact
+-&gt; Either ArtifactError (CheckedModule c)
+</span><a href="Language.MLTT.Artifact.html#loadArtifactAfter"><span class="hs-identifier hs-var hs-var">loadArtifactAfter</span></a></span></span><span> </span><span id="local-6989586621679476114"><span class="annot"><span class="annottext">Map VarIdent ContentHash
+</span><a href="#local-6989586621679476114"><span class="hs-identifier hs-var">hashes</span></a></span></span><span> </span><span id="local-6989586621679476115"><span class="annot"><span class="annottext">NameRange
+</span><a href="#local-6989586621679476115"><span class="hs-identifier hs-var">range</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.MLTT.Impl.html#CheckedModule"><span class="hs-identifier hs-type">CheckedModule</span></a></span><span> </span><span id="local-6989586621679476122"><span class="annot"><span class="annottext">ExtWithin c n
+</span><a href="#local-6989586621679476122"><span class="hs-identifier hs-var">ext</span></a></span></span><span> </span><span id="local-6989586621679476123"><span class="annot"><span class="annottext">Env n
+</span><a href="#local-6989586621679476123"><span class="hs-identifier hs-var">env</span></a></span></span><span> </span><span id="local-6989586621679476124"><span class="annot"><span class="annottext">[CommandResult]
+</span><a href="#local-6989586621679476124"><span class="hs-identifier hs-var">results</span></a></span></span><span class="hs-special">)</span><span> </span><span id="local-6989586621679476125"><span class="annot"><span class="annottext">ModuleArtifact
+</span><a href="#local-6989586621679476125"><span class="hs-identifier hs-var">artifact</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-367"></span><span>  </span><span id="local-6989586621679476126"><span class="annot"><span class="annottext">CheckedModule n
+</span><a href="#local-6989586621679476126"><span class="hs-identifier hs-var">cm</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Map VarIdent ContentHash
+-&gt; NameRange
+-&gt; Env n
+-&gt; ModuleArtifact
+-&gt; Either ArtifactError (CheckedModule n)
+forall (c :: S).
+Distinct c =&gt;
+Map VarIdent ContentHash
+-&gt; NameRange
+-&gt; Env c
+-&gt; ModuleArtifact
+-&gt; Either ArtifactError (CheckedModule c)
+</span><a href="Language.MLTT.Artifact.html#loadArtifact"><span class="hs-identifier hs-var">loadArtifact</span></a></span><span> </span><span class="annot"><span class="annottext">Map VarIdent ContentHash
+</span><a href="#local-6989586621679476114"><span class="hs-identifier hs-var">hashes</span></a></span><span> </span><span class="annot"><span class="annottext">NameRange
+</span><a href="#local-6989586621679476115"><span class="hs-identifier hs-var">range</span></a></span><span> </span><span class="annot"><span class="annottext">Env n
+</span><a href="#local-6989586621679476123"><span class="hs-identifier hs-var">env</span></a></span><span> </span><span class="annot"><span class="annottext">ModuleArtifact
+</span><a href="#local-6989586621679476125"><span class="hs-identifier hs-var">artifact</span></a></span><span>
+</span><span id="line-368"></span><span>  </span><span class="hs-keyword">case</span><span> </span><span class="annot"><span class="annottext">CheckedModule n
+</span><a href="#local-6989586621679476126"><span class="hs-identifier hs-var">cm</span></a></span><span> </span><span class="hs-keyword">of</span><span>
+</span><span id="line-369"></span><span>    </span><span class="annot"><a href="Language.MLTT.Impl.html#CheckedModule"><span class="hs-identifier hs-type">CheckedModule</span></a></span><span> </span><span id="local-6989586621679476135"><span class="annot"><span class="annottext">ExtWithin n n
+</span><a href="#local-6989586621679476135"><span class="hs-identifier hs-var">ext'</span></a></span></span><span> </span><span id="local-6989586621679476136"><span class="annot"><span class="annottext">Env n
+</span><a href="#local-6989586621679476136"><span class="hs-identifier hs-var">env'</span></a></span></span><span> </span><span id="local-6989586621679476137"><span class="annot"><span class="annottext">[CommandResult]
+</span><a href="#local-6989586621679476137"><span class="hs-identifier hs-var">results'</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span>
+</span><span id="line-370"></span><span>      </span><span class="annot"><span class="annottext">CheckedModule c -&gt; Either ArtifactError (CheckedModule c)
+forall a b. b -&gt; Either a b
+</span><span class="hs-identifier hs-var">Right</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ExtWithin c n -&gt; Env n -&gt; [CommandResult] -&gt; CheckedModule c
+forall (c :: S) (n :: S).
+DExt c n =&gt;
+ExtWithin c n -&gt; Env n -&gt; [CommandResult] -&gt; CheckedModule c
+</span><a href="Language.MLTT.Impl.html#CheckedModule"><span class="hs-identifier hs-var">CheckedModule</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">ExtWithin c n -&gt; ExtWithin n n -&gt; ExtWithin c n
+forall (n :: S) (m :: S) (l :: S).
+ExtWithin n m -&gt; ExtWithin m l -&gt; ExtWithin n l
+</span><span class="hs-identifier hs-var">Blocks.composeExtWithin</span></span><span> </span><span class="annot"><span class="annottext">ExtWithin c n
+</span><a href="#local-6989586621679476122"><span class="hs-identifier hs-var">ext</span></a></span><span> </span><span class="annot"><span class="annottext">ExtWithin n n
+</span><a href="#local-6989586621679476135"><span class="hs-identifier hs-var">ext'</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">Env n
+</span><a href="#local-6989586621679476136"><span class="hs-identifier hs-var">env'</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[CommandResult]
+</span><a href="#local-6989586621679476124"><span class="hs-identifier hs-var">results</span></a></span><span> </span><span class="annot"><span class="annottext">[CommandResult] -&gt; [CommandResult] -&gt; [CommandResult]
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">[CommandResult]
+</span><a href="#local-6989586621679476137"><span class="hs-identifier hs-var">results'</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-371"></span></pre></body></html>

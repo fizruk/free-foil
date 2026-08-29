@@ -1,0 +1,489 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-pragma">{-# OPTIONS_GHC -Wno-orphans -Wno-redundant-constraints #-}</span><span>
+</span><span id="line-2"></span><span class="hs-pragma">{-# LANGUAGE DataKinds                  #-}</span><span>
+</span><span id="line-3"></span><span class="hs-pragma">{-# LANGUAGE DeriveGeneric              #-}</span><span>
+</span><span id="line-4"></span><span class="hs-pragma">{-# LANGUAGE DeriveTraversable          #-}</span><span>
+</span><span id="line-5"></span><span class="hs-pragma">{-# LANGUAGE DerivingStrategies         #-}</span><span>
+</span><span id="line-6"></span><span class="hs-pragma">{-# LANGUAGE FlexibleContexts           #-}</span><span>
+</span><span id="line-7"></span><span class="hs-pragma">{-# LANGUAGE FlexibleInstances          #-}</span><span>
+</span><span id="line-8"></span><span class="hs-pragma">{-# LANGUAGE GADTs                      #-}</span><span>
+</span><span id="line-9"></span><span class="hs-pragma">{-# LANGUAGE GeneralizedNewtypeDeriving #-}</span><span>
+</span><span id="line-10"></span><span class="hs-pragma">{-# LANGUAGE KindSignatures             #-}</span><span>
+</span><span id="line-11"></span><span class="hs-pragma">{-# LANGUAGE LambdaCase                 #-}</span><span>
+</span><span id="line-12"></span><span class="hs-pragma">{-# LANGUAGE PatternSynonyms            #-}</span><span>
+</span><span id="line-13"></span><span class="hs-pragma">{-# LANGUAGE RankNTypes                 #-}</span><span>
+</span><span id="line-14"></span><span class="hs-pragma">{-# LANGUAGE ScopedTypeVariables        #-}</span><span>
+</span><span id="line-15"></span><span class="hs-pragma">{-# LANGUAGE StandaloneDeriving         #-}</span><span>
+</span><span id="line-16"></span><span class="hs-pragma">{-# LANGUAGE TemplateHaskell            #-}</span><span>
+</span><span id="line-17"></span><span class="hs-pragma">{-# LANGUAGE TypeFamilies               #-}</span><span>
+</span><span id="line-18"></span><span class="hs-comment">-- | Everything about MLTT that is /generated/ rather than written.</span><span>
+</span><span id="line-19"></span><span class="hs-comment">--</span><span>
+</span><span id="line-20"></span><span class="hs-comment">-- The scope-safe term type, the signature bifunctor, the pattern synonyms and</span><span>
+</span><span id="line-21"></span><span class="hs-comment">-- the conversions to and from the raw (BNFC) syntax all come out of</span><span>
+</span><span id="line-22"></span><span class="hs-comment">-- 'mkFreeFoil' and 'mkFreeFoilConversions'. What is written by hand here is</span><span>
+</span><span id="line-23"></span><span class="hs-comment">-- only the instances that the generated types need and Template Haskell cannot</span><span>
+</span><span id="line-24"></span><span class="hs-comment">-- supply: the 'Generics.Kind.GenericK' representations, the bifunctor</span><span>
+</span><span id="line-25"></span><span class="hs-comment">-- instances of the signature, and the pattern instances of 'Pattern''.</span><span>
+</span><span id="line-26"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Language.MLTT.Impl.Generated</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-27"></span><span>
+</span><span id="line-28"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Monad.Free.Foil</span></span><span>                 </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">convertFromASTWith</span></span><span class="hs-special">)</span><span>
+</span><span id="line-29"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Monad.Free.Foil.Binary</span></span><span>          </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-30"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Monad.Free.Foil.Binary.TH</span></span><span>       </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">deriveBinaryPattern</span></span><span class="hs-special">)</span><span>
+</span><span id="line-31"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Monad.Free.Foil.TH.MkFreeFoil</span></span><span>
+</span><span id="line-32"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad.Foil</span></span><span>                    </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Foil</span></span><span>
+</span><span id="line-33"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.Bifunctor.TH</span></span><span>
+</span><span id="line-34"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.Map</span></span><span>                              </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Map</span></span><span>
+</span><span id="line-35"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.Binary</span></span><span>                           </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Binary</span></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-36"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.String</span></span><span>                           </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">IsString</span></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-37"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.ZipMatchK</span></span><span>
+</span><span id="line-38"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.ZipMatchK.TH</span></span><span>                     </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">deriveZipMatchK2</span></span><span class="hs-special">)</span><span>
+</span><span id="line-39"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Generics.Kind.TH</span></span><span>                      </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">deriveGenericK</span></span><span class="hs-special">)</span><span>
+</span><span id="line-40"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><a href="Language.MLTT.FreeFoilConfig.html"><span class="hs-identifier">Language.MLTT.FreeFoilConfig</span></a></span><span>          </span><span class="hs-special">(</span><span class="annot"><a href="Language.MLTT.FreeFoilConfig.html#mlttConfig"><span class="hs-identifier">mlttConfig</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Language.MLTT.FreeFoilConfig.html#rawScopedTerm"><span class="hs-identifier">rawScopedTerm</span></a></span><span class="hs-special">,</span><span>
+</span><span id="line-41"></span><span>                                                        </span><span class="annot"><a href="Language.MLTT.FreeFoilConfig.html#rawVar"><span class="hs-identifier">rawVar</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-42"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html"><span class="hs-identifier">Language.MLTT.Syntax.Abs</span></a></span><span>              </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Raw</span></span><span>
+</span><span id="line-43"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Layout.html"><span class="hs-identifier">Language.MLTT.Syntax.Layout</span></a></span><span>           </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Raw</span></span><span>
+</span><span id="line-44"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Lex.html"><span class="hs-identifier">Language.MLTT.Syntax.Lex</span></a></span><span>              </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Raw</span></span><span>
+</span><span id="line-45"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Par.html"><span class="hs-identifier">Language.MLTT.Syntax.Par</span></a></span><span>              </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Raw</span></span><span>
+</span><span id="line-46"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Print.html"><span class="hs-identifier">Language.MLTT.Syntax.Print</span></a></span><span>            </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">Raw</span></span><span>
+</span><span id="line-47"></span><span>
+</span><span id="line-48"></span><span class="hs-comment">-- $setup</span><span>
+</span><span id="line-49"></span><span class="hs-comment">-- &gt;&gt;&gt; :set -XOverloadedStrings</span><span>
+</span><span id="line-50"></span><span class="hs-comment">-- &gt;&gt;&gt; :set -XDataKinds</span><span>
+</span><span id="line-51"></span><span class="hs-comment">-- &gt;&gt;&gt; import qualified Control.Monad.Foil as Foil</span><span>
+</span><span id="line-52"></span><span class="hs-comment">-- &gt;&gt;&gt; import qualified Data.Map as Map</span><span>
+</span><span id="line-53"></span><span class="hs-comment">-- &gt;&gt;&gt; import qualified Language.MLTT.Syntax.Par as Par</span><span>
+</span><span id="line-54"></span><span class="hs-comment">-- &gt;&gt;&gt; import qualified Language.MLTT.Syntax.Abs as Raw</span><span>
+</span><span id="line-55"></span><span>
+</span><span id="line-56"></span><span class="annot"><span class="hs-comment">-- * Generated code</span></span><span>
+</span><span id="line-57"></span><span>
+</span><span id="line-58"></span><span id="Term%27Sig"><span id="Pattern%27"><span id="local-6989586621679469243"><span id="local-6989586621679469250"><span id="local-6989586621679469251"><span id="Term%27"><span id="local-6989586621679469255"><span id="local-6989586621679469258"><span id="local-6989586621679469261"><span id="local-6989586621679469264"><span id="local-6989586621679469265"><span id="local-6989586621679469268"><span id="local-6989586621679469269"><span id="local-6989586621679469333"><span id="local-6989586621679469335"><span id="local-6989586621679469336"><span id="local-6989586621679469337"><span id="local-6989586621679469338"><span id="local-6989586621679469339"><span id="local-6989586621679469340"><span id="local-6989586621679469341"><span id="local-6989586621679469342"><span id="local-6989586621679469343"><span id="local-6989586621679469344"><span id="local-6989586621679469379"><span id="local-6989586621679469380"><span id="local-6989586621679469381"><span id="local-6989586621679469382"><span id="local-6989586621679469383"><span id="local-6989586621679469384"><span id="local-6989586621679469385"><span id="local-6989586621679469386"><span id="local-6989586621679469387"><span id="local-6989586621679469388"><span id="local-6989586621679469389"><span id="local-6989586621679469390"><span id="local-6989586621679469391"><span id="local-6989586621679469392"><span id="local-6989586621679469393"><span id="local-6989586621679469394"><span id="local-6989586621679469396"><span id="local-6989586621679469430"><span id="local-6989586621679469431"><span id="local-6989586621679469472"><span id="local-6989586621679469473"><span id="local-6989586621679469994"><span id="local-6989586621679469995"><span id="local-6989586621679469996"><span id="local-6989586621679469997"><span id="local-6989586621679469998"><span id="local-6989586621679469999"><span id="local-6989586621679470000"><span id="local-6989586621679470001"><span id="local-6989586621679470002"><span id="local-6989586621679470003"><span id="local-6989586621679470004"><span id="local-6989586621679470005"><span id="local-6989586621679470006"><span id="local-6989586621679470007"><span id="local-6989586621679470008"><span id="local-6989586621679470009"><span id="local-6989586621679470010"><span id="local-6989586621679470011"><span id="local-6989586621679470012"><span id="local-6989586621679470013"><span id="local-6989586621679470014"><span id="local-6989586621679470015"><span id="local-6989586621679470016"><span id="local-6989586621679470017"><span id="local-6989586621679470018"><span id="local-6989586621679470019"><span id="local-6989586621679470020"><span id="local-6989586621679470021"><span id="local-6989586621679470022"><span id="local-6989586621679470023"><span id="local-6989586621679470024"><span id="local-6989586621679470025"><span id="local-6989586621679470026"><span id="local-6989586621679470027"><span id="local-6989586621679470028"><span id="local-6989586621679470029"><span id="local-6989586621679470030"><span id="local-6989586621679470031"><span id="local-6989586621679470032"><span id="local-6989586621679470033"><span id="local-6989586621679470034"><span id="local-6989586621679470035"><span id="local-6989586621679470036"><span id="local-6989586621679470037"><span id="local-6989586621679470038"><span id="local-6989586621679470039"><span id="local-6989586621679470040"><span id="local-6989586621679470041"><span id="local-6989586621679470042"><span id="local-6989586621679470043"><span id="local-6989586621679470044"><span id="local-6989586621679470045"><span id="local-6989586621679470046"><span id="local-6989586621679470047"><span id="local-6989586621679470048"><span id="local-6989586621679470049"><span id="local-6989586621679470050"><span id="local-6989586621679470051"><span id="local-6989586621679470052"><span id="local-6989586621679470053"><span id="local-6989586621679470054"><span id="local-6989586621679470055"><span id="local-6989586621679470056"><span id="local-6989586621679470057"><span id="local-6989586621679470058"><span id="local-6989586621679470059"><span id="local-6989586621679470060"><span id="local-6989586621679470061"><span id="local-6989586621679470062"><span id="local-6989586621679470063"><span id="local-6989586621679470064"><span id="local-6989586621679470065"><span id="local-6989586621679470067"><span id="local-6989586621679470069"><span id="local-6989586621679470071"><span id="local-6989586621679470073"><span id="local-6989586621679470075"><span id="local-6989586621679470081"><span id="local-6989586621679470097"><span id="local-6989586621679470102"><span id="local-6989586621679470104"><span id="local-6989586621679470107"><span id="local-6989586621679470110"><span id="local-6989586621679470113"><span id="local-6989586621679470116"><span id="local-6989586621679470119"><span id="local-6989586621679470122"><span id="local-6989586621679470124"><span id="local-6989586621679470127"><span id="local-6989586621679470132"><span id="local-6989586621679470137"><span id="local-6989586621679470142"><span id="local-6989586621679470147"><span id="local-6989586621679470157"><span id="local-6989586621679470180"><span id="local-6989586621679470186"><span id="local-6989586621679470191"><span id="local-6989586621679470196"><span id="local-6989586621679470200"><span id="ScopedTerm%27"><span id="PiSig"><span id="SigmaSig"><span id="LamSig"><span id="LetSig"><span id="ArrowSig"><span id="ProductSig"><span id="AppSig"><span id="FirstSig"><span id="SecondSig"><span id="UniverseSig"><span id="UnitTypeSig"><span id="UnitValSig"><span id="IdTypeSig"><span id="ReflSig"><span id="JSig"><span id="PairSig"><span id="AnnSig"><span id="PatternWildcard"><span id="PatternVar"><span id="PatternPair"><span id="Ann"><span id="Pair"><span id="J"><span id="Refl"><span id="IdType"><span id="UnitVal"><span id="UnitType"><span id="Universe"><span id="Second"><span id="First"><span id="App"><span id="Product"><span id="Arrow"><span id="Let"><span id="Lam"><span id="Sigma"><span id="Pi"><span id="%24mAnn"><span id="%24bAnn"><span id="%24mPair"><span id="%24bPair"><span id="%24mJ"><span id="%24bJ"><span id="%24mRefl"><span id="%24bRefl"><span id="%24mIdType"><span id="%24bIdType"><span id="%24mUnitVal"><span id="%24bUnitVal"><span id="%24mUnitType"><span id="%24bUnitType"><span id="%24mUniverse"><span id="%24bUniverse"><span id="%24mSecond"><span id="%24bSecond"><span id="%24mFirst"><span id="%24bFirst"><span id="%24mApp"><span id="%24bApp"><span id="%24mProduct"><span id="%24bProduct"><span id="%24mArrow"><span id="%24bArrow"><span id="%24mLet"><span id="%24bLet"><span id="%24mLam"><span id="%24bLam"><span id="%24mSigma"><span id="%24bSigma"><span id="%24mPi"><span id="%24bPi"><span class="hs-identifier">mkFreeFoil</span><span> </span><span class="hs-identifier">mlttConfig</span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span><span>
+</span><span id="line-59"></span><span>
+</span><span id="line-60"></span><span id="local-6989586621679469250"><span id="RepK"><span id="local-6989586621679469430"><span id="local-6989586621679469431"><span id="local-6989586621679470387"><span id="local-6989586621679470389"><span id="local-6989586621679470391"><span id="local-6989586621679470393"><span id="local-6989586621679470395"><span id="local-6989586621679470397"><span id="local-6989586621679470399"><span id="local-6989586621679470401"><span class="hs-identifier">deriveGenericK</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Term'Sig</span></span></span></span></span></span></span></span></span></span></span></span></span><span>
+</span><span id="line-61"></span><span id="local-6989586621679469243"><span id="RepK"><span id="local-6989586621679469472"><span id="local-6989586621679469473"><span id="local-6989586621679470767"><span id="local-6989586621679470769"><span id="local-6989586621679470771"><span id="local-6989586621679470773"><span id="local-6989586621679470775"><span id="local-6989586621679470777"><span id="local-6989586621679470779"><span id="local-6989586621679470781"><span class="hs-identifier">deriveGenericK</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Pattern'</span></span></span></span></span></span></span></span></span></span></span></span></span><span>
+</span><span id="line-62"></span><span>
+</span><span id="line-63"></span><span>
+</span><span id="line-64"></span><span id="local-6989586621679469250"><span id="local-6989586621679470874"><span id="local-6989586621679470876"><span id="local-6989586621679470880"><span class="hs-identifier">deriveBifunctor</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Term'Sig</span></span></span></span></span><span>
+</span><span id="line-65"></span><span id="local-6989586621679469250"><span id="local-6989586621679470932"><span id="local-6989586621679470938"><span id="local-6989586621679470956"><span id="local-6989586621679470958"><span class="hs-identifier">deriveBifoldable</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Term'Sig</span></span></span></span></span></span><span>
+</span><span id="line-66"></span><span id="local-6989586621679469250"><span id="local-6989586621679471063"><span class="hs-identifier">deriveBitraversable</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Term'Sig</span></span></span><span>
+</span><span id="line-67"></span><span>
+</span><span id="line-68"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679469627"><span id="local-6989586621679471163"><span class="annot"><span class="hs-identifier hs-type">Foil.SinkableK</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#Pattern%27"><span class="hs-identifier hs-type">Pattern'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679469627"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span></span><span>
+</span><span id="line-69"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679469669"><span id="local-6989586621679471208"><span id="local-6989586621679471212"><span id="local-6989586621679471215"><span id="local-6989586621679471221"><span class="annot"><span class="hs-identifier hs-type">Foil.HasNameBinders</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#Pattern%27"><span class="hs-identifier hs-type">Pattern'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679469669"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span></span></span></span></span><span>
+</span><span id="line-70"></span><span class="hs-comment">-- Foil.CoSinkable (Pattern' a) is generated by mkFreeFoil.</span><span>
+</span><span id="line-71"></span><span>
+</span><span id="line-72"></span><span id="local-6989586621679469243"><span id="local-6989586621679469250"><span id="local-6989586621679469674"><span id="local-6989586621679469675"><span id="local-6989586621679469676"><span id="local-6989586621679469677"><span id="local-6989586621679469678"><span id="local-6989586621679469679"><span id="local-6989586621679469683"><span id="local-6989586621679469684"><span id="local-6989586621679469685"><span id="local-6989586621679469686"><span id="local-6989586621679469687"><span id="local-6989586621679469688"><span id="local-6989586621679469689"><span id="local-6989586621679469690"><span id="local-6989586621679469691"><span id="local-6989586621679469692"><span id="fromTerm%27Sig"><span id="fromPattern%27With"><span id="fromPattern%27"><span id="fromTerm%27"><span id="toTerm%27Sig"><span id="toPattern%27In"><span id="toPattern%27"><span id="toTerm%27"><span id="tryToTerm%27"><span id="tryToTerm%27With"><span id="toTerm%27In"><span id="tryToTerm%27In"><span id="tryToTerm%27WithIn"><span class="hs-identifier">mkFreeFoilConversions</span><span> </span><span class="hs-identifier">mlttConfig</span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span><span>
+</span><span id="line-73"></span><span>
+</span><span id="line-74"></span><span class="annot"><span class="hs-comment">-- | Ignore 'Raw.BNFC'Position' when matching terms.</span></span><span>
+</span><span id="line-75"></span><span class="hs-keyword">instance</span><span> </span><span class="annot"><span class="hs-identifier hs-type">ZipMatchK</span></span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#BNFC%27Position"><span class="hs-identifier hs-type">Raw.BNFC'Position</span></a></span><span> </span><span class="hs-keyword">where</span><span> </span><span id="local-6989586621679471572"><span class="annot"><span class="annottext">zipMatchWithK :: forall (as :: LoT (*)) (bs :: LoT (*)) (cs :: LoT (*)).
+Mappings as bs cs
+-&gt; (BNFC'Position :@@: as)
+-&gt; (BNFC'Position :@@: bs)
+-&gt; Maybe (BNFC'Position :@@: cs)
+</span><a href="#local-6989586621679471572"><span class="hs-identifier hs-var hs-var hs-var hs-var">zipMatchWithK</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Mappings as bs cs
+-&gt; BNFC'Position -&gt; BNFC'Position -&gt; Maybe BNFC'Position
+Mappings as bs cs
+-&gt; (BNFC'Position :@@: as)
+-&gt; (BNFC'Position :@@: bs)
+-&gt; Maybe (BNFC'Position :@@: cs)
+forall {k} (as :: LoT k) (bs :: LoT k) (cs :: LoT k) a.
+Mappings as bs cs -&gt; a -&gt; a -&gt; Maybe a
+</span><span class="hs-identifier hs-var">zipMatchViaChooseLeft</span></span><span>
+</span><span id="line-76"></span><span>
+</span><span id="line-77"></span><span class="hs-comment">-- | Match the signature with the derived (rather than the generic) instance:</span><span>
+</span><span id="line-78"></span><span class="hs-comment">-- matching terms is most of what a type checker does, and the generic instance</span><span>
+</span><span id="line-79"></span><span class="hs-comment">-- reflects a node into its &quot;Generics.Kind&quot; representation on every comparison.</span><span>
+</span><span id="line-80"></span><span id="local-6989586621679469250"><span id="local-6989586621679471577"><span class="hs-identifier">deriveZipMatchK2</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Term'Sig</span></span></span><span>
+</span><span id="line-81"></span><span>
+</span><span id="line-82"></span><span class="annot"><span class="hs-comment">-- | A spelling on the wire is its string.</span></span><span>
+</span><span id="line-83"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679471776"><span id="local-6989586621679471784"><span id="local-6989586621679471790"><span class="annot"><span class="hs-identifier hs-type">Binary</span></span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span></span></span></span><span>
+</span><span id="line-84"></span><span>
+</span><span id="line-85"></span><span class="hs-comment">-- | The signature's own 'Binary': tags and field order from 'GHC.Generics.Generic',</span><span>
+</span><span id="line-86"></span><span class="hs-comment">-- which 'mkFreeFoil' derives for every signature.</span><span>
+</span><span id="line-87"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679469887"><span id="local-6989586621679469888"><span id="local-6989586621679469889"><span id="local-6989586621679471813"><span id="local-6989586621679471820"><span id="local-6989586621679471826"><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Binary</span></span><span> </span><span class="annot"><a href="#local-6989586621679469887"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Binary</span></span><span> </span><span class="annot"><a href="#local-6989586621679469888"><span class="hs-identifier hs-type">s</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Binary</span></span><span> </span><span class="annot"><a href="#local-6989586621679469889"><span class="hs-identifier hs-type">t</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Binary</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#Term%27Sig"><span class="hs-identifier hs-type">Term'Sig</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679469887"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679469888"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679469889"><span class="hs-identifier hs-type">t</span></a></span><span class="hs-special">)</span></span></span></span></span></span></span><span>
+</span><span id="line-88"></span><span>
+</span><span id="line-89"></span><span class="hs-comment">-- | Tags, positions, binders. The scope indices are fabricated on</span><span>
+</span><span id="line-90"></span><span class="hs-comment">-- decoding, which is why this is derived by the library's own deriver</span><span>
+</span><span id="line-91"></span><span class="hs-comment">-- rather than by &quot;GHC.Generics&quot;; the artifact layer checks the ranges the</span><span>
+</span><span id="line-92"></span><span class="hs-comment">-- names lie in on the way in.</span><span>
+</span><span id="line-93"></span><span id="local-6989586621679469895"><span id="local-6989586621679469896"><span id="local-6989586621679469897"><span id="local-6989586621679471996"><span id="local-6989586621679472005"><span id="local-6989586621679472036"><span class="hs-identifier">deriveBinaryPattern</span><span> </span><span class="hs-special">''</span><span class="hs-identifier">Pattern'</span></span></span></span></span></span></span><span>
+</span><span id="line-94"></span><span>
+</span><span id="line-95"></span><span class="hs-comment">-- | Two patterns are unified by their binders, in order.</span><span>
+</span><span id="line-96"></span><span class="hs-comment">--</span><span>
+</span><span id="line-97"></span><span class="hs-comment">-- Note that this is the /default/ instance, so it deliberately ignores the</span><span>
+</span><span id="line-98"></span><span class="hs-comment">-- pattern constructors: @(x, y)@ and a hypothetical single pattern binding two</span><span>
+</span><span id="line-99"></span><span class="hs-comment">-- names would unify. For MLTT that is the intended reading, since what the body</span><span>
+</span><span id="line-100"></span><span class="hs-comment">-- of a binder may refer to is exactly the names the pattern binds.</span><span>
+</span><span id="line-101"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679469918"><span id="local-6989586621679472062"><span id="local-6989586621679472069"><span class="annot"><span class="hs-identifier hs-type">Foil.UnifiablePattern</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#Pattern%27"><span class="hs-identifier hs-type">Pattern'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679469918"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span></span></span></span><span>
+</span><span id="line-102"></span><span>
+</span><span id="line-103"></span><span class="annot"><span class="hs-comment">-- | Ignore source positions when unifying patterns.</span></span><span>
+</span><span id="line-104"></span><span class="hs-keyword">instance</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.UnifiableInPattern</span></span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#BNFC%27Position"><span class="hs-identifier hs-type">Raw.BNFC'Position</span></a></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-105"></span><span>  </span><span id="local-6989586621679472077"><span class="annot"><span class="annottext">unifyInPattern :: BNFC'Position -&gt; BNFC'Position -&gt; Bool
+</span><a href="#local-6989586621679472077"><span class="hs-identifier hs-var hs-var hs-var hs-var">unifyInPattern</span></a></span></span><span> </span><span class="annot"><span class="annottext">BNFC'Position
+</span><span class="hs-identifier">_</span></span><span> </span><span class="annot"><span class="annottext">BNFC'Position
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">True</span></span><span>
+</span><span id="line-106"></span><span>
+</span><span id="line-107"></span><span class="annot"><span class="hs-comment">-- * Parsing and printing</span></span><span>
+</span><span id="line-108"></span><span>
+</span><span id="line-109"></span><span class="hs-comment">-- | Source text as the parser receives it: the contents of a file, of</span><span>
+</span><span id="line-110"></span><span class="hs-comment">-- standard input, or of one interactive step. The 'IsString' instance lets</span><span>
+</span><span id="line-111"></span><span class="hs-comment">-- tests and doctests write literals.</span><span>
+</span><span id="line-112"></span><span class="hs-keyword">newtype</span><span> </span><span id="SourceText"><span class="annot"><a href="Language.MLTT.Impl.Generated.html#SourceText"><span class="hs-identifier hs-var">SourceText</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="SourceText"><span class="annot"><a href="Language.MLTT.Impl.Generated.html#SourceText"><span class="hs-identifier hs-var">SourceText</span></a></span></span><span> </span><span class="hs-special">{</span><span> </span><span id="sourceText"><span class="annot"><span class="annottext">SourceText -&gt; String
+</span><a href="Language.MLTT.Impl.Generated.html#sourceText"><span class="hs-identifier hs-var hs-var">sourceText</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-113"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="annot"><span class="hs-keyword">newtype</span></span><span> </span><span class="hs-special">(</span><span id="local-6989586621679472082"><span id="local-6989586621679472088"><span class="annot"><span class="annottext">SourceText -&gt; SourceText -&gt; Bool
+(SourceText -&gt; SourceText -&gt; Bool)
+-&gt; (SourceText -&gt; SourceText -&gt; Bool) -&gt; Eq SourceText
+forall a. (a -&gt; a -&gt; Bool) -&gt; (a -&gt; a -&gt; Bool) -&gt; Eq a
+$c== :: SourceText -&gt; SourceText -&gt; Bool
+== :: SourceText -&gt; SourceText -&gt; Bool
+$c/= :: SourceText -&gt; SourceText -&gt; Bool
+/= :: SourceText -&gt; SourceText -&gt; Bool
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Eq</span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679472096"><span id="local-6989586621679472102"><span id="local-6989586621679472107"><span class="annot"><span class="annottext">Int -&gt; SourceText -&gt; ShowS
+[SourceText] -&gt; ShowS
+SourceText -&gt; String
+(Int -&gt; SourceText -&gt; ShowS)
+-&gt; (SourceText -&gt; String)
+-&gt; ([SourceText] -&gt; ShowS)
+-&gt; Show SourceText
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+$cshowsPrec :: Int -&gt; SourceText -&gt; ShowS
+showsPrec :: Int -&gt; SourceText -&gt; ShowS
+$cshow :: SourceText -&gt; String
+show :: SourceText -&gt; String
+$cshowList :: [SourceText] -&gt; ShowS
+showList :: [SourceText] -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679472115"><span class="annot"><span class="annottext">String -&gt; SourceText
+(String -&gt; SourceText) -&gt; IsString SourceText
+forall a. (String -&gt; a) -&gt; IsString a
+$cfromString :: String -&gt; SourceText
+fromString :: String -&gt; SourceText
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var">IsString</span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679472123"><span id="local-6989586621679472128"><span id="local-6989586621679472134"><span class="annot"><span class="annottext">NonEmpty SourceText -&gt; SourceText
+SourceText -&gt; SourceText -&gt; SourceText
+(SourceText -&gt; SourceText -&gt; SourceText)
+-&gt; (NonEmpty SourceText -&gt; SourceText)
+-&gt; (forall b. Integral b =&gt; b -&gt; SourceText -&gt; SourceText)
+-&gt; Semigroup SourceText
+forall b. Integral b =&gt; b -&gt; SourceText -&gt; SourceText
+forall a.
+(a -&gt; a -&gt; a)
+-&gt; (NonEmpty a -&gt; a)
+-&gt; (forall b. Integral b =&gt; b -&gt; a -&gt; a)
+-&gt; Semigroup a
+$c&lt;&gt; :: SourceText -&gt; SourceText -&gt; SourceText
+&lt;&gt; :: SourceText -&gt; SourceText -&gt; SourceText
+$csconcat :: NonEmpty SourceText -&gt; SourceText
+sconcat :: NonEmpty SourceText -&gt; SourceText
+$cstimes :: forall b. Integral b =&gt; b -&gt; SourceText -&gt; SourceText
+stimes :: forall b. Integral b =&gt; b -&gt; SourceText -&gt; SourceText
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Semigroup</span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679472144"><span id="local-6989586621679472149"><span id="local-6989586621679472153"><span class="annot"><span class="annottext">Semigroup SourceText
+SourceText
+Semigroup SourceText =&gt;
+SourceText
+-&gt; (SourceText -&gt; SourceText -&gt; SourceText)
+-&gt; ([SourceText] -&gt; SourceText)
+-&gt; Monoid SourceText
+[SourceText] -&gt; SourceText
+SourceText -&gt; SourceText -&gt; SourceText
+forall a.
+Semigroup a =&gt;
+a -&gt; (a -&gt; a -&gt; a) -&gt; ([a] -&gt; a) -&gt; Monoid a
+$cmempty :: SourceText
+mempty :: SourceText
+$cmappend :: SourceText -&gt; SourceText -&gt; SourceText
+mappend :: SourceText -&gt; SourceText -&gt; SourceText
+$cmconcat :: [SourceText] -&gt; SourceText
+mconcat :: [SourceText] -&gt; SourceText
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Monoid</span></span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-114"></span><span>
+</span><span id="line-115"></span><span class="annot"><span class="hs-comment">-- | Assemble a source from its lines, 'unlines'-style.</span></span><span>
+</span><span id="line-116"></span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#sourceLines"><span class="hs-identifier hs-type">sourceLines</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#SourceText"><span class="hs-identifier hs-type">SourceText</span></a></span><span>
+</span><span id="line-117"></span><span id="sourceLines"><span class="annot"><span class="annottext">sourceLines :: [String] -&gt; SourceText
+</span><a href="Language.MLTT.Impl.Generated.html#sourceLines"><span class="hs-identifier hs-var hs-var">sourceLines</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">String -&gt; SourceText
+</span><a href="Language.MLTT.Impl.Generated.html#SourceText"><span class="hs-identifier hs-var">SourceText</span></a></span><span> </span><span class="annot"><span class="annottext">(String -&gt; SourceText)
+-&gt; ([String] -&gt; String) -&gt; [String] -&gt; SourceText
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">[String] -&gt; String
+</span><span class="hs-identifier hs-var">unlines</span></span><span>
+</span><span id="line-118"></span><span>
+</span><span id="line-119"></span><span class="annot"><span class="hs-comment">-- | What the parser reports when the input is not MLTT.</span></span><span>
+</span><span id="line-120"></span><span class="hs-keyword">type</span><span> </span><span id="ParseError"><span class="annot"><a href="Language.MLTT.Impl.Generated.html#ParseError"><span class="hs-identifier hs-var">ParseError</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span>
+</span><span id="line-121"></span><span>
+</span><span id="line-122"></span><span class="annot"><span class="hs-comment">-- | Parse a raw term, calling 'error' if it does not parse.</span></span><span>
+</span><span id="line-123"></span><span id="local-6989586621679469939"><span class="annot"><a href="Language.MLTT.Impl.Generated.html#unsafeParse"><span class="hs-identifier hs-type">unsafeParse</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="hs-special">[</span><span class="annot"><a href="Language.MLTT.Syntax.Lex.html#Token"><span class="hs-identifier hs-type">Raw.Token</span></a></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Either</span></span><span> </span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#ParseError"><span class="hs-identifier hs-type">ParseError</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679469939"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#SourceText"><span class="hs-identifier hs-type">SourceText</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679469939"><span class="hs-identifier hs-type">a</span></a></span></span><span>
+</span><span id="line-124"></span><span id="unsafeParse"><span class="annot"><span class="annottext">unsafeParse :: forall a. ([Token] -&gt; Either String a) -&gt; SourceText -&gt; a
+</span><a href="Language.MLTT.Impl.Generated.html#unsafeParse"><span class="hs-identifier hs-var hs-var">unsafeParse</span></a></span></span><span> </span><span id="local-6989586621679472169"><span class="annot"><span class="annottext">[Token] -&gt; Either String a
+</span><a href="#local-6989586621679472169"><span class="hs-identifier hs-var">parse</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#SourceText"><span class="hs-identifier hs-type">SourceText</span></a></span><span> </span><span id="local-6989586621679472170"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679472170"><span class="hs-identifier hs-var">input</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-125"></span><span>  </span><span class="hs-keyword">case</span><span> </span><span class="annot"><span class="annottext">[Token] -&gt; Either String a
+</span><a href="#local-6989586621679472169"><span class="hs-identifier hs-var">parse</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String -&gt; [Token]
+</span><a href="Language.MLTT.Syntax.Lex.html#tokens"><span class="hs-identifier hs-var">Raw.tokens</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679472170"><span class="hs-identifier hs-var">input</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-keyword">of</span><span>
+</span><span id="line-126"></span><span>    </span><span class="annot"><span class="hs-identifier hs-type">Left</span></span><span> </span><span id="local-6989586621679472172"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679472172"><span class="hs-identifier hs-var">err</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">String -&gt; a
+forall a. HasCallStack =&gt; String -&gt; a
+</span><span class="hs-identifier hs-var">error</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;could not parse an MLTT term: &quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; ShowS
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679472170"><span class="hs-identifier hs-var">input</span></a></span><span> </span><span class="annot"><span class="annottext">String -&gt; ShowS
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;\n  &quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; ShowS
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679472172"><span class="hs-identifier hs-var">err</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-127"></span><span>    </span><span class="annot"><span class="hs-identifier hs-type">Right</span></span><span> </span><span id="local-6989586621679472173"><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679472173"><span class="hs-identifier hs-var">x</span></a></span></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">a
+</span><a href="#local-6989586621679472173"><span class="hs-identifier hs-var">x</span></a></span><span>
+</span><span id="line-128"></span><span>
+</span><span id="line-129"></span><span class="annot"><span class="hs-comment">-- | Parse a raw program: a sequence of modules, laid out.</span></span><span>
+</span><span id="line-130"></span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#parseProgram"><span class="hs-identifier hs-type">parseProgram</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#SourceText"><span class="hs-identifier hs-type">SourceText</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Either</span></span><span> </span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#ParseError"><span class="hs-identifier hs-type">ParseError</span></a></span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#Program"><span class="hs-identifier hs-type">Raw.Program</span></a></span><span>
+</span><span id="line-131"></span><span id="parseProgram"><span class="annot"><span class="annottext">parseProgram :: SourceText -&gt; Either String Program
+</span><a href="Language.MLTT.Impl.Generated.html#parseProgram"><span class="hs-identifier hs-var hs-var">parseProgram</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#SourceText"><span class="hs-identifier hs-type">SourceText</span></a></span><span> </span><span id="local-6989586621679472175"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679472175"><span class="hs-identifier hs-var">input</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">[Token] -&gt; Either String Program
+</span><a href="Language.MLTT.Syntax.Par.html#pProgram"><span class="hs-identifier hs-var">Raw.pProgram</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Bool -&gt; [Token] -&gt; [Token]
+</span><a href="Language.MLTT.Syntax.Layout.html#resolveLayout"><span class="hs-identifier hs-var">Raw.resolveLayout</span></a></span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">True</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String -&gt; [Token]
+</span><a href="Language.MLTT.Syntax.Lex.html#tokens"><span class="hs-identifier hs-var">Raw.tokens</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679472175"><span class="hs-identifier hs-var">input</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-132"></span><span>
+</span><span id="line-133"></span><span class="hs-comment">-- | Parse a run of declarations, laid out as a module body is: what one</span><span>
+</span><span id="line-134"></span><span class="hs-comment">-- interactive input holds.</span><span>
+</span><span id="line-135"></span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#parseDecls"><span class="hs-identifier hs-type">parseDecls</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#SourceText"><span class="hs-identifier hs-type">SourceText</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Either</span></span><span> </span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#ParseError"><span class="hs-identifier hs-type">ParseError</span></a></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#Decl"><span class="hs-identifier hs-type">Raw.Decl</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-136"></span><span id="parseDecls"><span class="annot"><span class="annottext">parseDecls :: SourceText -&gt; Either String [Decl]
+</span><a href="Language.MLTT.Impl.Generated.html#parseDecls"><span class="hs-identifier hs-var hs-var">parseDecls</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#SourceText"><span class="hs-identifier hs-type">SourceText</span></a></span><span> </span><span id="local-6989586621679472179"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679472179"><span class="hs-identifier hs-var">input</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">[Token] -&gt; Either String [Decl]
+</span><a href="Language.MLTT.Syntax.Par.html#pListDecl"><span class="hs-identifier hs-var">Raw.pListDecl</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Bool -&gt; [Token] -&gt; [Token]
+</span><a href="Language.MLTT.Syntax.Layout.html#resolveLayout"><span class="hs-identifier hs-var">Raw.resolveLayout</span></a></span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">True</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String -&gt; [Token]
+</span><a href="Language.MLTT.Syntax.Lex.html#tokens"><span class="hs-identifier hs-var">Raw.tokens</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679472179"><span class="hs-identifier hs-var">input</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-137"></span><span>
+</span><span id="line-138"></span><span class="hs-comment">-- | Parse a run of imports, laid out as a module header is: what an</span><span>
+</span><span id="line-139"></span><span class="hs-comment">-- interactive @import@ line holds.</span><span>
+</span><span id="line-140"></span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#parseImports"><span class="hs-identifier hs-type">parseImports</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#SourceText"><span class="hs-identifier hs-type">SourceText</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Either</span></span><span> </span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#ParseError"><span class="hs-identifier hs-type">ParseError</span></a></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#Import"><span class="hs-identifier hs-type">Raw.Import</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-141"></span><span id="parseImports"><span class="annot"><span class="annottext">parseImports :: SourceText -&gt; Either String [Import]
+</span><a href="Language.MLTT.Impl.Generated.html#parseImports"><span class="hs-identifier hs-var hs-var">parseImports</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#SourceText"><span class="hs-identifier hs-type">SourceText</span></a></span><span> </span><span id="local-6989586621679472182"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679472182"><span class="hs-identifier hs-var">input</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">[Token] -&gt; Either String [Import]
+</span><a href="Language.MLTT.Syntax.Par.html#pListImport"><span class="hs-identifier hs-var">Raw.pListImport</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Bool -&gt; [Token] -&gt; [Token]
+</span><a href="Language.MLTT.Syntax.Layout.html#resolveLayout"><span class="hs-identifier hs-var">Raw.resolveLayout</span></a></span><span> </span><span class="annot"><span class="annottext">Bool
+</span><span class="hs-identifier hs-var">True</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String -&gt; [Token]
+</span><a href="Language.MLTT.Syntax.Lex.html#tokens"><span class="hs-identifier hs-var">Raw.tokens</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679472182"><span class="hs-identifier hs-var">input</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-142"></span><span>
+</span><span id="line-143"></span><span class="hs-comment">-- |</span><span>
+</span><span id="line-144"></span><span class="hs-comment">-- &gt;&gt;&gt; &quot;&#955; x &#8658; &#955; y &#8658; x&quot; :: Term' Raw.BNFC'Position Foil.VoidS</span><span>
+</span><span id="line-145"></span><span class="hs-comment">-- &#955; x0 &#8658; &#955; x1 &#8658; x0</span><span>
+</span><span id="line-146"></span><span class="hs-comment">--</span><span>
+</span><span id="line-147"></span><span class="hs-comment">-- &gt;&gt;&gt; &quot;&#928; (A : &#120140;) &#8594; &#928; (x : A) &#8594; A&quot; :: Term' Raw.BNFC'Position Foil.VoidS</span><span>
+</span><span id="line-148"></span><span class="hs-comment">-- &#928; (x0 : &#120140;) &#8594; &#928; (x1 : x0) &#8594; x0</span><span>
+</span><span id="line-149"></span><span class="hs-comment">--</span><span>
+</span><span id="line-150"></span><span class="hs-comment">-- Pattern binders bind more than one name at a time:</span><span>
+</span><span id="line-151"></span><span class="hs-comment">--</span><span>
+</span><span id="line-152"></span><span class="hs-comment">-- &gt;&gt;&gt; &quot;&#955; (x, y) &#8658; y&quot; :: Term' Raw.BNFC'Position Foil.VoidS</span><span>
+</span><span id="line-153"></span><span class="hs-comment">-- &#955; (x0, x1) &#8658; x1</span><span>
+</span><span id="line-154"></span><span class="hs-comment">--</span><span>
+</span><span id="line-155"></span><span class="hs-comment">-- The range-parametric conversion allocates the binders it introduces inside</span><span>
+</span><span id="line-156"></span><span class="hs-comment">-- the given range, so the same source elaborates to the same term whatever</span><span>
+</span><span id="line-157"></span><span class="hs-comment">-- else the ambient scope holds:</span><span>
+</span><span id="line-158"></span><span class="hs-comment">--</span><span>
+</span><span id="line-159"></span><span class="hs-comment">-- &gt;&gt;&gt; toTerm'In (Foil.NameRange 50 59) Foil.emptyScope Map.empty (unsafeParse Par.pTerm &quot;&#955; x &#8658; &#955; y &#8658; x&quot;)</span><span>
+</span><span id="line-160"></span><span class="hs-comment">-- &#955; x50 &#8658; &#955; x51 &#8658; x50</span><span>
+</span><span id="line-161"></span><span class="hs-keyword">instance</span><span> </span><span class="annot"><span class="hs-identifier hs-type">IsString</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#Term%27"><span class="hs-identifier hs-type">Term'</span></a></span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#BNFC%27Position"><span class="hs-identifier hs-type">Raw.BNFC'Position</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.VoidS</span></span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-162"></span><span>  </span><span id="local-6989586621679472190"><span class="annot"><span class="annottext">fromString :: String -&gt; Term' BNFC'Position 'VoidS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var">fromString</span></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Scope 'VoidS
+-&gt; Map VarIdent (Name 'VoidS)
+-&gt; Term' BNFC'Position
+-&gt; Term' BNFC'Position 'VoidS
+forall (o :: S) a.
+(Distinct o, Ord VarIdent) =&gt;
+Scope o -&gt; Map VarIdent (Name o) -&gt; Term' a -&gt; Term' a o
+</span><a href="Language.MLTT.Impl.Generated.html#toTerm%27"><span class="hs-identifier hs-var">toTerm'</span></a></span><span> </span><span class="annot"><span class="annottext">Scope 'VoidS
+</span><span class="hs-identifier hs-var">Foil.emptyScope</span></span><span> </span><span class="annot"><span class="annottext">Map VarIdent (Name 'VoidS)
+forall k a. Map k a
+</span><span class="hs-identifier hs-var">Map.empty</span></span><span> </span><span class="annot"><span class="annottext">(Term' BNFC'Position -&gt; Term' BNFC'Position 'VoidS)
+-&gt; (String -&gt; Term' BNFC'Position)
+-&gt; String
+-&gt; Term' BNFC'Position 'VoidS
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">([Token] -&gt; Either String (Term' BNFC'Position))
+-&gt; SourceText -&gt; Term' BNFC'Position
+forall a. ([Token] -&gt; Either String a) -&gt; SourceText -&gt; a
+</span><a href="Language.MLTT.Impl.Generated.html#unsafeParse"><span class="hs-identifier hs-var">unsafeParse</span></a></span><span> </span><span class="annot"><span class="annottext">[Token] -&gt; Either String (Term' BNFC'Position)
+</span><a href="Language.MLTT.Syntax.Par.html#pTerm"><span class="hs-identifier hs-var">Raw.pTerm</span></a></span><span> </span><span class="annot"><span class="annottext">(SourceText -&gt; Term' BNFC'Position)
+-&gt; (String -&gt; SourceText) -&gt; String -&gt; Term' BNFC'Position
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; SourceText
+</span><a href="Language.MLTT.Impl.Generated.html#SourceText"><span class="hs-identifier hs-var">SourceText</span></a></span><span>
+</span><span id="line-163"></span><span>
+</span><span id="line-164"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679469952"><span id="local-6989586621679469953"><span id="local-6989586621679472195"><span id="local-6989586621679472200"><span class="annot"><span class="hs-identifier hs-type">Show</span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#Term%27"><span class="hs-identifier hs-type">Term'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679469952"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679469953"><span class="hs-identifier hs-type">n</span></a></span><span class="hs-special">)</span></span></span></span></span><span> </span><span class="hs-keyword">where</span><span> </span><span id="local-6989586621679472204"><span class="annot"><span class="annottext">show :: Term' a n -&gt; String
+</span><a href="#local-6989586621679472204"><span class="hs-identifier hs-var hs-var hs-var hs-var">show</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Term' a -&gt; String
+forall a. Print a =&gt; a -&gt; String
+</span><a href="Language.MLTT.Syntax.Print.html#printTree"><span class="hs-identifier hs-var">Raw.printTree</span></a></span><span> </span><span class="annot"><span class="annottext">(Term' a -&gt; String)
+-&gt; (Term' a n -&gt; Term' a) -&gt; Term' a n -&gt; String
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">Term' a n -&gt; Term' a
+forall a (o :: S). Term' a o -&gt; Term' a
+</span><a href="Language.MLTT.Impl.Generated.html#fromTerm%27"><span class="hs-identifier hs-var">fromTerm'</span></a></span><span>
+</span><span id="line-165"></span><span>
+</span><span id="line-166"></span><span class="hs-comment">-- | Convert back to raw syntax, naming free and bound variables separately.</span><span>
+</span><span id="line-167"></span><span class="hs-comment">--</span><span>
+</span><span id="line-168"></span><span class="hs-comment">-- A variable free in the whole term is named from a 'Foil.NameMap'; a bound one</span><span>
+</span><span id="line-169"></span><span class="hs-comment">-- is named from its index. Keeping the two apart matters because raw names are</span><span>
+</span><span id="line-170"></span><span class="hs-comment">-- not unique across scope indices: a definition\'s body is elaborated before</span><span>
+</span><span id="line-171"></span><span class="hs-comment">-- the definition\'s own name is allocated, so @def f := &#955; x &#8658; x@ gives both @f@</span><span>
+</span><span id="line-172"></span><span class="hs-comment">-- and the @x@ it binds the raw name 0.</span><span>
+</span><span id="line-173"></span><span id="local-6989586621679469957"><span id="local-6989586621679469959"><span class="annot"><a href="Language.MLTT.Impl.Generated.html#fromTermWith"><span class="hs-identifier hs-type">fromTermWith</span></a></span><span>
+</span><span id="line-174"></span><span>  </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.Distinct</span></span><span> </span><span class="annot"><a href="#local-6989586621679469957"><span class="hs-identifier hs-type">n</span></a></span><span>
+</span><span id="line-175"></span><span>  </span><span class="hs-glyph">=&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span class="hs-special">)</span><span>          </span><span class="annot"><span class="hs-comment">-- ^ Name a bound variable, from its index.</span></span><span>
+</span><span id="line-176"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.NameMap</span></span><span> </span><span class="annot"><a href="#local-6989586621679469957"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span>    </span><span class="annot"><span class="hs-comment">-- ^ Name a variable free in the whole term.</span></span><span>
+</span><span id="line-177"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#Term%27"><span class="hs-identifier hs-type">Term'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679469959"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679469957"><span class="hs-identifier hs-type">n</span></a></span><span>
+</span><span id="line-178"></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#Term%27"><span class="hs-identifier hs-type">Raw.Term'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679469959"><span class="hs-identifier hs-type">a</span></a></span></span></span><span>
+</span><span id="line-179"></span><span id="fromTermWith"><span class="annot"><span class="annottext">fromTermWith :: forall (n :: S) a.
+Distinct n =&gt;
+(Int -&gt; VarIdent) -&gt; NameMap n VarIdent -&gt; Term' a n -&gt; Term' a
+</span><a href="Language.MLTT.Impl.Generated.html#fromTermWith"><span class="hs-identifier hs-var hs-var">fromTermWith</span></a></span></span><span> </span><span id="local-6989586621679472212"><span class="annot"><span class="annottext">Int -&gt; VarIdent
+</span><a href="#local-6989586621679472212"><span class="hs-identifier hs-var">bound</span></a></span></span><span> </span><span id="local-6989586621679472213"><span class="annot"><span class="annottext">NameMap n VarIdent
+</span><a href="#local-6989586621679472213"><span class="hs-identifier hs-var">names</span></a></span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-180"></span><span>  </span><span class="annot"><span class="annottext">(Term'Sig a (Pattern' a, ScopedTerm' a) (Term' a) -&gt; Term' a)
+-&gt; (VarIdent -&gt; Term' a)
+-&gt; (forall (x :: S) (y :: S). Pattern' a x y -&gt; Pattern' a)
+-&gt; (Term' a -&gt; ScopedTerm' a)
+-&gt; (Name n -&gt; VarIdent)
+-&gt; (Int -&gt; VarIdent)
+-&gt; AST (Pattern' a) (Term'Sig a) n
+-&gt; Term' a
+forall (sig :: * -&gt; * -&gt; *) (binder :: S -&gt; S -&gt; *) rawIdent
+       rawTerm rawPattern rawScopedTerm (n :: S).
+(Bifunctor sig, Distinct n, CoSinkable binder) =&gt;
+(sig (rawPattern, rawScopedTerm) rawTerm -&gt; rawTerm)
+-&gt; (rawIdent -&gt; rawTerm)
+-&gt; (forall (x :: S) (y :: S). binder x y -&gt; rawPattern)
+-&gt; (rawTerm -&gt; rawScopedTerm)
+-&gt; (Name n -&gt; rawIdent)
+-&gt; (Int -&gt; rawIdent)
+-&gt; AST binder sig n
+-&gt; rawTerm
+</span><span class="hs-identifier hs-var">convertFromASTWith</span></span><span> </span><span class="annot"><span class="annottext">Term'Sig a (Pattern' a, ScopedTerm' a) (Term' a) -&gt; Term' a
+forall a.
+Term'Sig a (Pattern' a, ScopedTerm' a) (Term' a) -&gt; Term' a
+</span><a href="Language.MLTT.Impl.Generated.html#fromTerm%27Sig"><span class="hs-identifier hs-var">fromTerm'Sig</span></a></span><span> </span><span class="annot"><span class="annottext">VarIdent -&gt; Term' a
+forall a. VarIdent -&gt; Term' a
+</span><a href="Language.MLTT.FreeFoilConfig.html#rawVar"><span class="hs-identifier hs-var">rawVar</span></a></span><span> </span><span class="annot"><span class="annottext">Pattern' a x y -&gt; Pattern' a
+forall a (o :: S) (i :: S). Pattern' a o i -&gt; Pattern' a
+forall (x :: S) (y :: S). Pattern' a x y -&gt; Pattern' a
+</span><a href="Language.MLTT.Impl.Generated.html#fromPattern%27"><span class="hs-identifier hs-var">fromPattern'</span></a></span><span> </span><span class="annot"><span class="annottext">Term' a -&gt; ScopedTerm' a
+forall a. Term' a -&gt; ScopedTerm' a
+</span><a href="Language.MLTT.FreeFoilConfig.html#rawScopedTerm"><span class="hs-identifier hs-var">rawScopedTerm</span></a></span><span>
+</span><span id="line-181"></span><span>    </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Name n -&gt; NameMap n VarIdent -&gt; VarIdent
+forall (n :: S) a. Name n -&gt; NameMap n a -&gt; a
+</span><span class="hs-operator hs-var">`Foil.lookupName`</span></span><span> </span><span class="annot"><span class="annottext">NameMap n VarIdent
+</span><a href="#local-6989586621679472213"><span class="hs-identifier hs-var">names</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">Int -&gt; VarIdent
+</span><a href="#local-6989586621679472212"><span class="hs-identifier hs-var">bound</span></a></span><span>
+</span><span id="line-182"></span><span>
+</span><span id="line-183"></span><span class="annot"><span class="hs-comment">-- | Print a term, naming free and bound variables separately.</span></span><span>
+</span><span id="line-184"></span><span id="local-6989586621679469975"><span id="local-6989586621679469976"><span class="annot"><a href="Language.MLTT.Impl.Generated.html#showTermWith"><span class="hs-identifier hs-type">showTermWith</span></a></span><span>
+</span><span id="line-185"></span><span>  </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.Distinct</span></span><span> </span><span class="annot"><a href="#local-6989586621679469975"><span class="hs-identifier hs-type">n</span></a></span><span>
+</span><span id="line-186"></span><span>  </span><span class="hs-glyph">=&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.NameMap</span></span><span> </span><span class="annot"><a href="#local-6989586621679469975"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#Term%27"><span class="hs-identifier hs-type">Term'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679469976"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679469975"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span></span></span><span>
+</span><span id="line-187"></span><span id="showTermWith"><span class="annot"><span class="annottext">showTermWith :: forall (n :: S) a.
+Distinct n =&gt;
+(Int -&gt; VarIdent) -&gt; NameMap n VarIdent -&gt; Term' a n -&gt; String
+</span><a href="Language.MLTT.Impl.Generated.html#showTermWith"><span class="hs-identifier hs-var hs-var">showTermWith</span></a></span></span><span> </span><span id="local-6989586621679472219"><span class="annot"><span class="annottext">Int -&gt; VarIdent
+</span><a href="#local-6989586621679472219"><span class="hs-identifier hs-var">bound</span></a></span></span><span> </span><span id="local-6989586621679472220"><span class="annot"><span class="annottext">NameMap n VarIdent
+</span><a href="#local-6989586621679472220"><span class="hs-identifier hs-var">names</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Term' a -&gt; String
+forall a. Print a =&gt; a -&gt; String
+</span><a href="Language.MLTT.Syntax.Print.html#printTree"><span class="hs-identifier hs-var">Raw.printTree</span></a></span><span> </span><span class="annot"><span class="annottext">(Term' a -&gt; String)
+-&gt; (Term' a n -&gt; Term' a) -&gt; Term' a n -&gt; String
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">(Int -&gt; VarIdent) -&gt; NameMap n VarIdent -&gt; Term' a n -&gt; Term' a
+forall (n :: S) a.
+Distinct n =&gt;
+(Int -&gt; VarIdent) -&gt; NameMap n VarIdent -&gt; Term' a n -&gt; Term' a
+</span><a href="Language.MLTT.Impl.Generated.html#fromTermWith"><span class="hs-identifier hs-var">fromTermWith</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; VarIdent
+</span><a href="#local-6989586621679472219"><span class="hs-identifier hs-var">bound</span></a></span><span> </span><span class="annot"><span class="annottext">NameMap n VarIdent
+</span><a href="#local-6989586621679472220"><span class="hs-identifier hs-var">names</span></a></span><span>
+</span><span id="line-188"></span><span>
+</span><span id="line-189"></span><span class="hs-comment">-- | 'fromTermWith', with one naming function covering both the binder</span><span>
+</span><span id="line-190"></span><span class="hs-comment">-- occurrences (through the generated 'fromPattern'With') and the</span><span>
+</span><span id="line-191"></span><span class="hs-comment">-- bound-variable references.</span><span>
+</span><span id="line-192"></span><span id="local-6989586621679472221"><span id="local-6989586621679472222"><span class="annot"><a href="Language.MLTT.Impl.Generated.html#fromTermNamed"><span class="hs-identifier hs-type">fromTermNamed</span></a></span><span>
+</span><span id="line-193"></span><span>  </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.Distinct</span></span><span> </span><span class="annot"><a href="#local-6989586621679472221"><span class="hs-identifier hs-type">n</span></a></span><span>
+</span><span id="line-194"></span><span>  </span><span class="hs-glyph">=&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.NameMap</span></span><span> </span><span class="annot"><a href="#local-6989586621679472221"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#Term%27"><span class="hs-identifier hs-type">Term'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679472222"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679472221"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#Term%27"><span class="hs-identifier hs-type">Raw.Term'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679472222"><span class="hs-identifier hs-type">a</span></a></span></span></span><span>
+</span><span id="line-195"></span><span id="fromTermNamed"><span class="annot"><span class="annottext">fromTermNamed :: forall (n :: S) a.
+Distinct n =&gt;
+(Int -&gt; VarIdent) -&gt; NameMap n VarIdent -&gt; Term' a n -&gt; Term' a
+</span><a href="Language.MLTT.Impl.Generated.html#fromTermNamed"><span class="hs-identifier hs-var hs-var">fromTermNamed</span></a></span></span><span> </span><span id="local-6989586621679472228"><span class="annot"><span class="annottext">Int -&gt; VarIdent
+</span><a href="#local-6989586621679472228"><span class="hs-identifier hs-var">bound</span></a></span></span><span> </span><span id="local-6989586621679472229"><span class="annot"><span class="annottext">NameMap n VarIdent
+</span><a href="#local-6989586621679472229"><span class="hs-identifier hs-var">names</span></a></span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-196"></span><span>  </span><span class="annot"><span class="annottext">(Term'Sig a (Pattern' a, ScopedTerm' a) (Term' a) -&gt; Term' a)
+-&gt; (VarIdent -&gt; Term' a)
+-&gt; (forall (x :: S) (y :: S). Pattern' a x y -&gt; Pattern' a)
+-&gt; (Term' a -&gt; ScopedTerm' a)
+-&gt; (Name n -&gt; VarIdent)
+-&gt; (Int -&gt; VarIdent)
+-&gt; AST (Pattern' a) (Term'Sig a) n
+-&gt; Term' a
+forall (sig :: * -&gt; * -&gt; *) (binder :: S -&gt; S -&gt; *) rawIdent
+       rawTerm rawPattern rawScopedTerm (n :: S).
+(Bifunctor sig, Distinct n, CoSinkable binder) =&gt;
+(sig (rawPattern, rawScopedTerm) rawTerm -&gt; rawTerm)
+-&gt; (rawIdent -&gt; rawTerm)
+-&gt; (forall (x :: S) (y :: S). binder x y -&gt; rawPattern)
+-&gt; (rawTerm -&gt; rawScopedTerm)
+-&gt; (Name n -&gt; rawIdent)
+-&gt; (Int -&gt; rawIdent)
+-&gt; AST binder sig n
+-&gt; rawTerm
+</span><span class="hs-identifier hs-var">convertFromASTWith</span></span><span> </span><span class="annot"><span class="annottext">Term'Sig a (Pattern' a, ScopedTerm' a) (Term' a) -&gt; Term' a
+forall a.
+Term'Sig a (Pattern' a, ScopedTerm' a) (Term' a) -&gt; Term' a
+</span><a href="Language.MLTT.Impl.Generated.html#fromTerm%27Sig"><span class="hs-identifier hs-var">fromTerm'Sig</span></a></span><span> </span><span class="annot"><span class="annottext">VarIdent -&gt; Term' a
+forall a. VarIdent -&gt; Term' a
+</span><a href="Language.MLTT.FreeFoilConfig.html#rawVar"><span class="hs-identifier hs-var">rawVar</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">(Int -&gt; VarIdent) -&gt; Pattern' a x y -&gt; Pattern' a
+forall a (o :: S) (i :: S).
+(Int -&gt; VarIdent) -&gt; Pattern' a o i -&gt; Pattern' a
+</span><a href="Language.MLTT.Impl.Generated.html#fromPattern%27With"><span class="hs-identifier hs-var">fromPattern'With</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; VarIdent
+</span><a href="#local-6989586621679472228"><span class="hs-identifier hs-var">bound</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">Term' a -&gt; ScopedTerm' a
+forall a. Term' a -&gt; ScopedTerm' a
+</span><a href="Language.MLTT.FreeFoilConfig.html#rawScopedTerm"><span class="hs-identifier hs-var">rawScopedTerm</span></a></span><span>
+</span><span id="line-197"></span><span>    </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Name n -&gt; NameMap n VarIdent -&gt; VarIdent
+forall (n :: S) a. Name n -&gt; NameMap n a -&gt; a
+</span><span class="hs-operator hs-var">`Foil.lookupName`</span></span><span> </span><span class="annot"><span class="annottext">NameMap n VarIdent
+</span><a href="#local-6989586621679472229"><span class="hs-identifier hs-var">names</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">Int -&gt; VarIdent
+</span><a href="#local-6989586621679472228"><span class="hs-identifier hs-var">bound</span></a></span><span>
+</span><span id="line-198"></span><span>
+</span><span id="line-199"></span><span class="annot"><span class="hs-comment">-- | Print a term with one naming function for everything bound.</span></span><span>
+</span><span id="line-200"></span><span id="local-6989586621679472230"><span id="local-6989586621679472231"><span class="annot"><a href="Language.MLTT.Impl.Generated.html#showTermNamed"><span class="hs-identifier hs-type">showTermNamed</span></a></span><span>
+</span><span id="line-201"></span><span>  </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.Distinct</span></span><span> </span><span class="annot"><a href="#local-6989586621679472230"><span class="hs-identifier hs-type">n</span></a></span><span>
+</span><span id="line-202"></span><span>  </span><span class="hs-glyph">=&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Foil.NameMap</span></span><span> </span><span class="annot"><a href="#local-6989586621679472230"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#VarIdent"><span class="hs-identifier hs-type">Raw.VarIdent</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#Term%27"><span class="hs-identifier hs-type">Term'</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679472231"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679472230"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span></span></span><span>
+</span><span id="line-203"></span><span id="showTermNamed"><span class="annot"><span class="annottext">showTermNamed :: forall (n :: S) a.
+Distinct n =&gt;
+(Int -&gt; VarIdent) -&gt; NameMap n VarIdent -&gt; Term' a n -&gt; String
+</span><a href="Language.MLTT.Impl.Generated.html#showTermNamed"><span class="hs-identifier hs-var hs-var">showTermNamed</span></a></span></span><span> </span><span id="local-6989586621679472236"><span class="annot"><span class="annottext">Int -&gt; VarIdent
+</span><a href="#local-6989586621679472236"><span class="hs-identifier hs-var">bound</span></a></span></span><span> </span><span id="local-6989586621679472237"><span class="annot"><span class="annottext">NameMap n VarIdent
+</span><a href="#local-6989586621679472237"><span class="hs-identifier hs-var">names</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Term' a -&gt; String
+forall a. Print a =&gt; a -&gt; String
+</span><a href="Language.MLTT.Syntax.Print.html#printTree"><span class="hs-identifier hs-var">Raw.printTree</span></a></span><span> </span><span class="annot"><span class="annottext">(Term' a -&gt; String)
+-&gt; (Term' a n -&gt; Term' a) -&gt; Term' a n -&gt; String
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">(Int -&gt; VarIdent) -&gt; NameMap n VarIdent -&gt; Term' a n -&gt; Term' a
+forall (n :: S) a.
+Distinct n =&gt;
+(Int -&gt; VarIdent) -&gt; NameMap n VarIdent -&gt; Term' a n -&gt; Term' a
+</span><a href="Language.MLTT.Impl.Generated.html#fromTermNamed"><span class="hs-identifier hs-var">fromTermNamed</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; VarIdent
+</span><a href="#local-6989586621679472236"><span class="hs-identifier hs-var">bound</span></a></span><span> </span><span class="annot"><span class="annottext">NameMap n VarIdent
+</span><a href="#local-6989586621679472237"><span class="hs-identifier hs-var">names</span></a></span><span>
+</span><span id="line-204"></span><span>
+</span><span id="line-205"></span><span class="annot"><span class="hs-comment">-- * Convenient monomorphic synonyms</span></span><span>
+</span><span id="line-206"></span><span class="hs-comment">--</span><span>
+</span><span id="line-207"></span><span class="hs-comment">-- Everything downstream is written against terms annotated with a source</span><span>
+</span><span id="line-208"></span><span class="hs-comment">-- position, which is what the parser produces.</span><span>
+</span><span id="line-209"></span><span>
+</span><span id="line-210"></span><span class="annot"><span class="hs-comment">-- | A scope-safe MLTT term, annotated with a source position.</span></span><span>
+</span><span id="line-211"></span><span class="hs-keyword">type</span><span> </span><span id="Term"><span class="annot"><a href="Language.MLTT.Impl.Generated.html#Term"><span class="hs-identifier hs-var">Term</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#Term%27"><span class="hs-identifier hs-type">Term'</span></a></span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#BNFC%27Position"><span class="hs-identifier hs-type">Raw.BNFC'Position</span></a></span><span>
+</span><span id="line-212"></span><span>
+</span><span id="line-213"></span><span class="annot"><span class="hs-comment">-- | A scope-safe MLTT pattern, annotated with a source position.</span></span><span>
+</span><span id="line-214"></span><span class="hs-keyword">type</span><span> </span><span id="Pattern"><span class="annot"><a href="Language.MLTT.Impl.Generated.html#Pattern"><span class="hs-identifier hs-var">Pattern</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#Pattern%27"><span class="hs-identifier hs-type">Pattern'</span></a></span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#BNFC%27Position"><span class="hs-identifier hs-type">Raw.BNFC'Position</span></a></span><span>
+</span><span id="line-215"></span><span>
+</span><span id="line-216"></span><span class="annot"><span class="hs-comment">-- | A scope-safe MLTT term under a binder, annotated with a source position.</span></span><span>
+</span><span id="line-217"></span><span class="hs-keyword">type</span><span> </span><span id="ScopedTerm"><span class="annot"><a href="Language.MLTT.Impl.Generated.html#ScopedTerm"><span class="hs-identifier hs-var">ScopedTerm</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="Language.MLTT.Impl.Generated.html#ScopedTerm%27"><span class="hs-identifier hs-type">ScopedTerm'</span></a></span><span> </span><span class="annot"><a href="Language.MLTT.Syntax.Abs.html#BNFC%27Position"><span class="hs-identifier hs-type">Raw.BNFC'Position</span></a></span><span>
+</span><span id="line-218"></span></pre></body></html>
