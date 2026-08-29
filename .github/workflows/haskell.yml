@@ -123,7 +123,11 @@ jobs:
       - name: Add haddock
         run: |
           mkdir -p dist/haddock
-          mv $(stack path --local-doc-root)/* dist/haddock
+          # The same flags the build above ran with. Without them 'stack path'
+          # resolves a stack-managed GHC instead of the toolchain one, and
+          # reports a doc root under a different platform directory, which the
+          # haddock build never wrote to.
+          mv $(stack --system-ghc --no-install-ghc path --local-doc-root)/* dist/haddock
 
       - name: 🚀 Publish Site
         uses: JamesIves/github-pages-deploy-action@v4
