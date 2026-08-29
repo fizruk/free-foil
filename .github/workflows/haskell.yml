@@ -67,6 +67,13 @@ jobs:
           stack-build-arguments-build: --dry-run
           stack-build-arguments-test: --ghc-options -O2 ${{ steps.restore-syntax-files.outputs.cache-hit == 'true' && ' ' || '--reconfigure --force-dirty --ghc-options -fforce-recomp' }}
 
+      # A drift guard, on one platform only: every exported entity of the
+      # library must carry an '@since'. It reads the sources and needs no git
+      # history, so it costs a script compilation against the toolchain above.
+      - name: Check @since annotations
+        if: matrix.os == 'ubuntu-latest'
+        run: stack script --system-ghc --no-install-ghc --resolver nightly-2024-08-17 --package base --package containers --package process --package directory --package filepath -- scripts/since.hs check
+
       - name: Save Syntax files
         uses: actions/cache/save@v4
         if: steps.restore-syntax-files.outputs.cache-hit != 'true'

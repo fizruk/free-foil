@@ -52,12 +52,16 @@ import           Control.Monad.Foil.Internal (NameRange (..), RawName)
 -- | A stripe's position in the registry: which run of names a unit draws
 -- from. Its own type, so that a stripe index cannot be confused with a name,
 -- a count, or an offset.
+--
+-- @since 0.4.0
 newtype StripeIndex = StripeIndex Int
   deriving newtype (Eq, Ord, Show, Read, Binary)
 
 -- | How many names a unit may declare: the width of every stripe a layout
 -- hands out. Its own type, so that a size cannot be confused with a name, an
 -- index, or a base.
+--
+-- @since 0.4.0
 newtype StripeSize = StripeSize Int
   deriving newtype (Eq, Ord, Show, Read)
 
@@ -70,6 +74,8 @@ newtype StripeSize = StripeSize Int
 -- distinct indices. Nothing checks this here, but
 -- 'Control.Monad.Foil.Blocks.withDisjointUnion' refuses the overlap at the
 -- point where it would do harm.
+--
+-- @since 0.4.0
 newtype StripeLayout = StripeLayout
   { stripeRange :: StripeIndex -> NameRange
   }
@@ -86,6 +92,8 @@ newtype StripeLayout = StripeLayout
 -- NameRange {nameRangeLo = -100, nameRangeHi = -1}
 -- >>> stripeRange (stripesBelowZero (StripeSize 100)) (StripeIndex 2)
 -- NameRange {nameRangeLo = -300, nameRangeHi = -201}
+--
+-- @since 0.4.0
 stripesBelowZero :: StripeSize -> StripeLayout
 stripesBelowZero (StripeSize size) = StripeLayout $ \(StripeIndex i) ->
   let hi = negate (i * size) - 1
@@ -96,6 +104,8 @@ stripesBelowZero (StripeSize size) = StripeLayout $ \(StripeIndex i) ->
 --
 -- >>> stripeRange (stripesAbove 0 (StripeSize 100)) (StripeIndex 1)
 -- NameRange {nameRangeLo = 100, nameRangeHi = 199}
+--
+-- @since 0.4.0
 stripesAbove
   :: RawName     -- ^ The base: the low end of stripe 0.
   -> StripeSize
@@ -108,13 +118,19 @@ stripesAbove base (StripeSize size) = StripeLayout $ \(StripeIndex i) ->
 --
 -- Append-only: a name, once registered, keeps its stripe for the lifetime of
 -- the registry, and the next stripe index is always the registry's size.
+--
+-- @since 0.4.0
 type Registry name = Map name StripeIndex
 
 -- | The registry before any unit has ever been checked.
+--
+-- @since 0.4.0
 emptyRegistry :: Registry name
 emptyRegistry = Map.empty
 
 -- | How many units have been registered, which is also the next free stripe.
+--
+-- @since 0.4.0
 registrySize :: Registry name -> Int
 registrySize = Map.size
 
@@ -136,6 +152,8 @@ registrySize = Map.size
 --
 -- >>> snd (registerUnit "A" r1) == iA
 -- True
+--
+-- @since 0.4.0
 registerUnit
   :: Ord name
   => name -> Registry name -> (Registry name, StripeIndex)
@@ -151,6 +169,8 @@ registerUnit name registry = case Map.lookup name registry of
 -- This is spacing, not a hard width: a run is open-ended above its floor,
 -- and a scope-driven allocator would have to hold this many names /in scope
 -- at once/ to reach the next floor.
+--
+-- @since 0.4.0
 newtype RegionWidth = RegionWidth Int
   deriving newtype (Eq, Ord, Show, Read)
 
@@ -158,6 +178,8 @@ newtype RegionWidth = RegionWidth Int
 -- spill into the next unit's. A spill is not unsound for a client that
 -- refreshes on clash. It only forfeits the disjointness described under
 -- 'RegionLayout' for the runs past the cap.
+--
+-- @since 0.4.0
 newtype RegionsPerUnit = RegionsPerUnit Int
   deriving newtype (Eq, Ord, Show, Read)
 
@@ -179,6 +201,8 @@ newtype RegionsPerUnit = RegionsPerUnit Int
 -- The trade-off is that local names carry large offsets. A client that
 -- shows raw indices directly may prefer a single flat region, and accept
 -- the transient renames instead.
+--
+-- @since 0.4.0
 data RegionLayout = RegionLayout
   { firstRegionOf :: StripeIndex -> NameRange
     -- ^ The run of the unit's first declaration.
@@ -195,6 +219,8 @@ data RegionLayout = RegionLayout
 -- 8192
 -- >>> nameRangeLo (nextRegion locals (firstRegionOf locals (StripeIndex 2)))
 -- 8448
+--
+-- @since 0.4.0
 regionsAbove :: RawName -> RegionsPerUnit -> RegionWidth -> RegionLayout
 regionsAbove base (RegionsPerUnit perUnit) (RegionWidth w) = RegionLayout
   { firstRegionOf = \(StripeIndex i) ->

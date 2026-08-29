@@ -12,6 +12,8 @@ import qualified Control.Monad.Foil.Internal as Foil
 import Control.Monad.Foil.TH.Util
 
 -- | Generate scope-safe variants given names of types for the raw representation.
+--
+-- @since 0.0.1
 mkFoilData
   :: Name -- ^ Type name for raw terms.
   -> Name -- ^ Type name for raw variable identifiers.
@@ -68,6 +70,8 @@ mkFoilData termT nameT scopeT patternT = do
         toTermParam _bangType = _bangType
 
 -- | Generate just the scope-safe patterns.
+--
+-- @since 0.1.0
 mkFoilPattern
   :: Name -- ^ Type name for raw variable identifiers.
   -> Name -- ^ Type name for raw patterns.

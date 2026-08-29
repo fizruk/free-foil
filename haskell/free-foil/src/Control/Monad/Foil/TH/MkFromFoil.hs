@@ -13,6 +13,8 @@ import qualified Control.Monad.Foil  as Foil
 import Control.Monad.Foil.TH.Util
 
 -- | Generate conversion functions from raw to scope-safe representation.
+--
+-- @since 0.0.1
 mkFromFoil
   :: Name -- ^ Type name for raw terms.
   -> Name -- ^ Type name for raw variable identifiers.
@@ -232,6 +234,8 @@ mkFromFoil termT nameT scopeT patternT = do
         toMatch RecGadtC{} = error "Record GADT constructors (RecGadtC) are not supported yet!"
 
 -- | Generate conversion function from raw to scope-safe pattern.
+--
+-- @since 0.1.0
 mkFromFoilPattern
   :: Name -- ^ Type name for raw variable identifiers.
   -> Name -- ^ Type name for raw patterns.

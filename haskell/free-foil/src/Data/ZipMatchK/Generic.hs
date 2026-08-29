@@ -39,6 +39,8 @@ import           Data.ZipMatchK.Mappings
 -- written-out one does. Use 'Data.ZipMatchK.TH.deriveZipMatchK' (or
 -- 'Data.ZipMatchK.TH.deriveZipMatchK2', for a signature bifunctor with extra
 -- parameters) to generate the written-out instance instead.
+--
+-- @since 0.2.0
 class ZipMatchK (f :: k) where
   -- | Perform one level of equality testing:
   --
@@ -46,6 +48,8 @@ class ZipMatchK (f :: k) where
   -- * when @k = 'Type' -> 'Type'@, term constructors are compared. Unequal
   --   constructors give 'Nothing', and equal ones have all their components
   --   paired up with a given function.
+  --
+  -- @since 0.2.0
   zipMatchWithK :: forall as bs cs. Mappings as bs cs -> f :@@: as -> f :@@: bs -> Maybe (f :@@: cs)
   default zipMatchWithK :: forall as bs cs.
     (GenericK f, GZipMatch (RepK f), ReqsZipMatchWith (RepK f) as bs cs)
@@ -53,12 +57,16 @@ class ZipMatchK (f :: k) where
   zipMatchWithK = genericZipMatchWithK @f @as @bs @cs
 
 -- | Generic implementation of 'Data.ZipMatch.zipMatchK'.
+--
+-- @since 0.2.0
 genericZipMatchK :: forall f as bs.
     (GenericK f, GZipMatch (RepK f), ReqsZipMatch (RepK f) as bs, PairMappings as bs)
     => f :@@: as -> f :@@: bs -> Maybe (f :@@: (ZipLoT as bs))
 genericZipMatchK = genericZipMatchWithK @f @as @bs pairMappings
 
 -- | Generic implementation of 'zipMatchWithK'.
+--
+-- @since 0.2.0
 genericZipMatchWithK :: forall f as bs cs.
     (GenericK f, GZipMatch (RepK f), ReqsZipMatchWith (RepK f) as bs cs)
     => Mappings as bs cs -> f :@@: as -> f :@@: bs -> Maybe (f :@@: cs)
@@ -81,9 +89,25 @@ instance ZipMatchK Either
 instance ZipMatchK a => ZipMatchK (Either a)
 instance ZipMatchK NonEmpty
 
+-- | What 'gzipMatchWith' requires when the components are paired up.
+--
+-- @since 0.2.0
 type ReqsZipMatch f as bs = ReqsZipMatchWith f as bs (ZipLoT as bs)
+
+-- | Matching on the "Generics.Kind" representation of a type, which is what
+-- the default 'Data.ZipMatchK.ZipMatchK' instance goes through.
+--
+-- @since 0.2.0
 class GZipMatch (f :: LoT k -> Type) where
+  -- | What matching this representation requires of its components.
+  --
+  -- @since 0.2.0
   type ReqsZipMatchWith f (as :: LoT k) (bs :: LoT k) (cs :: LoT k) :: Constraint
+
+  -- | Match two representations, pairing up their components with the given
+  -- functions.
+  --
+  -- @since 0.2.0
   gzipMatchWith :: ReqsZipMatchWith f as bs cs => Mappings as bs cs -> f as -> f bs -> Maybe (f cs)
 
 instance GZipMatch V1 where
@@ -123,8 +147,18 @@ instance TypeError ('Text "Existentials are not supported")
   type ReqsZipMatchWith (Exists k f) as bs cs = TypeError ('Text "Existentials are not supported")
   gzipMatchWith = undefined
 
+-- | Matching a single field of a constructor, by the shape of its type.
+--
+-- @since 0.2.0
 class ZipMatchFields (t :: Atom d Type) where
+  -- | What matching this field requires.
+  --
+  -- @since 0.2.0
   type ReqsZipMatchFieldsWith t (as :: LoT d) (bs :: LoT d) (cs :: LoT d) :: Constraint
+
+  -- | Match two fields, pairing up their contents.
+  --
+  -- @since 0.2.0
   zipMatchFieldsWith :: ReqsZipMatchFieldsWith t as bs cs => Mappings as bs cs -> Field t as -> Field t bs -> Maybe (Field t cs)
 
 instance ApplyMappings v => ZipMatchFields (Var v) where

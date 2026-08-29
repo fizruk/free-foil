@@ -13,6 +13,8 @@ import           Data.Maybe                 (catMaybes)
 -- based on a naïve recursive abstract syntax representation,
 -- with clearly separated types for terms, variable identifiers, scoped terms,
 -- and patterns (binders).
+--
+-- @since 0.0.3
 mkSignature
   :: Name -- ^ Type name for raw terms.
   -> Name -- ^ Type name for raw variable identifiers.

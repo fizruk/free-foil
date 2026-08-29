@@ -74,10 +74,14 @@ import           Control.Monad.Foil.Internal
 -- start of a unit and 'extWithinStep' at each binder, and composes along a
 -- chain of scopes with 'composeExtWithin'. Its runtime content is the
 -- ranges, sorted and disjoint.
+--
+-- @since 0.4.0
 data ExtWithin (n :: S) (l :: S) = UnsafeExtWithin [NameRange]
 
 -- | The reservations an 'ExtWithin' is evidence about: sorted, disjoint,
 -- adjacent ranges coalesced, empty ones dropped.
+--
+-- @since 0.4.0
 extWithinRanges :: ExtWithin n l -> [NameRange]
 extWithinRanges (UnsafeExtWithin ranges) = ranges
 
@@ -85,6 +89,8 @@ extWithinRanges (UnsafeExtWithin ranges) = ranges
 --
 -- Note that this does /not/ say the range is disjoint from the scope. It is
 -- 'withExtendScopeRange' that checks that, because it allocates blindly.
+--
+-- @since 0.4.0
 extWithinRefl :: NameRange -> ExtWithin n n
 extWithinRefl range = UnsafeExtWithin (normaliseRanges [range])
 
@@ -99,6 +105,8 @@ extWithinRefl range = UnsafeExtWithin (normaliseRanges [range])
 -- >>> let range = NameRange 100 199
 -- >>> withFreshIn range emptyScope (\b -> fmap extWithinRanges (extWithinStep b (extWithinRefl range)))
 -- Just [NameRange {nameRangeLo = 100, nameRangeHi = 199}]
+--
+-- @since 0.4.0
 extWithinStep :: NameBinder l l' -> ExtWithin n l -> Maybe (ExtWithin n l')
 extWithinStep binder (UnsafeExtWithin ranges)
   | any (\(NameRange lo hi) -> lo <= x && x <= hi) ranges = Just (UnsafeExtWithin ranges)
@@ -119,6 +127,8 @@ extWithinStep binder (UnsafeExtWithin ranges)
 -- [NameRange {nameRangeLo = 0, nameRangeHi = 9},NameRange {nameRangeLo = 30, nameRangeHi = 39}]
 -- >>> extWithinRanges (composeExtWithin (extWithinRefl (NameRange 0 9)) (extWithinRefl (NameRange 10 19)))
 -- [NameRange {nameRangeLo = 0, nameRangeHi = 19}]
+--
+-- @since 0.4.0
 composeExtWithin :: ExtWithin n m -> ExtWithin m l -> ExtWithin n l
 composeExtWithin (UnsafeExtWithin rs1) (UnsafeExtWithin rs2) =
   UnsafeExtWithin (normaliseRanges (rs1 <> rs2))
@@ -151,9 +161,13 @@ rangeSetsOverlap _ _ = False
 -- is total. The two components are not redundant: the evidence is a
 -- normalised set bounding the whole extension, and once units are composed
 -- the range to allocate from can no longer be read off it.
+--
+-- @since 0.0.1
 data Block (c :: S) (l :: S) = UnsafeBlock !NameRange (ExtWithin c l)
 
 -- | Start a unit: no names allocated yet, so the evidence is trivial.
+--
+-- @since 0.4.0
 beginBlock :: NameRange -> Block c c
 beginBlock range = UnsafeBlock range (extWithinRefl range)
 
@@ -171,6 +185,8 @@ beginBlock range = UnsafeBlock range (extWithinRefl range)
 -- Just (NameRange {nameRangeLo = 0, nameRangeHi = 9})
 -- >>> fmap blockRange (resumeBlock (NameRange 30 39) grown)
 -- Nothing
+--
+-- @since 0.4.0
 resumeBlock :: NameRange -> ExtWithin c l -> Maybe (Block c l)
 resumeBlock range@(NameRange lo hi) ext
   | lo > hi = Nothing
@@ -180,12 +196,16 @@ resumeBlock range@(NameRange lo hi) ext
     covers (NameRange lo' hi') = lo' <= lo && hi <= hi'
 
 -- | The range 'withFreshInBlock' allocates from.
+--
+-- @since 0.4.0
 blockRange :: Block c l -> NameRange
 blockRange (UnsafeBlock range _) = range
 
 -- | The evidence accumulated so far: what a finished unit hands to
 -- 'withDisjointUnion', or to 'composeExtWithin' for the next unit of a
 -- chain.
+--
+-- @since 0.4.0
 blockExt :: Block c l -> ExtWithin c l
 blockExt (UnsafeBlock _ ext) = ext
 
@@ -195,6 +215,8 @@ blockExt (UnsafeBlock _ ext) = ext
 --
 -- >>> withFreshInBlock (beginBlock (NameRange 7 9)) emptyScope (\b block -> (nameId (nameOf b), extWithinRanges (blockExt block)))
 -- (7,[NameRange {nameRangeLo = 7, nameRangeHi = 9}])
+--
+-- @since 0.4.0
 withFreshInBlock
   :: Distinct l
   => Block c l  -- ^ The block to allocate from.
@@ -222,6 +244,8 @@ withFreshInBlock (UnsafeBlock range ext) scope cont =
 --
 -- >>> withExtendScopeRange emptyScope (NameRange 100 199) 3 (\_ binders _ -> rawNameBinderList binders)
 -- Just [100,101,102]
+--
+-- @since 0.4.0
 withExtendScopeRange
   :: forall c r. Distinct c
   => Scope c      -- ^ The scope to extend (typically, a unit's imports).
@@ -281,6 +305,8 @@ unsafeExtendedWithin scope binders ext cont =
 -- so that a linked unit is itself linkable and a whole build folds through
 -- this one function. It also receives @'Ext' c k@, which a caller cannot
 -- derive on the spot.
+--
+-- @since 0.4.0
 withDisjointUnion
   :: forall c n m r. (Distinct n, Distinct m)
   => ExtWithin c n  -- ^ Evidence for the first unit.
@@ -316,6 +342,8 @@ withDisjointUnion (UnsafeExtWithin rs1) (UnsafeExtWithin rs2) (UnsafeScope s1) (
 -- half is what totality of a merged 'NameMap' rests on, so 'unionNameMaps'
 -- demands this witness. It comes from 'withDisjointUnion', which builds the
 -- union, or from 'checkScopeUnion', which tests for it.
+--
+-- @since 0.4.0
 data ScopeUnion (n :: S) (m :: S) (k :: S) = UnsafeScopeUnion
 
 -- | Test that a scope is precisely the union of two others, and produce the
@@ -325,6 +353,8 @@ data ScopeUnion (n :: S) (m :: S) (k :: S) = UnsafeScopeUnion
 -- scope was rebuilt rather than handed down by 'withDisjointUnion'. Like
 -- 'checkExtScope', it compares raw names across independently built scopes,
 -- and is meaningful only under a deterministic reservation policy.
+--
+-- @since 0.4.0
 checkScopeUnion :: Scope n -> Scope m -> Scope k -> Maybe (ScopeUnion n m k)
 checkScopeUnion (UnsafeScope s1) (UnsafeScope s2) (UnsafeScope s3)
   | IntSet.union s1 s2 == s3 = Just UnsafeScopeUnion
@@ -341,6 +371,8 @@ checkScopeUnion (UnsafeScope s1) (UnsafeScope s2) (UnsafeScope s3)
 -- discipline that a raw name has one global meaning, which a deterministic
 -- reservation policy provides. Nothing here checks that discipline, and the
 -- caller's allocator is what has to.
+--
+-- @since 0.4.0
 checkExtScope :: Scope n -> Scope l -> Maybe (ExtEvidence n l)
 checkExtScope (UnsafeScope s1) (UnsafeScope s2)
   | s1 `IntSet.isSubsetOf` s2 = Just unsafeExt
@@ -358,5 +390,7 @@ checkExtScope (UnsafeScope s1) (UnsafeScope s2)
 -- scopes share. Linked units agree there when the shared part comes from the
 -- same checked imports, and the left bias then only ever chooses between
 -- equal entries.
+--
+-- @since 0.4.0
 unionNameMaps :: ScopeUnion n m k -> NameMap n a -> NameMap m a -> NameMap k a
 unionNameMaps UnsafeScopeUnion (NameMap m1) (NameMap m2) = NameMap (IntMap.union m1 m2)

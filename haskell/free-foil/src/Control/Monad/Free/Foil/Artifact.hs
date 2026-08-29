@@ -74,6 +74,8 @@ import           Control.Monad.Free.Foil.Binary ()
 
 -- | What the machinery here can report. The type is parametric in the
 -- spelling, as the tables are, and a 'Functor' over it.
+--
+-- @since 0.4.0
 data ArtifactError ident
   = MalformedStoredTerm String
       -- ^ The bytes did not decode. The message is the decoder's.
@@ -91,6 +93,8 @@ data ArtifactError ident
   deriving (Eq, Show, Functor)
 
 -- | Render an error, given a renderer for the spellings.
+--
+-- @since 0.4.0
 prettyArtifactError :: (ident -> String) -> ArtifactError ident -> String
 prettyArtifactError prettyIdent = \case
   MalformedStoredTerm msg -> "malformed stored term: " <> msg
@@ -107,6 +111,8 @@ prettyArtifactError prettyIdent = \case
 
 -- | A term as stored: canonical bytes. Equality of stored terms is byte
 -- equality, which is what a canonical-artifact property tests.
+--
+-- @since 0.4.0
 newtype StoredTerm = StoredTerm { storedBytes :: BSL.ByteString }
   deriving (Eq, Show, Generic, Binary)
 
@@ -117,12 +123,16 @@ newtype StoredTerm = StoredTerm { storedBytes :: BSL.ByteString }
 -- goes into the unit's table ('termSpellings'), and a local needs no
 -- table: its id is expected to be canonical, which it is when elaboration
 -- allocates locals in a region of their own.
+--
+-- @since 0.4.0
 storeTerm :: Binary (AST binder sig n) => AST binder sig n -> StoredTerm
 storeTerm = StoredTerm . Binary.encode
 
 -- | Decode a stored term's bytes: the instances alone, no meaning yet.
 -- Meaning is given per unit, by 'constantRelocation' and
 -- 'relocateConstants'.
+--
+-- @since 0.4.0
 decodeStored
   :: Binary (AST binder sig n)
   => StoredTerm -> Either (ArtifactError ident) (AST binder sig n)
@@ -142,6 +152,8 @@ decodeStored (StoredTerm bytes) =
 -- Note that the table should cover the referenced constants and only
 -- those. A table of everything in scope would let an unused import dirty a
 -- dependant's content hash, and would differ between build schedules.
+--
+-- @since 0.4.0
 termSpellings
   :: (Distinct n, CoSinkable binder, Bifoldable sig)
   => NameMap n ident      -- ^ Spellings of the top-level names.
@@ -154,6 +166,8 @@ termSpellings display t = Map.fromList
 
 -- | The names a term's binders bind: what a unit's locals range covers.
 -- Note that 'supportOf' cannot see them, since they are bound and not free.
+--
+-- @since 0.4.0
 localsOf
   :: (Bifoldable sig, HasNameBinders binder)
   => AST binder sig n -> [RawName]
@@ -171,6 +185,8 @@ localsOf = \case
 --
 -- >>> spanOfNames [7, 3, 5]
 -- Just (NameRange {nameRangeLo = 3, nameRangeHi = 7})
+--
+-- @since 0.4.0
 spanOfNames :: [RawName] -> Maybe NameRange
 spanOfNames [] = Nothing
 spanOfNames ids = Just (NameRange (minimum ids) (maximum ids))
@@ -181,6 +197,8 @@ spanOfNames ids = Just (NameRange (minimum ids) (maximum ids))
 -- of its locals. The two travel together, so that they cannot be mixed up with
 -- the ranges of the loading world. An artifact records them as one field, and
 -- the checks and the relocation consume them as one value.
+--
+-- @since 0.4.0
 data StoredLayout = StoredLayout
   { storedConstants :: NameRange
   , storedLocals    :: NameRange
@@ -191,10 +209,14 @@ data StoredLayout = StoredLayout
 --
 -- >>> nameRangeSize (NameRange 3 5)
 -- 3
+--
+-- @since 0.4.0
 nameRangeSize :: NameRange -> Int
 nameRangeSize (NameRange lo hi) = max 0 (hi - lo + 1)
 
 -- | Whether a raw name lies in a range.
+--
+-- @since 0.4.0
 nameRangeContains :: NameRange -> RawName -> Bool
 nameRangeContains (NameRange lo hi) i = lo <= i && i <= hi
 
@@ -204,6 +226,8 @@ nameRangeContains (NameRange lo hi) i = lo <= i && i <= hi
 -- True
 -- >>> nameRangesOverlap (NameRange 0 4) (NameRange 5 9)
 -- False
+--
+-- @since 0.4.0
 nameRangesOverlap :: NameRange -> NameRange -> Bool
 nameRangesOverlap (NameRange lo1 hi1) (NameRange lo2 hi2) =
   lo1 <= hi1 && lo2 <= hi2 && lo1 <= hi2 && lo2 <= hi1
@@ -218,6 +242,8 @@ nameRangesOverlap (NameRange lo1 hi1) (NameRange lo2 hi2) =
 -- Right ()
 -- >>> checkStoredLayout layout (Map.fromList [(3, "q")]) 2
 -- Left (SpellingForLocal 3)
+--
+-- @since 0.4.0
 checkStoredLayout
   :: StoredLayout         -- ^ The unit's recorded layout.
   -> Map RawName ident    -- ^ Its spelling table.
@@ -249,6 +275,8 @@ checkStoredLayout (StoredLayout constants locals) table declCount
 -- trust covers. An imported constant resolves by its spelling, and one this
 -- world does not know is reported. Finally, no relocation target may land
 -- among the locals, since verbatim locals rest on the two never meeting.
+--
+-- @since 0.4.0
 constantRelocation
   :: Ord ident
   => StoredLayout         -- ^ The unit's recorded layout.
@@ -296,6 +324,8 @@ constantRelocation (StoredLayout old locals) (NameRange newLo _) table globals =
 -- unchanged, trusted like everything else about the term. Note that a map
 -- that is the identity on raw ids would make the whole walk a coercion,
 -- which is why 'constantRelocation' reports it as no relocation at all.
+--
+-- @since 0.4.0
 relocateConstants
   :: forall binder sig n n'. Bifunctor sig
   => NameMap n (Name n') -> AST binder sig n -> AST binder sig n'
