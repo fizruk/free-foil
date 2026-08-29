@@ -25,6 +25,8 @@ import           Unsafe.Coerce       (unsafeCoerce)
 -- @instance (Binary p1, …) => Binary (Pattern p1 … n l)@ for a pattern
 -- type of kind @… -> S -> S -> Type@ whose fields are parameters, name
 -- binders, or nested patterns.
+--
+-- @since 0.4.0
 deriveBinaryPattern :: Name -> Q [Dec]
 deriveBinaryPattern tyName = do
   info <- reify tyName

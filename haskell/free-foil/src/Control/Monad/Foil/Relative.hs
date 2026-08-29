@@ -7,8 +7,12 @@ import           Control.Monad.Foil
 import           Data.Kind          (Type)
 
 -- | Relative monads, restricted to types indexed by scopes in kind 'S'.
+--
+-- @since 0.0.1
 class RelMonad (f :: S -> Type) (m :: S -> Type) where
   -- | Relative version of 'return'.
+  --
+  -- @since 0.0.1
   rreturn :: f a -> m a
 
   -- | Relative version of '>>='.
@@ -21,8 +25,12 @@ class RelMonad (f :: S -> Type) (m :: S -> Type) where
   -- Technically, it is also possible add similar components for @a@ parameter.
   -- Also, we could probably treat types in 'S' as singletons and extract distinct scopes that way,
   -- preserving the more general type signature for 'rbind'.
+  --
+  -- @since 0.0.1
   rbind :: Distinct b => Scope b -> m a -> (f a -> m b) -> m b
 
 -- | Relative version of @liftM@ (an 'fmap' restricted to 'Monad').
+--
+-- @since 0.0.3
 liftRM :: (RelMonad f m, Distinct b) => Scope b -> (f a -> f b) -> m a -> m b
 liftRM scope f m = rbind scope m (rreturn . f)

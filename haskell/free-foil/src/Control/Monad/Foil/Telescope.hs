@@ -37,6 +37,8 @@ import           Control.Monad.Foil.Relative (RelMonad, liftRM)
 -- mentions the first binder.
 --
 -- See 'NameBinderList', which this follows almost line for line.
+--
+-- @since 0.4.0
 data Telescope label e n l where
   TelescopeEmpty :: Telescope label e n n
   TelescopeCons
@@ -129,6 +131,8 @@ instance (Sinkable e, AlphaEquiv e, RelMonad Name e)
 --
 -- Sinking is free, so putting them all in one scope costs nothing and lets a
 -- renaming be applied to the whole block at once.
+--
+-- @since 0.4.0
 telescopePayloads
   :: (Sinkable e, Distinct l) => Telescope label e n l -> [e l]
 telescopePayloads = map paramType . telescopeParams
@@ -142,6 +146,8 @@ telescopePayloads = map paramType . telescopeParams
 -- Comparing them as they stand would report @(A : 𝕌) (x : A)@ and
 -- @(B : 𝕌) (y : B)@ as different, since the second payloads name different
 -- binders until the first ones have been identified.
+--
+-- @since 0.4.0
 payloadsAgree
   :: forall label e n l r.
      (Sinkable e, AlphaEquiv e, RelMonad Name e, Distinct n)
@@ -192,6 +198,8 @@ payloadsAgree scope tele1 tele2 verdict =
 --
 -- Sinking is free, so this is the convenient form for anything that has to
 -- compare parameters with the names of a term checked under all of them.
+--
+-- @since 0.4.0
 data Param label e l = Param
   { paramLabel :: label
   , paramName  :: Name l
@@ -199,6 +207,8 @@ data Param label e l = Param
   }
 
 -- | The steps of a telescope, outermost first.
+--
+-- @since 0.4.0
 telescopeParams
   :: (Sinkable e, Distinct l)
   => Telescope label e n l -> [Param label e l]
@@ -214,6 +224,8 @@ telescopeParams (TelescopeCons label ty binder rest) =
 -- This is 'nameBinderListOf' at a telescope, written out. The general one
 -- goes through 'withPattern' and so rebuilds the telescope only to throw it
 -- away, which is worth avoiding on the checking path.
+--
+-- @since 0.4.0
 telescopeBinders :: Telescope label e n l -> NameBinderList n l
 telescopeBinders TelescopeEmpty = NameBinderListEmpty
 telescopeBinders (TelescopeCons _ _ binder rest) =
@@ -228,6 +240,8 @@ telescopeBinders (TelescopeCons _ _ binder rest) =
 -- The support of a payload is the caller's to supply, since the library does
 -- not know what a payload is. For terms of the free foil it is
 -- 'Control.Monad.Free.Foil.supportOf'.
+--
+-- @since 0.4.0
 closeOverTelescope
   :: Distinct l
   => (e l -> NameSet l)  -- ^ The support of a payload.

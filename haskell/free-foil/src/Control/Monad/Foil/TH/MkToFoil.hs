@@ -16,6 +16,8 @@ import qualified Data.Map as Map
 import Control.Monad.Foil.TH.Util
 
 -- | Generate conversion functions from raw to scope-safe representation.
+--
+-- @since 0.0.1
 mkToFoil
   :: Name -- ^ Type name for raw terms.
   -> Name -- ^ Type name for raw variable identifiers.
@@ -33,6 +35,8 @@ mkToFoil termT nameT scopeT patternT = do
     )
 
 -- | Generate a function to extend scope with variables from a given pattern.
+--
+-- @since 0.0.1
 mkExtendScopeFoilPattern
   :: Name -- ^ Type name for raw variable identifiers.
   -> Name -- ^ Type name for raw patterns.
@@ -99,6 +103,8 @@ mkExtendScopeFoilPattern nameT patternT = do
         toMatch RecGadtC{} = error "Record GADT constructors (RecGadtC) are not supported yet!"
 
 -- | Generate a function to extend scope with variables from a given pattern.
+--
+-- @since 0.0.1
 mkWithRefreshedFoilPattern
   :: Name -- ^ Type name for raw variable identifiers.
   -> Name -- ^ Type name for raw patterns.
@@ -221,6 +227,8 @@ mkWithRefreshedFoilPattern nameT patternT = do
         toMatch RecGadtC{} = error "Record GADT constructors (RecGadtC) are not supported yet!"
 
 -- | Generate a conversion function from raw terms to scope-safe terms.
+--
+-- @since 0.0.1
 mkToFoilTerm
   :: Name -- ^ Type name for raw terms.
   -> Name -- ^ Type name for raw variable identifiers.
@@ -462,6 +470,8 @@ mkToFoilTerm termT nameT scopeT patternT = do
         toMatch RecGadtC{} = error "Record GADT constructors (RecGadtC) are not supported yet!"
 
 -- | Generate a conversion function from raw terms to scope-safe terms.
+--
+-- @since 0.1.0
 mkToFoilPattern
   :: Name -- ^ Type name for raw variable identifiers.
   -> Name -- ^ Type name for raw patterns.

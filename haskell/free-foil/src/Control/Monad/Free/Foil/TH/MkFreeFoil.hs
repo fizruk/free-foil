@@ -31,6 +31,8 @@ import qualified GHC.Generics               as GHC
 -- | Config for the Template Haskell generation of data types,
 -- pattern synonyms, and conversion functions for the Free Foil representation,
 -- based on a raw recursive representation.
+--
+-- @since 0.2.0
 data FreeFoilConfig = FreeFoilConfig
   { rawQuantifiedNames        :: [Name]
   -- ^ Names of raw types that may include other binders and terms as components.
@@ -66,6 +68,8 @@ data FreeFoilConfig = FreeFoilConfig
 -- for the Template Haskell generation of data types,
 -- pattern synonyms, and conversion functions for the Free Foil representation,
 -- based on a raw recursive representation.
+--
+-- @since 0.2.0
 data FreeFoilTermConfig = FreeFoilTermConfig
   { rawIdentName          :: Name
     -- ^ The type name for the identifiers.
@@ -878,6 +882,8 @@ toFreeFoilClauseFromQuantified config rawRetType = go
 --  3. Scope-safe patterns.
 --  4. Signatures for terms, subterms, and scoped subterms.
 --  5. Pattern synonyms for terms, subterms, and scoped subterms.
+--
+-- @since 0.2.0
 mkFreeFoil :: FreeFoilConfig -> Q [Dec]
 mkFreeFoil config@FreeFoilConfig{..} = concat <$> sequence
   [ mapM mkQuantifiedType rawQuantifiedNames
@@ -1013,6 +1019,8 @@ reifyDataOrNewtype name = reify name >>= \case
 --  2. Conversions for scope-safe terms, scoped terms, subterms, scoped subterms.
 --  3. CPS-style conversions for scope-safe patterns.
 --  4. Helpers for signatures of terms, subterms, and scoped subterms.
+--
+-- @since 0.2.0
 mkFreeFoilConversions :: FreeFoilConfig -> Q [Dec]
 mkFreeFoilConversions config@FreeFoilConfig{..} = concat <$> sequence
   [ concat <$> mapM mkConvertFrom freeFoilTermConfigs

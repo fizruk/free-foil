@@ -17,6 +17,8 @@ import           Data.Bifunctor.TH
 -- >>> import Control.Monad.Foil
 
 -- | Untyped \(\lambda\)-terms in scope @n@.
+--
+-- @since 0.0.1
 data ExprF scope term
   -- | Application of one term to another: \((t_1, t_2)\)
   = AppF term term
@@ -25,14 +27,24 @@ data ExprF scope term
   deriving (Functor)
 deriveBifunctor ''ExprF
 
+-- | Application of one term to another.
+--
+-- @since 0.0.1
 pattern AppE :: AST binder ExprF n -> AST binder ExprF n -> AST binder ExprF n
 pattern AppE x y = Node (AppF x y)
 
+-- | A \(\lambda\)-abstraction, binding a pattern in a term of the extended
+-- scope.
+--
+-- @since 0.0.1
 pattern LamE :: binder n l -> AST binder ExprF l -> AST binder ExprF n
 pattern LamE binder body = Node (LamF (ScopedAST binder body))
 
 {-# COMPLETE Var, AppE, LamE #-}
 
+-- | A scope-safe \(\lambda\)-term with one name per binder.
+--
+-- @since 0.0.1
 type Expr = AST NameBinder ExprF
 
 -- | Use 'ppExpr' to show \(\lambda\)-terms.
@@ -43,6 +55,8 @@ instance Show (Expr n) where
 --
 -- >>> whnf emptyScope (AppE (churchN 2) (churchN 2))
 -- λx1. (λx0. λx1. (x0 (x0 x1)) (λx0. λx1. (x0 (x0 x1)) x1))
+--
+-- @since 0.0.1
 whnf :: Distinct n => Scope n -> Expr n -> Expr n
 whnf scope = \case
   AppE fun arg ->
@@ -57,6 +71,8 @@ whnf scope = \case
 --
 -- >>> whnf' (AppE (churchN 2) (churchN 2))
 -- λx1. (λx0. λx1. (x0 (x0 x1)) (λx0. λx1. (x0 (x0 x1)) x1))
+--
+-- @since 0.0.1
 whnf' :: Expr VoidS -> Expr VoidS
 whnf' = whnf emptyScope
 
@@ -64,6 +80,8 @@ whnf' = whnf emptyScope
 --
 -- >>> nf emptyScope (AppE (churchN 2) (churchN 2))
 -- λx1. λx2. (x1 (x1 (x1 (x1 x2))))
+--
+-- @since 0.0.1
 nf :: Distinct n => Scope n -> Expr n -> Expr n
 nf scope expr = case expr of
   LamE binder body ->
@@ -86,10 +104,14 @@ nf scope expr = case expr of
 --
 -- >>> nf' (AppE (churchN 2) (churchN 2))
 -- λx1. λx2. (x1 (x1 (x1 (x1 x2))))
+--
+-- @since 0.0.1
 nf' :: Expr VoidS -> Expr VoidS
 nf' = nf emptyScope
 
 -- | Pretty print a name.
+--
+-- @since 0.0.1
 ppName :: Name n -> String
 ppName name = "x" <> show (nameId name)
 
@@ -97,6 +119,8 @@ ppName name = "x" <> show (nameId name)
 --
 -- >>> ppExpr (churchN 3)
 -- "\955x0. \955x1. (x0 (x0 (x0 x1)))"
+--
+-- @since 0.0.1
 ppExpr :: Expr n -> String
 ppExpr = \case
   Var name -> ppName name
@@ -104,6 +128,8 @@ ppExpr = \case
   LamE binder body -> "λ" <> ppName (nameOf binder) <> ". " <> ppExpr body
 
 -- | A helper for constructing \(\lambda\)-abstractions.
+--
+-- @since 0.0.1
 lam :: Distinct n => Scope n -> (forall l. DExt n l => Scope l -> NameBinder n l -> Expr l) -> Expr n
 lam scope mkBody = withFresh scope $ \x ->
   let scope' = extendScope x scope
@@ -116,6 +142,8 @@ lam scope mkBody = withFresh scope $ \x ->
 --
 -- >>> churchN 3
 -- λx0. λx1. (x0 (x0 (x0 x1)))
+--
+-- @since 0.0.1
 churchN :: Int -> Expr VoidS
 churchN n =
   lam emptyScope $ \sx nx ->

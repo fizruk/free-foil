@@ -14,6 +14,8 @@ import           Control.Monad.Foil.Relative
 -- >>> import Control.Monad.Foil
 
 -- | Untyped \(\lambda\)-terms in scope @n@.
+--
+-- @since 0.0.1
 data Expr n where
   -- | Variables are names in scope @n@: \(x\)
   VarE :: Name n -> Expr n
@@ -59,6 +61,8 @@ instance RelMonad Name Expr where
 
 -- | Substitution for untyped \(\lambda\)-terms.
 -- The foil helps implement this function without forgetting scope extensions and renaming.
+--
+-- @since 0.0.1
 substitute :: Distinct o => Scope o -> Substitution Expr i o -> Expr i -> Expr o
 substitute scope subst = \case
     VarE name -> lookupSubst subst name
@@ -73,6 +77,8 @@ substitute scope subst = \case
 --
 -- >>> whnf emptyScope (AppE (churchN 2) (churchN 2))
 -- λx1. (λx0. λx1. (x0 (x0 x1)) (λx0. λx1. (x0 (x0 x1)) x1))
+--
+-- @since 0.0.1
 whnf :: Distinct n => Scope n -> Expr n -> Expr n
 whnf scope = \case
   AppE fun arg ->
@@ -87,6 +93,8 @@ whnf scope = \case
 --
 -- >>> whnf' (AppE (churchN 2) (churchN 2))
 -- λx1. (λx0. λx1. (x0 (x0 x1)) (λx0. λx1. (x0 (x0 x1)) x1))
+--
+-- @since 0.0.1
 whnf' :: Expr VoidS -> Expr VoidS
 whnf' = whnf emptyScope
 
@@ -94,6 +102,8 @@ whnf' = whnf emptyScope
 --
 -- >>> nf emptyScope (AppE (churchN 2) (churchN 2))
 -- λx1. λx2. (x1 (x1 (x1 (x1 x2))))
+--
+-- @since 0.0.1
 nf :: Distinct n => Scope n -> Expr n -> Expr n
 nf scope expr = case expr of
   LamE binder body ->
@@ -116,10 +126,14 @@ nf scope expr = case expr of
 --
 -- >>> nf' (AppE (churchN 2) (churchN 2))
 -- λx1. λx2. (x1 (x1 (x1 (x1 x2))))
+--
+-- @since 0.0.1
 nf' :: Expr VoidS -> Expr VoidS
 nf' = nf emptyScope
 
 -- | Pretty print a name.
+--
+-- @since 0.0.1
 ppName :: Name n -> String
 ppName name = "x" <> show (nameId name)
 
@@ -127,6 +141,8 @@ ppName name = "x" <> show (nameId name)
 --
 -- >>> ppExpr (churchN 3)
 -- "\955x0. \955x1. (x0 (x0 (x0 x1)))"
+--
+-- @since 0.0.1
 ppExpr :: Expr n -> String
 ppExpr = \case
   VarE name -> ppName name
@@ -134,6 +150,8 @@ ppExpr = \case
   LamE binder body -> "λ" <> ppName (nameOf binder) <> ". " <> ppExpr body
 
 -- | A helper for constructing \(\lambda\)-abstractions.
+--
+-- @since 0.0.1
 lam :: Distinct n => Scope n -> (forall l. DExt n l => Scope l -> NameBinder n l -> Expr l) -> Expr n
 lam scope mkBody = withFresh scope $ \x ->
   let scope' = extendScope x scope
@@ -146,6 +164,8 @@ lam scope mkBody = withFresh scope $ \x ->
 --
 -- >>> churchN 3
 -- λx0. λx1. (x0 (x0 (x0 x1)))
+--
+-- @since 0.0.1
 churchN :: Int -> Expr VoidS
 churchN n =
   lam emptyScope $ \sx nx ->

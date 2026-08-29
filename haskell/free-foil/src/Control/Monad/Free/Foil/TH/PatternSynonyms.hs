@@ -13,6 +13,8 @@ import           Language.Haskell.TH
 import           Language.Haskell.TH.Syntax
 
 -- | Generate helpful pattern synonyms given a signature bifunctor.
+--
+-- @since 0.0.3
 mkPatternSynonyms
   :: Name -- ^ Type name for the signature bifunctor.
   -> Q [Dec]

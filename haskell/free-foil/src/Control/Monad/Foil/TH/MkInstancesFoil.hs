@@ -12,6 +12,8 @@ import           Control.Monad.Foil.TH.Util
 import           Data.List                  (nub)
 
 -- | Generate 'Foil.Sinkable' and 'Foil.CoSinkable' instances.
+--
+-- @since 0.0.1
 mkInstancesFoil
   :: Name -- ^ Type name for raw terms.
   -> Name -- ^ Type name for raw variable identifiers.
@@ -79,6 +81,8 @@ mkInstancesFoil termT nameT scopeT patternT = do
             xi = mkName ("x" ++ show i)
 
 -- | Generate 'Foil.Sinkable' and 'Foil.CoSinkable' instances.
+--
+-- @since 0.1.0
 deriveCoSinkable
   :: Name -- ^ Type name for raw variable identifiers.
   -> Name -- ^ Type name for raw patterns.
@@ -171,6 +175,8 @@ deriveCoSinkable nameT patternT = do
 -- constructors and non-binding fields rather than only the binders.
 --
 -- This deriver does not work and has no call sites. See the deprecation note.
+--
+-- @since 0.1.0
 deriveUnifiablePattern
   :: Name -- ^ Type name for raw variable identifiers.
   -> Name -- ^ Type name for raw patterns.

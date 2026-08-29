@@ -12,6 +12,8 @@ import           Control.Monad.Foil.TH.Util
 
 -- | Generate helpers for conversion to scope-safe representation.
 -- Includes 'mkConvertToSig', 'mkGetPatternBinder', and 'mkGetScopedTerm'.
+--
+-- @since 0.0.3
 mkConvertToFreeFoil
   :: Name -- ^ Type name for raw terms.
   -> Name -- ^ Type name for raw variable identifiers.
@@ -26,6 +28,8 @@ mkConvertToFreeFoil termT nameT scopeT patternT = concat <$> sequence
 
 -- | Generate helpers for conversion from scope-safe representation.
 -- Includes 'mkConvertFromSig'.
+--
+-- @since 0.0.3
 mkConvertFromFreeFoil
   :: Name -- ^ Type name for raw terms.
   -> Name -- ^ Type name for raw variable identifiers.
@@ -39,6 +43,8 @@ mkConvertFromFreeFoil termT nameT scopeT patternT = concat <$> sequence
 -- * Individual generators
 
 -- | Generate conversion helper that goes unpeels one node from a raw term.
+--
+-- @since 0.0.3
 mkConvertToSig
   :: Name -- ^ Type name for raw terms.
   -> Name -- ^ Type name for raw variable identifiers.
@@ -109,6 +115,8 @@ mkConvertToSig termT nameT scopeT patternT = do
           ]
 
 -- | Generate conversion helper that peels back one node to a raw term.
+--
+-- @since 0.0.3
 mkConvertFromSig
   :: Name -- ^ Type name for raw terms.
   -> Name -- ^ Type name for raw variable identifiers.
@@ -169,6 +177,8 @@ mkConvertFromSig termT nameT scopeT patternT = do
           ]
 
 -- | Generate a helper that extracts at most one binder from a pattern.
+--
+-- @since 0.0.3
 mkGetPatternBinder
   :: Name -- ^ Type name for raw variable identifiers.
   -> Name -- ^ Type name for raw patterns.
@@ -221,6 +231,8 @@ mkGetPatternBinder nameT patternT = do
           ]
 
 -- | Generate a helper that extracts a term from a scoped term.
+--
+-- @since 0.0.3
 mkGetScopedTerm
   :: Name -- ^ Type name for raw terms.
   -> Name -- ^ Type name for raw scoped terms.

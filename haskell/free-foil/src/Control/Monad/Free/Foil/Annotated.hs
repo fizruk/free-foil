@@ -101,6 +101,8 @@ import           Control.Monad.Free.Foil
 -- 'Control.Monad.Free.Foil.freeVarsOf', which is also 'Bifoldable', does not see
 -- variables occurring inside annotations. Use 'freeVarsOfAnnotated' when those
 -- matter.
+--
+-- @since 0.3.2
 data AnnSig (ann :: Type -> Type) (sig :: Type -> Type -> Type) scope term
   = AnnSig (ann term) (sig scope term)
   deriving (GHC.Generic)
@@ -138,12 +140,18 @@ instance GenericK (AnnSig ann sig) where
 deriveZipMatchK2 ''AnnSig
 
 -- | An annotated scope-safe term.
+--
+-- @since 0.3.2
 type AnnAST binder ann sig = AST binder (AnnSig ann sig)
 
 -- | An annotated scope-safe term under a binder.
+--
+-- @since 0.3.2
 type AnnScopedAST binder ann sig = ScopedAST binder (AnnSig ann sig)
 
 -- | An annotated node.
+--
+-- @since 0.3.2
 pattern AnnNode
   :: ann (AnnAST binder ann sig n)
   -> sig (AnnScopedAST binder ann sig n) (AnnAST binder ann sig n)
@@ -154,6 +162,8 @@ pattern AnnNode ann sig = Node (AnnSig ann sig)
 
 -- | The annotation of a term, unless it is a variable (which is not a node, so it
 -- carries none).
+--
+-- @since 0.3.2
 annotationOf :: AnnAST binder ann sig n -> Maybe (ann (AnnAST binder ann sig n))
 annotationOf = \case
   Var _         -> Nothing
@@ -164,6 +174,8 @@ annotationOf = \case
 --
 -- 'Control.Monad.Free.Foil.freeVarsOf' misses the latter, since 'Bifoldable' skips
 -- the annotation (see 'AnnSig').
+--
+-- @since 0.3.2
 freeVarsOfAnnotated
   :: (Foil.Distinct n, Foil.CoSinkable binder, Bifoldable sig, Foldable ann)
   => AnnAST binder ann sig n -> [Foil.Name n]

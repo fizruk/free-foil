@@ -73,34 +73,48 @@ import Control.Monad.Foil.Internal.ValidNameBinders
 -- * Safe types and operations
 
 -- | 'S' is a data kind of scope indices.
+--
+-- @since 0.0.1
 data S
   = VoidS -- ^ 'VoidS' is the only explicit scope available to the users, representing an empty scope.
           -- All other scopes are represented with type variables,
           -- bound in rank-2 polymophic functions like 'withFreshBinder'.
 
 -- | A safe scope, indexed by a type-level scope index @n@.
+--
+-- @since 0.0.1
 newtype Scope (n :: S) = UnsafeScope RawScope
   deriving newtype NFData
 
 -- | A name in a safe scope, indexed by a type-level scope index @n@.
+--
+-- @since 0.0.1
 newtype Name (n :: S) = UnsafeName RawName
   deriving newtype (NFData, Eq, Ord, Show)
 
 -- | Convert 'Name' into an identifier.
 -- This may be useful for printing and debugging.
+--
+-- @since 0.0.1
 nameId :: Name l -> Id
 nameId (UnsafeName i) = i
 
 -- | A name binder is a name that extends scope @n@ to a (larger) scope @l@.
+--
+-- @since 0.0.1
 newtype NameBinder (n :: S) (l :: S) =
   UnsafeNameBinder (Name l)
     deriving newtype (NFData, Eq, Ord, Show)
 
 -- | An empty scope (without any names).
+--
+-- @since 0.0.1
 emptyScope :: Scope VoidS
 emptyScope = UnsafeScope IntSet.empty
 
 -- | A runtime check for potential name capture.
+--
+-- @since 0.0.1
 member :: Name l -> Scope n -> Bool
 member (UnsafeName name) (UnsafeScope s) = rawMember name s
 
@@ -111,6 +125,8 @@ member (UnsafeName name) (UnsafeScope s) = rawMember name s
 -- Note that as long as the foil is used as intended,
 -- the name binder is guaranteed to introduce a name
 -- that does not appear in the initial scope.
+--
+-- @since 0.0.1
 {-# INLINABLE extendScope #-}
 extendScope :: NameBinder n l -> Scope n -> Scope l
 extendScope (UnsafeNameBinder (UnsafeName name)) (UnsafeScope scope) =
@@ -118,6 +134,8 @@ extendScope (UnsafeNameBinder (UnsafeName name)) (UnsafeScope scope) =
 
 -- | Extend scope with variables inside a pattern.
 -- This is a more flexible version of 'extendScope'.
+--
+-- @since 0.0.1
 {-# INLINABLE extendScopePattern #-}
 extendScopePattern
   :: (Distinct n, CoSinkable pattern)
@@ -133,13 +151,19 @@ extendScopePattern pat scope = withPattern
   (\(ExtendScope extend) _ _ -> extend scope)
 
 -- | Auxiliary data structure for scope extension. Used in 'extendScopePattern'.
+--
+-- @since 0.1.0
 newtype ExtendScope n l (o :: S) (o' :: S) = ExtendScope (Scope n -> Scope l)
 
 -- | Identity scope extension (no extension).
+--
+-- @since 0.1.0
 idExtendScope :: ExtendScope n n o o'
 idExtendScope = ExtendScope id
 
 -- | Compose scope extensions.
+--
+-- @since 0.1.0
 compExtendScope
   :: ExtendScope n i o o'
   -> ExtendScope i l o' o''
@@ -150,11 +174,15 @@ compExtendScope (ExtendScope f) (ExtendScope g)
 -- ** Collecting new names
 
 -- | Extract name from a name binder.
+--
+-- @since 0.0.1
 nameOf :: NameBinder n l -> Name l
 nameOf (UnsafeNameBinder name) = name
 
 -- | Extract names from a pattern.
 -- This is a more flexible version of 'nameOf'.
+--
+-- @since 0.1.0
 namesOfPattern
   :: forall pattern n l. (Distinct n, CoSinkable pattern) => pattern n l -> [Name l]
 namesOfPattern pat = withPattern @_ @n
@@ -166,13 +194,19 @@ namesOfPattern pat = withPattern @_ @n
 
 -- | Auxiliary structure collecting names in scope @l@ that extend scope @n@.
 -- Used in 'namesOfPattern'.
+--
+-- @since 0.1.0
 newtype NamesOf (n :: S) l (o :: S) (o' :: S) = NamesOf [Name l]
 
 -- | Empty list of names in scope @n@.
+--
+-- @since 0.1.0
 idNamesOf :: NamesOf n n o o'
 idNamesOf = NamesOf []
 
 -- | Concatenation of names, resulting in a list of names in @l@ that extend scope @n@.
+--
+-- @since 0.1.0
 compNamesOf :: NamesOf n i o o' -> NamesOf i l o' o'' -> NamesOf n l o o''
 compNamesOf (NamesOf xs) (NamesOf ys) =
   NamesOf (coerce xs ++ ys)
@@ -180,6 +214,8 @@ compNamesOf (NamesOf xs) (NamesOf ys) =
 -- ** Refreshing binders
 
 -- | Allocate a fresh binder for a given scope.
+--
+-- @since 0.0.1
 {-# INLINABLE withFreshBinder #-}
 withFreshBinder
   :: Scope n
@@ -190,6 +226,8 @@ withFreshBinder (UnsafeScope scope) cont =
     binder = UnsafeNameBinder (UnsafeName (rawFreshName scope))
 
 -- | Safely produce a fresh name binder with respect to a given scope.
+--
+-- @since 0.0.1
 {-# INLINABLE withFresh #-}
 withFresh
   :: Distinct n => Scope n
@@ -214,6 +252,8 @@ withFresh scope cont = withFreshBinder scope (`unsafeAssertFresh` cont)
 --
 -- >>> withFreshIn (NameRange 100 199) emptyScope (nameId . nameOf)
 -- 100
+--
+-- @since 0.4.0
 withFreshIn
   :: Distinct n
   => NameRange  -- ^ The reservation to allocate from.
@@ -227,6 +267,8 @@ withFreshIn range scope cont =
 -- | A version of 'withFreshIn' that reports an exhausted range with 'Nothing'
 -- instead of failing. A driver that hands out ranges can then report which
 -- unit ran out of its reservation.
+--
+-- @since 0.4.0
 tryWithFreshIn
   :: Distinct n
   => NameRange  -- ^ The reservation to allocate from.
@@ -240,6 +282,8 @@ tryWithFreshIn range (UnsafeScope rawScope) cont =
 -- | Rename a given pattern into a fresh version of it to extend a given scope.
 --
 -- This is similar to 'withRefreshedPattern', except here renaming always takes place.
+--
+-- @since 0.1.0
 withFreshPattern
   :: (Distinct o, CoSinkable pattern, Sinkable e, InjectName e)
   => Scope o      -- ^ Ambient scope.
@@ -259,6 +303,8 @@ withFreshPattern scope pattern cont = withPattern
 -- | Safely rename (if necessary) a given name to extend a given scope.
 -- This is similar to 'withFresh', except if the name does not clash with
 -- the scope, it can be used immediately, without renaming.
+--
+-- @since 0.0.1
 {-# INLINABLE withRefreshed #-}
 withRefreshed
   :: Distinct o
@@ -275,6 +321,8 @@ withRefreshed scope@(UnsafeScope rawScope) name@(UnsafeName rawName) cont
 -- a given range when the candidate is taken. A client that reserves regions
 -- of the raw-name line (per-module stripes, a region for locals) uses this
 -- so that a rename cannot stray into someone else's reservation.
+--
+-- @since 0.4.0
 withRefreshedIn
   :: Distinct o
   => NameRange  -- ^ The reservation to allocate a replacement from.
@@ -317,6 +365,8 @@ withRefreshedIn range scope@(UnsafeScope rawScope) name@(UnsafeName rawName) con
 -- nested inside another @λ x1@. Handing such a caller @sink@ would apply its
 -- substitution to a name the pattern binds, which is to say capture the bound
 -- variable.
+--
+-- @since 0.0.1
 {-# INLINABLE withRefreshedPattern #-}
 withRefreshedPattern
   :: (Distinct o, CoSinkable pattern, Sinkable e, InjectName e)
@@ -342,6 +392,8 @@ withRefreshedPattern scope pattern cont = withPattern
 -- and for the same reason. Here shadowing is handled by 'unsinkName' rather than
 -- by a delete: a name the pattern binds is routed to 'injectName' and never
 -- reaches the caller's renaming, whether or not the binder was refreshed.
+--
+-- @since 0.1.0
 withRefreshedPattern'
   :: (CoSinkable pattern, Distinct o, InjectName e, Sinkable e)
   => Scope o
@@ -362,6 +414,8 @@ withRefreshedPattern' scope pattern cont = withPattern
 
 -- | Unsafely declare that a given name (binder)
 -- is already fresh in any scope @n'@.
+--
+-- @since 0.0.1
 {-# INLINABLE unsafeAssertFresh #-}
 unsafeAssertFresh :: forall n l n' l' r. NameBinder n l
   -> (DExt n' l' => NameBinder n' l' -> r) -> r
@@ -373,13 +427,19 @@ unsafeAssertFresh binder cont =
 -- | Auxiliary structure to accumulate substitution extensions
 -- produced when refreshing a pattern.
 -- Used in 'withRefreshedPattern' and 'withFreshPattern'.
+--
+-- @since 0.1.0
 newtype WithRefreshedPattern e n l o o' = WithRefreshedPattern (Substitution e n o -> Substitution e l o')
 
 -- | Trivial substitution (coercion via 'sink').
+--
+-- @since 0.1.0
 idWithRefreshedPattern :: (Sinkable e, DExt o o') => WithRefreshedPattern e n n o o'
 idWithRefreshedPattern = WithRefreshedPattern sink
 
 -- | Composition of substitution extensions.
+--
+-- @since 0.1.0
 compWithRefreshedPattern
   :: (DExt o o', DExt o' o'')
   => WithRefreshedPattern e n i o o'
@@ -392,13 +452,19 @@ compWithRefreshedPattern (WithRefreshedPattern f) (WithRefreshedPattern g) =
 -- and the extended scope produced when refreshing a pattern.
 -- Similar to 'WithRefreshedPattern', except here substitutions are represented as functions.
 -- Used in 'withRefreshedPattern''.
+--
+-- @since 0.1.0
 newtype WithRefreshedPattern' e n l (o :: S) (o' :: S) = WithRefreshedPattern' ((Name n -> e o) -> Name l -> e o')
 
 -- | Trivial substitution extension (coercion via 'sink').
+--
+-- @since 0.1.0
 idWithRefreshedPattern' :: (Sinkable e, DExt o o') => WithRefreshedPattern' e n n o o'
 idWithRefreshedPattern' = WithRefreshedPattern' (\f n -> sink (f n))
 
 -- | Composition of substitution extensions.
+--
+-- @since 0.1.0
 compWithRefreshedPattern'
   :: (DExt o o', DExt o' o'')
   => WithRefreshedPattern' e n i o o'
@@ -410,28 +476,40 @@ compWithRefreshedPattern' (WithRefreshedPattern' f) (WithRefreshedPattern' g) =
 -- ** Extracting proofs from binders and patterns
 
 -- | Evidence that scope @n@ contains distinct names.
+--
+-- @since 0.0.1
 data DistinctEvidence (n :: S) where
   Distinct :: Distinct n => DistinctEvidence n
 
 -- | Evidence that scope @l@ extends scope @n@.
+--
+-- @since 0.0.1
 data ExtEvidence (n :: S) (l :: S) where
   Ext :: Ext n l => ExtEvidence n l
 
 -- | A distinct scope extended with a 'NameBinder' is also distinct.
+--
+-- @since 0.0.1
 assertDistinct :: (Distinct n, CoSinkable pattern) => pattern n l -> DistinctEvidence l
 assertDistinct _ = unsafeDistinct
 
 -- | A distinct scope extended with a 'NameBinder' is also distinct.
+--
+-- @since 0.0.3
 assertExt :: CoSinkable pattern => pattern n l -> ExtEvidence n l
 assertExt _ = unsafeExt
 
 -- | Unsafely declare that scope @n@ is distinct.
 -- Used in 'unsafeAssertFresh'.
+--
+-- @since 0.0.1
 unsafeDistinct :: DistinctEvidence n
 unsafeDistinct = unsafeCoerce (Distinct :: DistinctEvidence VoidS)
 
 -- | Unsafely declare that scope @l@ extends scope @n@.
 -- Used in 'unsafeAssertFresh'.
+--
+-- @since 0.0.1
 unsafeExt :: ExtEvidence n l
 unsafeExt = unsafeCoerce (Ext :: ExtEvidence VoidS VoidS)
 
@@ -439,6 +517,8 @@ unsafeExt = unsafeCoerce (Ext :: ExtEvidence VoidS VoidS)
 
 -- | Try coercing the name back to the (smaller) scope,
 -- given a binder that extends that scope.
+--
+-- @since 0.0.1
 unsinkName :: NameBinder n l -> Name l -> Maybe (Name n)
 unsinkName binder name@(UnsafeName raw)
   | nameOf binder == name = Nothing
@@ -448,6 +528,8 @@ unsinkName binder name@(UnsafeName raw)
 -- is introduced in a pattern or comes from the outer scope @n@.
 --
 -- This is a generalization of 'unsinkName'.
+--
+-- @since 0.1.0
 unsinkNamePattern
   :: forall pattern n l. (Distinct n, CoSinkable pattern)
   => pattern n l -> Name l -> Maybe (Name n)
@@ -463,13 +545,19 @@ unsinkNamePattern pat = withPattern @_ @n
 
 -- | Auxiliary structure for unsinking names.
 -- Used in 'unsinkNamePattern'.
+--
+-- @since 0.1.0
 newtype UnsinkName n l (o :: S) (o' :: S) = UnsinkName (Name l -> Maybe (Name n))
 
 -- | Trivial unsinking. If no scope extension took place, any name is free (since it cannot be bound by anything).
+--
+-- @since 0.1.0
 idUnsinkName :: UnsinkName n n o o'
 idUnsinkName = UnsinkName Just
 
 -- | Composition of unsinking for nested binders/patterns.
+--
+-- @since 0.1.0
 compUnsinkName
   :: UnsinkName n i o o'
   -> UnsinkName i l o' o''
@@ -501,39 +589,57 @@ compUnsinkName (UnsinkName f) (UnsinkName g)
 --
 -- '<>' is union and 'mempty' is empty, so a 'NameSet' can be accumulated with
 -- 'foldMap'.
+--
+-- @since 0.4.0
 newtype NameSet (n :: S) = UnsafeNameSet RawScope
   deriving newtype (NFData, Eq, Semigroup, Monoid)
 
 -- | An empty set of names.
+--
+-- @since 0.4.0
 emptyNameSet :: NameSet n
 emptyNameSet = UnsafeNameSet IntSet.empty
 
 -- | \(O(1)\). A set of one name.
+--
+-- @since 0.4.0
 nameSetSingleton :: Name n -> NameSet n
 nameSetSingleton (UnsafeName name) = UnsafeNameSet (IntSet.singleton name)
 
 -- | \(O(\min(n,W))\). Add a name to a set.
+--
+-- @since 0.4.0
 nameSetInsert :: Name n -> NameSet n -> NameSet n
 nameSetInsert (UnsafeName name) (UnsafeNameSet names) =
   UnsafeNameSet (IntSet.insert name names)
 
 -- | \(O(\min(n,W))\). Is this name in the set?
+--
+-- @since 0.4.0
 nameSetMember :: Name n -> NameSet n -> Bool
 nameSetMember (UnsafeName name) (UnsafeNameSet names) = IntSet.member name names
 
 -- | Is the set empty?
+--
+-- @since 0.4.0
 nameSetNull :: NameSet n -> Bool
 nameSetNull (UnsafeNameSet names) = IntSet.null names
 
 -- | How many names are in the set?
+--
+-- @since 0.4.0
 nameSetSize :: NameSet n -> Int
 nameSetSize (UnsafeNameSet names) = IntSet.size names
 
 -- | The names in the set, in ascending order of their identifiers.
+--
+-- @since 0.4.0
 nameSetToList :: NameSet n -> [Name n]
 nameSetToList (UnsafeNameSet names) = Prelude.map UnsafeName (IntSet.toAscList names)
 
 -- | A set of the given names.
+--
+-- @since 0.4.0
 nameSetFromList :: [Name n] -> NameSet n
 nameSetFromList names = UnsafeNameSet (IntSet.fromList (Prelude.map nameId names))
 
@@ -546,10 +652,14 @@ instance Sinkable NameSet where
   sinkabilityProof rename = nameSetFromList . Prelude.map rename . nameSetToList
 
 -- | All the names in a scope.
+--
+-- @since 0.4.0
 scopeToNameSet :: Scope n -> NameSet n
 scopeToNameSet (UnsafeScope names) = UnsafeNameSet names
 
 -- | The names a pattern binds.
+--
+-- @since 0.4.0
 nameSetOfPattern :: CoSinkable binder => binder n l -> NameSet l
 nameSetOfPattern binder = UnsafeNameSet bound
   where
@@ -560,6 +670,8 @@ nameSetOfPattern binder = UnsafeNameSet bound
 -- This is the test that restriction of a term comes down to, so it is the one
 -- place a restriction is paid for: compare a term\'s support against the scope
 -- it is to be restricted to.
+--
+-- @since 0.4.0
 nameSetSubsetOfScope :: NameSet l -> Scope n -> Bool
 nameSetSubsetOfScope (UnsafeNameSet names) (UnsafeScope scope) =
   names `IntSet.isSubsetOf` scope
@@ -572,6 +684,8 @@ nameSetSubsetOfScope (UnsafeNameSet names) (UnsafeScope scope) =
 -- right even when one of them shares a raw name with the enclosing scope: inside
 -- the pattern that raw name denotes the binder, so no occurrence of it there is
 -- an occurrence of the outer name.
+--
+-- @since 0.4.0
 unsinkNameSet :: CoSinkable binder => binder n l -> NameSet l -> NameSet n
 unsinkNameSet binder (UnsafeNameSet names) = UnsafeNameSet (names IntSet.\\ bound)
   where
@@ -591,6 +705,8 @@ unsinkNameSet binder (UnsafeNameSet names) = UnsafeNameSet (names IntSet.\\ boun
 -- to move a term of @n@ into a scope extending @m@. It does mean that a
 -- restricted scope is for inspecting and restricting terms, and not a base to
 -- build new binders on and then mix with the original scope.
+--
+-- @since 0.4.0
 withRestrictedScope
   :: forall n r. Distinct n
   => NameSet n
@@ -602,6 +718,8 @@ withRestrictedScope (UnsafeNameSet names) cont =
 
 -- | Unsafely declare that a scope is a restriction of scope @n@.
 -- Used in 'withRestrictedScope'.
+--
+-- @since 0.4.0
 unsafeAssertRestricted
   :: forall n m r. Scope m -> ((Ext m n, Distinct m) => Scope m -> r) -> r
 unsafeAssertRestricted scope cont =
@@ -616,6 +734,8 @@ unsafeAssertRestricted scope cont =
 --
 -- Due to the implementation of the foil, we can often rename binders efficiently,
 -- by renaming binders only in one of the two unified terms.
+--
+-- @since 0.0.3
 data UnifyNameBinders (pattern :: S -> S -> Type) n l r where
   -- | Binders are the same, proving that type parameters @l@ and @r@
   -- are in fact equivalent.
@@ -657,6 +777,8 @@ data UnifyNameBinders (pattern :: S -> S -> Type) n l r where
 -- term being renamed, and the result is still correct. Binder names do not
 -- always grow with depth: a term built in a small scope keeps its small binder
 -- names when 'sink' places it in a larger one.
+--
+-- @since 0.0.3
 unifyNameBinders
   :: forall i l r pattern. Distinct i
   => NameBinder i l -- ^ Left pattern.
@@ -672,6 +794,8 @@ unifyNameBinders l@(UnsafeNameBinder (UnsafeName i1)) r@(UnsafeNameBinder (Unsaf
 
 -- | Unsafely merge results of unification for nested binders/patterns.
 -- Used in 'andThenUnifyPatterns'.
+--
+-- @since 0.1.0
 unsafeMergeUnifyBinders :: UnifyNameBinders pattern a a' a'' -> UnifyNameBinders pattern a''' b' b'' -> UnifyNameBinders pattern a b' b''
 unsafeMergeUnifyBinders = \case
 
@@ -706,6 +830,8 @@ unsafeMergeUnifyBinders = \case
   NotUnifiable -> const (NotUnifiable)
 
 -- | Chain unification of nested patterns.
+--
+-- @since 0.1.0
 andThenUnifyPatterns
   :: (UnifiablePattern pattern, Distinct l, Distinct l')
   => UnifyNameBinders pattern n l l'    -- ^ Unifying action for some outer patterns.
@@ -714,6 +840,8 @@ andThenUnifyPatterns
 andThenUnifyPatterns u (l, r) = unsafeMergeUnifyBinders u (unifyPatterns (unsafeCoerce l) r)
 
 -- | Chain unification of nested patterns with 'NameBinder's.
+--
+-- @since 0.1.0
 andThenUnifyNameBinders
   :: (UnifiablePattern pattern, Distinct l, Distinct l')
   => UnifyNameBinders pattern n l l'    -- ^ Unifying action for some outer patterns.
@@ -724,27 +852,39 @@ andThenUnifyNameBinders u (l, r) = unsafeMergeUnifyBinders u (unifyNameBinders (
 -- | An /unordered/ collection of 'NameBinder's, that together extend scope @n@ to scope @l@.
 --
 -- For an ordered version see 'NameBinderList'.
+--
+-- @since 0.1.0
 newtype NameBinders (n :: S) (l :: S) = UnsafeNameBinders IntSet
 
 -- | /Unsafely/ merge sets of binders (via set union).
+--
+-- @since 0.1.0
 unsafeMergeNameBinders :: NameBinders a b -> NameBinders c d -> NameBinders n l
 unsafeMergeNameBinders (UnsafeNameBinders x) (UnsafeNameBinders y) = UnsafeNameBinders (x <> y)
 
 -- | An empty set of binders keeps the scope as is.
+--
+-- @since 0.1.0
 emptyNameBinders :: NameBinders n n
 emptyNameBinders = UnsafeNameBinders IntSet.empty
 
 -- | Composition of sets of binders.
+--
+-- @since 0.1.0
 mergeNameBinders :: NameBinders n i -> NameBinders i l -> NameBinders n l
 mergeNameBinders = unsafeMergeNameBinders
 
 -- | A singleton name binder set.
+--
+-- @since 0.1.0
 nameBindersSingleton :: NameBinder n l -> NameBinders n l
 nameBindersSingleton binder = UnsafeNameBinders (IntSet.singleton (nameId (nameOf binder)))
 
 -- | An /ordered/ collection (list) of 'NameBinder's, that together extend scope @n@ to scope @l@.
 --
 -- For an unordered version see 'NameBinders'.
+--
+-- @since 0.1.0
 data NameBinderList n l where
   -- | An empty list of binders keeps the scope as is.
   NameBinderListEmpty :: NameBinderList n n
@@ -755,6 +895,8 @@ data NameBinderList n l where
     -> NameBinderList n l
 
 -- | Convert an unordered set of name binders into an ordered list (with some order).
+--
+-- @since 0.1.0
 nameBindersList :: NameBinders n l -> NameBinderList n l
 nameBindersList (UnsafeNameBinders names) = go (IntSet.toList names)
   where
@@ -762,6 +904,8 @@ nameBindersList (UnsafeNameBinders names) = go (IntSet.toList names)
     go (x:xs) = NameBinderListCons (UnsafeNameBinder (UnsafeName x)) (go xs)
 
 -- | The raw names a list of binders binds, outermost first.
+--
+-- @since 0.4.0
 rawNameBinderList :: NameBinderList n l -> [RawName]
 rawNameBinderList NameBinderListEmpty = []
 rawNameBinderList (NameBinderListCons binder binders) =
@@ -786,6 +930,8 @@ rawNameBinderList (NameBinderListCons binder binders) =
 -- whatever those mention before thinning by it, since dropping a binder that a
 -- surviving binder\'s type refers to would leave that type unplaceable. The
 -- library cannot do that closure, having no view of what a binder carries.
+--
+-- @since 0.4.0
 withThinnedNameBinderList
   :: forall n l r. Distinct n
   => NameSet l            -- ^ Names to keep, closed under whatever the binders carry.
@@ -805,6 +951,8 @@ withThinnedNameBinderList (UnsafeNameSet keep) binders cont =
 -- Sound for a chain thinned out of @n@ to @l@: its names are those of @n@ plus
 -- some of the binders between @n@ and @l@, so it extends @n@, is extended by
 -- @l@, and is distinct because @l@ was.
+--
+-- @since 0.4.0
 unsafeAssertThinned
   :: forall n l m r
    . NameBinderList n m
@@ -820,6 +968,8 @@ unsafeAssertThinned binders cont =
 --
 -- Note that 'NameBinderListCons' adds a binder to the /front/ of the list, which
 -- is the outermost position. This adds one to the innermost position instead.
+--
+-- @since 0.3.1
 snocNameBinderList :: NameBinderList n i -> NameBinder i l -> NameBinderList n l
 snocNameBinderList NameBinderListEmpty binder =
   NameBinderListCons binder NameBinderListEmpty
@@ -828,12 +978,16 @@ snocNameBinderList (NameBinderListCons binder binders) binder' =
 
 -- | Concatenate two (ordered) lists of binders, the second extending the scope
 -- that the first extends to.
+--
+-- @since 0.3.1
 concatNameBinderLists :: NameBinderList n i -> NameBinderList i l -> NameBinderList n l
 concatNameBinderLists NameBinderListEmpty binders = binders
 concatNameBinderLists (NameBinderListCons binder binders) binders' =
   NameBinderListCons binder (concatNameBinderLists binders binders')
 
 -- | Convert an ordered list of name binders into an unordered set.
+--
+-- @since 0.1.0
 fromNameBindersList :: NameBinderList n l -> NameBinders n l
 fromNameBindersList = UnsafeNameBinders . IntSet.fromList . go
   where
@@ -869,9 +1023,13 @@ instance CoSinkable NameBinderList where
 -- | An empty pattern type specifies zero possibilities for patterns.
 --
 -- This type can be used to specify that patterns are not possible.
+--
+-- @since 0.1.0
 data V2 (n :: S) (l :: S)
 
 -- | Since 'V2' values logically don't exist, this witnesses the logical reasoning tool of "ex falso quodlibet".
+--
+-- @since 0.1.0
 absurd2 :: V2 n l -> a
 absurd2 v2 = case v2 of {}
 
@@ -882,6 +1040,8 @@ instance UnifiablePattern V2 where
   unifyPatterns = absurd2
 
 -- | A unit pattern type corresponds to a wildcard pattern.
+--
+-- @since 0.1.0
 data U2 (n :: S) (l :: S) where
   U2 :: U2 n n  -- ^ Wildcard patten does not modify the scope.
 
@@ -898,8 +1058,12 @@ instance UnifiablePattern U2 where
 --
 -- Note that the default implementation compares patterns only up to their
 -- binders. See 'unifyPatterns' for what that does and does not distinguish.
+--
+-- @since 0.0.1
 class CoSinkable pattern => UnifiablePattern pattern where
   -- | Unify two patterns and decide which binders need to be renamed.
+  --
+  -- @since 0.1.0
   unifyPatterns :: Distinct n => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
 
   -- | The default implementation flattens both patterns to their binders (via
@@ -972,7 +1136,12 @@ instance UnifiablePattern NameBinderList where
 -- and not enough to compare anything living in a scope. A pattern that carries
 -- a payload needs this to compare its payloads against another's, which is what
 -- 'unifyPatternsIn' is for.
+--
+-- @since 0.4.0
 class AlphaEquiv (e :: S -> Type) where
+  -- | Are two values of one scope α-equivalent?
+  --
+  -- @since 0.4.0
   alphaEquivIn :: Distinct n => Scope n -> e n -> e n -> Bool
 
 -- | A name is α-equivalent only to itself.
@@ -982,8 +1151,12 @@ instance AlphaEquiv Name where
 -- | Unification of values in patterns.
 -- By default, 'Eq' instance is used, but it may be useful to ignore
 -- some data in pattens (such as location annotations).
+--
+-- @since 0.1.0
 class UnifiableInPattern a where
   -- | Unify non-binding components of a pattern.
+  --
+  -- @since 0.1.0
   unifyInPattern :: a -> a -> Bool
   default unifyInPattern :: Eq a => a -> a -> Bool
   unifyInPattern = (==)
@@ -994,6 +1167,8 @@ instance UnifiablePattern NameBinder where
 -- | The easiest way to compare two patterns is to check if they are the same.
 -- This function is labelled /unsafe/, since we generally are interested in proper α-equivalence
 -- instead of direct equality.
+--
+-- @since 0.1.0
 unsafeEqPattern :: (UnifiablePattern pattern, Distinct n) => pattern n l -> pattern n' l' -> Bool
 unsafeEqPattern l r =
   case unifyPatterns l (unsafeCoerce r) of
@@ -1004,6 +1179,8 @@ unsafeEqPattern l r =
 
 -- | Sinking an expression from scope @n@ into a (usualy extended) scope @l@,
 -- given the renaming (injection from scope @n@ to scope @l@).
+--
+-- @since 0.0.1
 class Sinkable (e :: S -> Type) where
   -- | An implementation of this method that typechecks
   -- proves to the compiler that the expression is indeed
@@ -1055,6 +1232,8 @@ instance (Functor f, Sinkable e) => Sinkable (Compose f e) where
 -- member where they fire, but they are best-effort (they need optimisation
 -- on, and 'fmap' at a known functor is often resolved to the instance
 -- method first), so write the family member directly.
+--
+-- @since 0.0.1
 sink :: (Sinkable e, DExt n l) => e n -> e l
 sink = unsafeCoerce
 {-# INLINE [0] sink #-}
@@ -1106,10 +1285,14 @@ sink = unsafeCoerce
 -- * A 'NameMap' must stay __total__ on the names in scope ('lookupName' errors
 --   otherwise), so sinking one has to be paired with adding the new binder's
 --   entry (see 'addNameBinder').
+--
+-- @since 0.4.0
 sink1 :: (Functor f, Sinkable e, DExt n l) => f (e n) -> f (e l)
 sink1 = getCompose . sink . Compose
 
 -- | The name 'sink1' had before the family existed.
+--
+-- @since 0.3.2
 sinkContainer :: (Functor f, Sinkable e, DExt n l) => f (e n) -> f (e l)
 sinkContainer = sink1
 {-# DEPRECATED sinkContainer "Use sink1, its name in the sink family" #-}
@@ -1117,6 +1300,8 @@ sinkContainer = sink1
 -- | The sinkability proof lifted through a 'Bifunctor', with one renaming
 -- per slot. Once this typechecks, sinking both slots at once is a coercion;
 -- 'sink2' is to this proof exactly what 'sink' is to 'sinkabilityProof'.
+--
+-- @since 0.4.0
 sinkabilityProof2
   :: (Bifunctor p, Sinkable e1, Sinkable e2)
   => (Name n -> Name n')    -- ^ Map names of scope @n@ into scope @n'@.
@@ -1143,6 +1328,8 @@ sinkabilityProof2 rename1 rename2 =
 -- sinkPairs :: (DExt n n', DExt m m') => [(Name n, Name m)] -> [(Name n', Name m')]
 -- sinkPairs = runTannen . sink2 . Tannen
 -- :}
+--
+-- @since 0.4.0
 sink2
   :: (Bifunctor p, Sinkable e1, Sinkable e2, DExt n n', DExt m m')
   => p (e1 n) (e2 m) -> p (e1 n') (e2 m')
@@ -1154,6 +1341,8 @@ sink2 = unsafeCoerce
 --
 -- This function is used to go under binders when implementing 'sinkabilityProof'
 -- and is both a generalization of 'extendRenamingNameBinder' and an efficient implementation of 'coSinkabilityProof'.
+--
+-- @since 0.0.1
 extendRenaming
   :: CoSinkable pattern
   => (Name n -> Name n')  -- ^ Map names from scope @n@ to a (possibly larger) scope @n'@.
@@ -1167,6 +1356,8 @@ extendRenaming _ pattern cont =
 
 -- | Extend renaming of binders when going under a 'CoSinkable' pattern (generalized binder).
 -- Note that the scope under pattern is independent of the codomain of the renaming.
+--
+-- @since 0.0.3
 extendNameBinderRenaming
   :: CoSinkable pattern
   => (NameBinder i n -> NameBinder i n')  -- ^ Map names from scope @n@ to a (possibly larger) scope @n'@.
@@ -1180,6 +1371,8 @@ extendNameBinderRenaming _ pattern cont =
 
 -- | Safely compose renamings of name binders.
 -- The underlying implementation is
+--
+-- @since 0.0.3
 composeNameBinderRenamings
   :: (NameBinder n i -> NameBinder n i')    -- ^ Rename binders extending scope @n@ from @i@ to @i'@.
   -> (NameBinder i' l -> NameBinder i' l')  -- ^ Rename binders extending scope @i'@ from @l@ to @l'@.
@@ -1187,6 +1380,8 @@ composeNameBinderRenamings
 composeNameBinderRenamings = unsafeCoerce (flip (.))
 
 -- | Convert renaming of name binders into renaming of names in the inner scopes.
+--
+-- @since 0.0.3
 fromNameBinderRenaming :: (NameBinder n l -> NameBinder n l') -> Name l -> Name l'
 fromNameBinderRenaming = coerce
 
@@ -1201,6 +1396,8 @@ fromNameBinderRenaming = coerce
 --
 -- This function is used to go under binders when implementing 'sinkabilityProof'.
 -- A generalization of this function is 'extendRenaming' (which is an efficient version of 'coSinkabilityProof').
+--
+-- @since 0.0.1
 extendRenamingNameBinder
   :: (Name n -> Name n')  -- ^ Map names from scope @n@ to a (possibly larger) scope @n'@.
   -> NameBinder n l       -- ^ A name binder that extends scope @n@ to another scope @l@.
@@ -1215,6 +1412,8 @@ extendRenamingNameBinder _ (UnsafeNameBinder name) cont =
 -- what 'Sinkable' is to expressions.
 --
 -- See Section 2.3 of [«Free Foil: Generating Efficient and Scope-Safe Abstract Syntax»](https://arxiv.org/abs/2405.16384) for more details.
+--
+-- @since 0.0.1
 class CoSinkable (pattern :: S -> S -> Type) where
   -- | An implementation of this method that typechecks
   -- proves to the compiler that the pattern is indeed
@@ -1309,6 +1508,8 @@ class CoSinkable (pattern :: S -> S -> Type) where
 -- it meant in @n@, and the identity on raw names is a renaming from the one to
 -- the other. That is the same coercion 'extendRenaming' and 'unsafeAssertFresh'
 -- already perform.
+--
+-- @since 0.4.0
 data PatternTransport (n :: S) (o :: S)
   = TransportVerbatim
     -- ^ No binder was refreshed, so raw names are unchanged throughout.
@@ -1317,6 +1518,8 @@ data PatternTransport (n :: S) (o :: S)
 
 -- | The transport to start a 'withPattern' traversal with, before any binder
 -- has been seen.
+--
+-- @since 0.4.0
 verbatimTransport :: PatternTransport n o
 verbatimTransport = TransportVerbatim
 
@@ -1325,6 +1528,8 @@ verbatimTransport = TransportVerbatim
 -- The names of the inner scope are the binder's own, which goes to whatever the
 -- refreshed binder introduces, and the names of the outer scope, which the
 -- transport so far already answers for.
+--
+-- @since 0.4.0
 transportUnderBinder
   :: PatternTransport n o
   -> NameBinder n i    -- ^ The binder as the pattern has it.
@@ -1363,23 +1568,33 @@ transportUnderBinder transport binder binder'
 --
 -- Note which transport each payload takes: the one accumulated /before/ its own
 -- binder, since that is the scope the payload lives in.
+--
+-- @since 0.4.0
 transportPayload :: Sinkable e => PatternTransport n o -> e n -> e o
 transportPayload TransportVerbatim         = unsafeCoerce
 transportPayload (TransportRenamed rename) = sinkabilityProof rename
 
 -- | Carry a single name along a transport.
+--
+-- @since 0.4.0
 transportName :: PatternTransport n o -> Name n -> Name o
 transportName TransportVerbatim         = unsafeCoerce
 transportName (TransportRenamed rename) = rename
 
 -- | Auxiliary data structure for collecting name binders. Used in 'nameBinderListOf'.
+--
+-- @since 0.2.0
 newtype WithNameBinderList r n l (o :: S) (o' :: S) = WithNameBinderList (NameBinderList l r -> NameBinderList n r)
 
 -- | Empty list of name binders (identity).
+--
+-- @since 0.2.0
 idWithNameBinderList :: DExt o o' => WithNameBinderList r n n o o'
 idWithNameBinderList = WithNameBinderList id
 
 -- | Concatenating lists of name binders (compose).
+--
+-- @since 0.2.0
 compWithNameBinderList
   :: (DExt o o', DExt o' o'')
   => WithNameBinderList r n i o o'
@@ -1390,6 +1605,8 @@ compWithNameBinderList (WithNameBinderList f) (WithNameBinderList g) =
 
 -- | Collect name binders of a generalized pattern into a name binder list,
 -- which can be more easily traversed.
+--
+-- @since 0.2.0
 nameBinderListOf :: (CoSinkable binder) => binder n l -> NameBinderList n l
 nameBinderListOf pat = withPattern
   (\_scope' binder k ->
@@ -1413,10 +1630,14 @@ instance CoSinkable NameBinder where
 
 -- | A substitution is a mapping from names in scope @i@
 -- to expressions @e o@ in scope @o@.
+--
+-- @since 0.0.1
 newtype Substitution (e :: S -> Type) (i :: S) (o :: S) =
   UnsafeSubstitution (IntMap (e o))
 
 -- | Apply substitution to a given name.
+--
+-- @since 0.0.1
 {-# INLINABLE lookupSubst #-}
 lookupSubst :: InjectName e => Substitution e i o -> Name i -> e o
 lookupSubst (UnsafeSubstitution env) (UnsafeName name) =
@@ -1425,20 +1646,28 @@ lookupSubst (UnsafeSubstitution env) (UnsafeName name) =
         Nothing -> injectName (UnsafeName name)
 
 -- | Identity substitution maps all names to expresion-variables.
+--
+-- @since 0.0.1
 identitySubst
   :: InjectName e => Substitution e i i
 identitySubst = UnsafeSubstitution IntMap.empty
 
 -- | Whether a substitution maps every name to itself (see 'addRename',
 -- which deletes identity renames, so this is one null test).
+--
+-- @since 0.4.0
 nullSubst :: Substitution e i o -> Bool
 nullSubst (UnsafeSubstitution env) = IntMap.null env
 
 -- | An empty substitution from an empty scope.
+--
+-- @since 0.2.0
 voidSubst :: Substitution e VoidS n
 voidSubst = UnsafeSubstitution IntMap.empty
 
 -- | Extend substitution with a particular mapping.
+--
+-- @since 0.0.1
 {-# INLINABLE addSubst #-}
 addSubst
   :: Substitution e i o
@@ -1448,6 +1677,10 @@ addSubst
 addSubst (UnsafeSubstitution env) (UnsafeNameBinder (UnsafeName name)) ex
   = UnsafeSubstitution (IntMap.insert name ex env)
 
+-- | Extend a substitution with a value for each binder of a pattern, in the
+-- order the pattern binds them.
+--
+-- @since 0.2.0
 addSubstPattern
   :: CoSinkable binder
   => Substitution e i o
@@ -1456,6 +1689,10 @@ addSubstPattern
   -> Substitution e i' o
 addSubstPattern subst pat = addSubstList subst (nameBinderListOf pat)
 
+-- | Extend a substitution with a value for each binder of a chain, in order.
+-- Fails with 'error' when the list of values is too short.
+--
+-- @since 0.2.0
 addSubstList
   :: Substitution e i o
   -> NameBinderList i i'
@@ -1474,6 +1711,8 @@ addSubstList _ _ [] = error "cannot add a binder to Substitution since the value
 -- of the same raw name, so the delete cannot be skipped even when nothing is
 -- being renamed. See 'withRefreshedPattern' for why that rules out an
 -- all-binders-fresh fast path.
+--
+-- @since 0.0.1
 {-# INLINABLE addRename #-}
 addRename :: InjectName e => Substitution e i o -> NameBinder i i' -> Name o -> Substitution e i' o
 addRename s@(UnsafeSubstitution env) b@(UnsafeNameBinder (UnsafeName name1)) n@(UnsafeName name2)
@@ -1488,9 +1727,13 @@ instance (Sinkable e) => Sinkable (Substitution e i) where
 -- * 'Name' maps
 
 -- | A /total/ map from names in scope @n@ to elements of type @a@.
+--
+-- @since 0.0.1
 newtype NameMap (n :: S) a = NameMap { getNameMap :: IntMap a } deriving (Functor, Foldable, Traversable)
 
 -- | An empty map belongs in the empty scope.
+--
+-- @since 0.0.1
 emptyNameMap :: NameMap VoidS a
 emptyNameMap = NameMap IntMap.empty
 
@@ -1500,14 +1743,20 @@ emptyNameMap = NameMap IntMap.empty
 -- which names the map is defined on, so a map that was total stays total, which
 -- is what makes it a safe way to build a 'Substitution' out of one: see
 -- 'nameMapToSubstitution'.
+--
+-- @since 0.4.0
 mapWithName :: (Name n -> a -> b) -> NameMap n a -> NameMap n b
 mapWithName f (NameMap m) = NameMap (IntMap.mapWithKey (f . UnsafeName) m)
 
 -- | Convert a 'NameMap' of expressions into a 'Substitution'.
+--
+-- @since 0.2.0
 nameMapToSubstitution :: NameMap i (e o) -> Substitution e i o
 nameMapToSubstitution (NameMap m) = (UnsafeSubstitution m)
 
 -- | Convert a 'NameMap' of expressions into a 'Scope'.
+--
+-- @since 0.3.0
 nameMapToScope :: NameMap n a -> Scope n
 nameMapToScope (NameMap m) = UnsafeScope (IntMap.keysSet m)
 
@@ -1515,6 +1764,8 @@ nameMapToScope (NameMap m) = UnsafeScope (IntMap.keysSet m)
 --
 -- Note that the input list is expected to have __at least__ the same number of elements
 -- as there are binders in the input pattern (generalized binder).
+--
+-- @since 0.2.0
 addNameBinders :: CoSinkable binder => binder n l -> [a] -> NameMap n a -> NameMap l a
 addNameBinders pat = addNameBinderList (nameBinderListOf pat)
 
@@ -1524,6 +1775,8 @@ addNameBinders pat = addNameBinderList (nameBinderListOf pat)
 -- as there are binders in the input name binder list.
 --
 -- See also 'addNameBinders' for a generalized version.
+--
+-- @since 0.2.0
 addNameBinderList :: NameBinderList n l -> [a] -> NameMap n a -> NameMap l a
 addNameBinderList NameBinderListEmpty _ = id
 addNameBinderList (NameBinderListCons binder binders) (x:xs) =
@@ -1533,6 +1786,8 @@ addNameBinderList _ [] = error "cannot add a binder to NameMap since the value l
 -- | Looking up a name should always succeed.
 --
 -- Note that since 'Name' is 'Sinkable', a name of scope @n@ can be looked up in a 'NameMap' for scope @l@ whenever @l@ extends @n@.
+--
+-- @since 0.0.1
 lookupName :: Name n -> NameMap n a -> a
 lookupName name (NameMap m) =
   case IntMap.lookup (nameId name) m of
@@ -1542,6 +1797,8 @@ lookupName name (NameMap m) =
 -- | Extending a map with a single mapping.
 --
 -- Note that the scope parameter of the result differs from the initial map.
+--
+-- @since 0.0.1
 addNameBinder :: NameBinder n l -> a -> NameMap n a -> NameMap l a
 addNameBinder name x (NameMap m) = NameMap (IntMap.insert (nameId (nameOf name)) x m)
 
@@ -1549,6 +1806,8 @@ addNameBinder name x (NameMap m) = NameMap (IntMap.insert (nameId (nameOf name))
 --
 -- This is the inverse of 'addNameBinder', and is what a type checker wants when
 -- it leaves a binder it has entered.
+--
+-- @since 0.3.1
 popNameBinder :: NameBinder n l -> NameMap l a -> NameMap n a
 popNameBinder binder (NameMap m) = NameMap (IntMap.delete (nameId (nameOf binder)) m)
 
@@ -1559,6 +1818,8 @@ popNameBinder binder (NameMap m) = NameMap (IntMap.delete (nameId (nameOf binder
 -- input list, and the extended map. This is the list-shaped counterpart of
 -- 'withFresh', and saves a caller from threading the scope, the binders, and the
 -- map through a recursion by hand.
+--
+-- @since 0.3.1
 withFreshNameBinderList
   :: forall n a r. Distinct n
   => [a]                  -- ^ A value to bind to each fresh binder.
@@ -1575,6 +1836,8 @@ withFreshNameBinderList = withFreshNameBinderListIn fullNameRange
 -- granularity, so both extend the scope index faithfully.
 --
 -- Fails with 'error' when the range is exhausted.
+--
+-- @since 0.4.0
 withFreshNameBinderListIn
   :: forall n a r. Distinct n
   => NameRange            -- ^ The reservation to allocate from.
@@ -1604,12 +1867,18 @@ withFreshNameBinderListIn range xs0 scope0 nameMap0 cont =
 -- * Raw types and operations
 
 -- | We will use 'Int' for efficient representation of identifiers.
+--
+-- @since 0.0.1
 type Id = Int
 
 -- | Raw name is simply an identifier.
+--
+-- @since 0.0.1
 type RawName = Id
 
 -- | A raw scope is a set of raw names.
+--
+-- @since 0.0.1
 type RawScope = IntSet
 
 -- | \(O(\min(n, W))\).
@@ -1624,6 +1893,8 @@ type RawScope = IntSet
 -- holds 'maxBound' is reported as exhausted rather than wrapped past,
 -- since the wrapped successor lands on an arbitrary small name that may
 -- well be taken.
+--
+-- @since 0.0.1
 rawFreshName :: RawScope -> RawName
 rawFreshName scope
   | IntSet.null scope = 0
@@ -1635,6 +1906,8 @@ rawFreshName scope
 --
 -- A range is a bound on an allocator (see 'withFreshIn'), not a set of names:
 -- its runtime content is two 'Int's. A range with @lo > hi@ is empty.
+--
+-- @since 0.4.0
 data NameRange = NameRange
   { nameRangeLo :: !RawName  -- ^ The smallest name of the reservation.
   , nameRangeHi :: !RawName  -- ^ The largest name of the reservation (inclusive).
@@ -1646,6 +1919,8 @@ data NameRange = NameRange
 -- agrees with 'rawFreshName'. The two diverge on a scope with negative
 -- members: 'rawFreshName' allocates right above the maximum, wherever that
 -- lands, while 'fullNameRange' clamps allocation to non-negative names.
+--
+-- @since 0.4.0
 fullNameRange :: NameRange
 fullNameRange = NameRange 0 maxBound
 
@@ -1670,6 +1945,8 @@ fullNameRange = NameRange 0 maxBound
 -- @'IntSet.lookupLT' (hi + 1)@ would wrap around at @hi = maxBound@, and
 -- @x + 1@ would wrap around at @x = hi = maxBound@. Both are guarded here,
 -- and the property tests pin both cases.
+--
+-- @since 0.4.0
 rawFreshNameIn :: NameRange -> RawScope -> Maybe RawName
 rawFreshNameIn (NameRange lo hi) scope
   | lo > hi   = Nothing
@@ -1678,6 +1955,8 @@ rawFreshNameIn (NameRange lo hi) scope
       _                -> Just lo
 
 -- | Check if a raw name is contained in a raw scope.
+--
+-- @since 0.0.1
 rawMember :: RawName -> RawScope -> Bool
 rawMember = IntSet.member
 
@@ -1688,6 +1967,8 @@ rawMember = IntSet.member
 -- __Important__: this class exists to assist tracking scope extensions
 -- for type variables of kind 'S'.
 -- Users of the foil are not supposed to implement any instances of 'ExtEndo'.
+--
+-- @since 0.0.1
 class ExtEndo (n :: S)
 
 -- | Some scopes are extensions of other scopes.
@@ -1695,6 +1976,8 @@ class ExtEndo (n :: S)
 -- __Important__: this class exists to assist tracking scope extensions
 -- for type variables of kind 'S'.
 -- Users of the foil are not supposed to implement any instances of 'Ext'.
+--
+-- @since 0.0.1
 class (ExtEndo n => ExtEndo l ) => Ext (n :: S) (l :: S)
 instance ( ExtEndo n => ExtEndo l ) => Ext n l
 
@@ -1703,26 +1986,47 @@ instance ( ExtEndo n => ExtEndo l ) => Ext n l
 -- __Important__: this class exists to explicitly
 -- mark scopes with distinct names.
 -- Users of the foil are not supposed to implement any instances of 'Distinct'.
+--
+-- @since 0.0.1
 class Distinct (n :: S)
 instance Distinct VoidS
 
 -- | Scope extensions with distinct names.
+--
+-- @since 0.0.1
 type DExt n l = (Distinct l, Ext n l)
 
 -- | Instances of this typeclass possess the ability to inject names.
 -- Usually, this is a variable data constructor.
+--
+-- @since 0.0.1
 class InjectName (e :: S -> Type) where
   -- | Inject names into expressions.
+  --
+  -- @since 0.0.1
   injectName :: Name n -> e n
 
 -- * Kind-polymorphic sinkability
 
+-- | One renaming per scope index of a kind-polymorphic type, which is what
+-- 'sinkabilityProofK' threads through a value.
+--
+-- @since 0.3.0
 data RenamingsK (as :: LoT k) (bs :: LoT k) where
   RNil :: RenamingsK LoT0 LoT0
   RCons :: (Name a -> Name b) -> RenamingsK as bs -> RenamingsK (a :&&: as) (b :&&: bs)
   RSkip :: RenamingsK as bs -> RenamingsK (k :&&: as) (k :&&: bs)
 
+-- | 'Sinkable' for a type with any number of scope indices, and the class a
+-- pattern derives to obtain the foil's traversals. An instance is normally
+-- empty, leaving the generic implementation to walk the
+-- 'Generics.Kind.RepK' of the type.
+--
+-- @since 0.3.0
 class SinkableK (f :: S -> k) where
+  -- | Rename every scope index of a value, in continuation-passing style.
+  --
+  -- @since 0.3.0
   sinkabilityProofK
     :: forall as bs r.
        RenamingsK as bs
@@ -1739,6 +2043,10 @@ class SinkableK (f :: S -> k) where
     gsinkabilityProofK rename (fromK @_ @f e) $ \rename' e' ->
       cont rename' (toK @_ @f e')
 
+-- | Move a value between two scope index lists reached from a common one, as
+-- a coercion.
+--
+-- @since 0.3.0
 sinkK :: GSinkableK f => RenamingsK xs as -> RenamingsK xs bs -> f :@@: as -> f :@@: bs
 sinkK _ _ = unsafeCoerce
 
@@ -1773,12 +2081,23 @@ instance SinkableK NameBinderList
 instance SinkableK V2
 instance SinkableK U2
 
+-- | 'sinkabilityProofK' at a type with exactly one scope index.
+--
+-- @since 0.3.0
 sinkabilityProof1 :: SinkableK f => (Name n -> Name n') -> f n -> f n'
 sinkabilityProof1 rename e = sinkabilityProofK (RCons rename RNil) e $ \_ e' -> unsafeCoerce e'
 
+-- | 'gsinkabilityProofK' at a representation with one scope index.
+--
+-- @since 0.3.0
 gsinkabilityProof1 :: GSinkableK f => (Name n -> Name n') -> f (n :&&: LoT0) -> f (n' :&&: LoT0)
 gsinkabilityProof1 rename e = gsinkabilityProofK (RCons rename RNil) e $ \_ e' -> unsafeCoerce e'
 
+-- | 'gsinkabilityProofK' at a representation with two scope indices, the
+-- shape of a pattern: the outer scope is renamed by the given function, and
+-- the inner one by the renaming handed to the continuation.
+--
+-- @since 0.3.0
 gsinkabilityProof2
   :: forall f n n' l r. GSinkableK f
   => (Name n -> Name n') -> f (n :&&: l :&&: LoT0)
@@ -1790,10 +2109,21 @@ gsinkabilityProof2 rename e cont =
       case unsafeCoerce (Type.Refl :: n' Type.:~: n') :: n' Type.:~: n'' of
         Type.Refl -> cont rename' e'
 
+-- | 'gsinkabilityProofK' where the resulting index list is known, so that no
+-- continuation is needed.
+--
+-- @since 0.3.0
 gsinkabilityProofK' :: GSinkableK f => RenamingsK as bs -> f as -> f bs
 gsinkabilityProofK' renameK e = gsinkabilityProofK renameK e $ \_ e' -> unsafeCoerce e'
 
+-- | 'SinkableK' on the "Generics.Kind" representation of a type, which is
+-- what the default 'sinkabilityProofK' goes through.
+--
+-- @since 0.3.0
 class GSinkableK p where
+  -- | Rename every scope index of a representation.
+  --
+  -- @since 0.3.0
   gsinkabilityProofK
     :: forall as bs r.
        RenamingsK as bs
@@ -1801,6 +2131,9 @@ class GSinkableK p where
     -> (forall cs. RenamingsK as cs -> p cs -> r)
     -> r
 
+-- | 'sinkK' on a representation.
+--
+-- @since 0.3.0
 gsinkK :: GSinkableK f => RenamingsK xs as -> RenamingsK xs bs -> f as -> f bs
 gsinkK _ _ = unsafeCoerce
 
@@ -1874,9 +2207,20 @@ instance SinkableK (f a b) => GSinkableK (Field (Kon f :@: Kon a :@: Kon b :@: V
     sinkabilityProofK irename x $ \rename' x' ->
       cont rename' (Field x')
 
+-- | Reading one scope index out of a list of them, and putting a renaming
+-- back at that position. This is what lets a generic traversal work on the
+-- index a field actually mentions.
+--
+-- @since 0.3.0
 class ExtractRenamingK (i :: TyVar k S) where
+  -- | The renaming at this index.
+  --
+  -- @since 0.3.0
   extractRenamingK :: forall (as :: LoT k) (bs :: LoT k).
     RenamingsK as bs -> Name (Interpret (Var i) as) -> Name (Interpret (Var i) bs)
+  -- | Replace the renaming at this index.
+  --
+  -- @since 0.3.0
   putBackRenamingK :: forall c (as :: LoT k) (bs :: LoT k).
        (Name (Interpret (Var i) as) -> Name c)
     -> RenamingsK as bs
@@ -1890,6 +2234,9 @@ instance ExtractRenamingK x => ExtractRenamingK (VS x) where
   extractRenamingK (RCons _f fs) = extractRenamingK @_ @x fs
   putBackRenamingK f (RCons g gs) = RCons g (putBackRenamingK @_ @x f gs)
 
+-- | 'extractRenamingK' at two indices at once, as a pattern's traversal needs.
+--
+-- @since 0.3.0
 extractTwoRenamingsK :: forall k (i :: TyVar k S) (j :: TyVar k S) (as :: LoT k) (bs :: LoT k).
     (ExtractRenamingK i, ExtractRenamingK j)
   => RenamingsK as bs
@@ -1899,6 +2246,9 @@ extractTwoRenamingsK :: forall k (i :: TyVar k S) (j :: TyVar k S) (as :: LoT k)
 extractTwoRenamingsK irename =
   (RCons (extractRenamingK @_ @i irename) (RCons (extractRenamingK @_ @j irename) RNil))
 
+-- | 'putBackRenamingK' at two indices at once.
+--
+-- @since 0.3.0
 putBackTwoRenamingsK :: forall k (i :: TyVar k S) (j :: TyVar k S) c1 c2 (as :: LoT k) (bs :: LoT k).
     (ExtractRenamingK i, ExtractRenamingK j)
   => RenamingsK
@@ -1937,6 +2287,8 @@ instance (Bifunctor f, GSinkableK (Field x), GSinkableK (Field y)) => GSinkableK
 -- | Generic generalized processing of a pattern via 'GHasNameBinders'.
 --
 -- This can be used as a default implementation of 'withPattern'.
+--
+-- @since 0.3.0
 gunsafeWithPatternViaHasNameBinders
   :: forall pattern f o n l r.
       (Distinct o, GenericK pattern, GValidNameBinders pattern (RepK pattern), GHasNameBinders (RepK pattern))
@@ -1961,8 +2313,12 @@ gunsafeWithPatternViaHasNameBinders withBinder id_ comp_ scope pat cont =
 -- | If @'HasNameBinders' f@, then @f n l@ is expected to act as a binder,
 -- introducing into scope @n@ some local variables, extending it to scope @l@.
 -- This class allows to extract and modify the set of binders.
+--
+-- @since 0.3.0
 class HasNameBinders f where
   -- | Extract a set of binders from a pattern.
+  --
+  -- @since 0.3.0
   getNameBinders :: f n l -> NameBinders n l
   getNameBinders = UnsafeNameBinders . IntSet.fromList . getNameBindersRaw
 
@@ -1973,10 +2329,14 @@ class HasNameBinders f where
   --
   -- You should probably not use this.
   -- This is only used for 'gunsafeWithPatternViaHasNameBinders', which is then safe to use.
+  --
+  -- @since 0.3.0
   unsafeSetNameBinders :: f n l -> NameBinders n l' -> f n l'
   unsafeSetNameBinders e (UnsafeNameBinders m) = fst (reallyUnsafeSetNameBindersRaw e (IntSet.toList m))
 
   -- | Extract 'RawName's of all binders occurring in a pattern.
+  --
+  -- @since 0.3.0
   getNameBindersRaw :: f n l -> [RawName]
   default getNameBindersRaw :: forall n l. (GenericK f, GHasNameBinders (RepK f)) => f n l -> [RawName]
   getNameBindersRaw = ggetNameBindersRaw . fromK @_ @f @(n :&&: l :&&: LoT0)
@@ -1989,6 +2349,8 @@ class HasNameBinders f where
   -- It does not check if the raw names given are distinct.
   --
   -- You should never use this. This is only used for generic implementation of 'HasNameBinders'.
+  --
+  -- @since 0.3.0
   reallyUnsafeSetNameBindersRaw :: f n l -> [RawName] -> (f n l', [RawName])
   default reallyUnsafeSetNameBindersRaw :: forall n l l'. (GenericK f, GValidNameBinders f (RepK f), GHasNameBinders (RepK f)) => f n l -> [RawName] -> (f n l', [RawName])
   reallyUnsafeSetNameBindersRaw e names =
@@ -2003,15 +2365,31 @@ instance HasNameBinders NameBinderList
 
 -- ** Generic
 
+-- | 'getNameBinders' through the generic representation.
+--
+-- @since 0.3.0
 ggetNameBinders :: forall f n l. (GenericK f, GHasNameBinders (RepK f)) => f n l -> NameBinders n l
 ggetNameBinders = UnsafeNameBinders . IntSet.fromList . ggetNameBindersRaw . fromK @_ @f @(n :&&: l :&&: LoT0)
 
+-- | 'unsafeSetNameBinders' through the generic representation.
+--
+-- @since 0.3.0
 gunsafeSetNameBinders :: forall f n l l'. (GenericK f, GValidNameBinders f (RepK f), GHasNameBinders (RepK f)) => f n l -> NameBinders n l' -> f n l'
 gunsafeSetNameBinders e (UnsafeNameBinders m) = toK @_ @f @(n :&&: l' :&&: LoT0) $
   fst (greallyUnsafeSetNameBindersRaw (fromK @_ @f @(n :&&: l :&&: LoT0) e) (IntSet.toList m))
 
+-- | 'HasNameBinders' on the "Generics.Kind" representation of a pattern.
+--
+-- @since 0.3.0
 class GHasNameBinders f where
+  -- | The raw names the representation binds, in order.
+  --
+  -- @since 0.3.0
   ggetNameBindersRaw :: f as -> [RawName]
+
+  -- | Replace those names, returning what is left of the list.
+  --
+  -- @since 0.3.0
   greallyUnsafeSetNameBindersRaw :: f as -> [RawName] -> (f bs, [RawName])
 
 instance GHasNameBinders V1 where
