@@ -391,9 +391,10 @@ isBindingFieldSort = \case
 -- | Does this raw payload type mention anything that converts to a
 -- scope-indexed type in the binding type (a term, a scoped term, an
 -- identifier, or a nested binding under a type constructor)? Such a payload
--- cannot be rebuilt by the generated 'Foil.CoSinkable' instance — rebuilding
--- it at another scope is what 'Foil.transportPayload' exists for — so we
--- refuse to derive, matching the GenericK-side refusal for derived patterns.
+-- cannot be rebuilt by the generated 'Foil.CoSinkable' instance, rebuilding it
+-- at another scope being what 'Foil.transportPayload' exists for. Generation
+-- refuses such a payload, matching the GenericK-side refusal for derived
+-- patterns.
 mentionsScopeIndexed :: FreeFoilConfig -> Type -> Bool
 mentionsScopeIndexed FreeFoilConfig{..} = go
   where

@@ -78,9 +78,9 @@ withVar
   -> Term' a n            -- ^ The type of the new variable.
   -> (forall l. Foil.DExt n l => Ctx a l -> Foil.Name l -> r)
   -> r
--- The variable is ephemeral — it exists only while the checker is under the
--- binder — so it is allocated with no reservation. Its raw name may land
--- inside some module's stripe; that is harmless, because it never enters a
+-- The variable is ephemeral, existing only while the checker is under the
+-- binder, so it is allocated with no reservation. Its raw name may land
+-- inside some module's stripe. That is harmless, because it never enters a
 -- module's scope and nothing about linking rests on term-internal names.
 withVar ctx ty cont = withVarBinder Foil.fullNameRange ctx ty $ \ctx' binder ->
   cont ctx' (Foil.nameOf binder)

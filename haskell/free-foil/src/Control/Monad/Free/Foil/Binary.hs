@@ -23,9 +23,9 @@
 -- bytes are meaningful only under the discipline of the layer that wrote
 -- them, and that layer is expected to validate what it can on the way in.
 -- In particular, it should resolve the references it made
--- world-independent, and check that the names it left verbatim lie where
--- its allocation policy says. The artifact module of @mltt@ in the
--- free-foil repository is the worked example.
+-- world-independent, and check that the names it left verbatim lie where its
+-- allocation policy says. "Control.Monad.Free.Foil.Artifact" supplies those
+-- checks.
 module Control.Monad.Free.Foil.Binary () where
 
 import           Data.Binary                 (Binary (..))
@@ -35,7 +35,7 @@ import           Data.Binary.Put             (putWord8)
 import           Control.Monad.Foil.Internal
 import           Control.Monad.Free.Foil     (AST (..), ScopedAST (..))
 
--- | The raw id and nothing else; see the module documentation for what
+-- | The raw id and nothing else. See the module documentation for what
 -- decoding trusts.
 instance Binary (Name n) where
   put (UnsafeName raw) = put raw
@@ -53,7 +53,7 @@ instance Binary NameRange where
   get = NameRange <$> get <*> get
 
 -- | The binder and the body, one after the other. Decoding mints the scope
--- under the binder; see the module documentation.
+-- under the binder. See the module documentation.
 instance (forall x y. Binary (binder x y), forall l. Binary (AST binder sig l))
     => Binary (ScopedAST binder sig n) where
   put (ScopedAST binder body) = put binder <> put body

@@ -11,8 +11,8 @@
 -- Since the representation of scopes and substitutions
 -- is either 'IntMap' or 'IntSet', many of the operations
 -- have a worst-case complexity of \(O(\min(n,W))\).
--- This means that the operation can become linear in the size of the scope \(n\) with a maximum of \(W\)
--- — the number of bits in an 'Int' (32 or 64).
+-- This means that the operation can become linear in the size of the scope \(n\) with a
+-- maximum of \(W\), the number of bits in an 'Int' (32 or 64).
 module Control.Monad.Foil (
   -- * Safe scopes, names, and binders
   S(..),

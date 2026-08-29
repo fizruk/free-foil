@@ -9,7 +9,7 @@
 -- elaborator wants to hand back, and this module never looks inside it.
 --
 -- The practical consequence for this demo is that restricting what a client can
--- name — @private@, and what an @import@ brings in — is a computation on
+-- name (@private@, and what an @import@ brings in) is a computation on
 -- 'Table' alone. It never touches a term, so a private helper stays perfectly
 -- reducible while being unnameable. That is the distinction between what can be
 -- /named/ and what can be /reduced/, and it is why narrowing needs no support
@@ -155,7 +155,7 @@ data Visibility
   = Public
     -- ^ Exported: an importing module may name it.
   | Private
-    -- ^ Not exported. An importing module cannot /name/ it — and can still
+    -- ^ Not exported. An importing module cannot /name/ it, and can still
     -- /reduce/ through it, since withholding a spelling touches no term.
   deriving (Eq, Show, Read, Generic)
 

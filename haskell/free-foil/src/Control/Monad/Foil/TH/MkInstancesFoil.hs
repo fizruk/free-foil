@@ -170,7 +170,7 @@ deriveCoSinkable nameT patternT = do
 -- | Generate a structural 'Foil.UnifiablePattern' instance, comparing
 -- constructors and non-binding fields rather than only the binders.
 --
--- This deriver does not work and has no call sites; see the deprecation note.
+-- This deriver does not work and has no call sites. See the deprecation note.
 deriveUnifiablePattern
   :: Name -- ^ Type name for raw variable identifiers.
   -> Name -- ^ Type name for raw patterns.

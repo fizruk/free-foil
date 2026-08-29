@@ -6,11 +6,11 @@
 -- come from "GHC.Generics". What the deriver writes is the shape one would
 -- write by hand: one tag byte per constructor in declaration order, then
 -- the fields in order. Decoding happens /at the diagonal/, with every
--- scope index of a constructor instantiated to the same variable, which
--- any chain of binder indices admits; a single coercion then moves the
--- result to the requested indices. The coercion mints scope evidence, so a
--- derived instance is part of the same trust boundary as the library's
--- own; see the module documentation of "Control.Monad.Free.Foil.Binary".
+-- scope index of a constructor instantiated to the same variable, which any
+-- chain of binder indices admits. A single coercion then moves the result to
+-- the requested indices. That coercion mints scope evidence, so a derived
+-- instance is part of the same trust boundary as the library's own. See the
+-- module documentation of "Control.Monad.Free.Foil.Binary".
 module Control.Monad.Free.Foil.Binary.TH (deriveBinaryPattern) where
 
 import           Control.Monad       (unless, zipWithM)
