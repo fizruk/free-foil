@@ -2457,8 +2457,28 @@ gunsafeWithPatternViaHasNameBinders
   -- ^ Continuation, accepting the result for the entire pattern, a (possibly refreshed) pattern, and the scope extended by that pattern.
   -> r
 gunsafeWithPatternViaHasNameBinders withBinder id_ comp_ scope pat cont =
-  withPattern withBinder id_ comp_ scope (ggetNameBinders pat) $ \result binders scope' ->
-    cont result (gunsafeSetNameBinders (unsafeCoerce pat) binders) scope' -- FIXME: safer version
+  withPattern withBinder id_ comp_ scope (unsafeNameBinderListFromRaw raw) $ \result binders scope' ->
+    cont result (gunsafeSetNameBinderList (unsafeCoerce pat) binders) scope' -- FIXME: safer version
+  where
+    -- The binders in the order of the pattern. Going through 'NameBinders'
+    -- instead would visit them in ascending order of their names and put them
+    -- back in that order, which moves a binder to another position whenever
+    -- the names of the pattern do not ascend.
+    raw = ggetNameBindersRaw (fromK @_ @pattern @(n :&&: l :&&: LoT0) pat)
+
+-- | The binders of a pattern, in the order of the pattern, from their raw names.
+unsafeNameBinderListFromRaw :: [RawName] -> NameBinderList n l
+unsafeNameBinderListFromRaw []       = unsafeCoerce NameBinderListEmpty
+unsafeNameBinderListFromRaw (x : xs) =
+  NameBinderListCons (UnsafeNameBinder (UnsafeName x)) (unsafeNameBinderListFromRaw xs)
+
+-- | Replace the binders of a pattern by position, the first binder of the
+-- list going to the first binder of the pattern, and so on.
+gunsafeSetNameBinderList
+  :: forall f n l l'. (GenericK f, GValidNameBinders f (RepK f), GHasNameBinders (RepK f))
+  => f n l -> NameBinderList n l' -> f n l'
+gunsafeSetNameBinderList e binders = toK @_ @f @(n :&&: l' :&&: LoT0) $
+  fst (greallyUnsafeSetNameBindersRaw (fromK @_ @f @(n :&&: l :&&: LoT0) e) (rawNameBinderList binders))
 
 -- ** Manipulating nested 'NameBinder's
 -- | If @'HasNameBinders' f@, then @f n l@ is expected to act as a binder,

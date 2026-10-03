@@ -11,6 +11,8 @@ Fixes:
   - `Telescope`, the instance that `deriveUnifiablePattern` generates, and `Impl.Foil` in `lambda-pi` compare the shapes of the two patterns and then pair their binders with `unifyPatternBinders`.
   - `andThenUnifyPatterns` and `andThenUnifyNameBinders` no longer compose renamings. A chain of verdicts can still choose one name for two binders, which cannot be repaired without the scope, and it now answers `NotUnifiable` in that case instead of a wrong verdict. `andThenUnifyNameBinders` first tries the other direction for the new pair, which always succeeds for a chain of two.
 
+- The generic `withPattern`, the default for a pattern type that derives `HasNameBinders`, keeps each binder of a pattern at its position. It went through `NameBinders`, which is a set, so it visited the binders in ascending order of their names and put them back in that order. A pattern whose names do not ascend had its binders permuted, which changes the meaning of the term it binds in. `substitute`, `liftRM` and `refreshAST` produce such patterns themselves, since a refreshed binder gets a name larger than those of the binders after it. In `Impl.FreeFoilTH` of `lambda-pi`, `liftRM` along the identity turned `λ (x8, x4). x4` into the first projection. Everything built on `withPattern` inherited the order, including `nameBinderListOf`, `addSubstPattern`, the default `unifyPatterns` and `alphaEquivRefreshed`. The instances that `mkFreeFoil` generates were not affected.
+
 # 0.4.0 — 2026-08-29
 
 A release about *units*: checking a module independently of its neighbours, linking the results without renaming, and storing a checked one on disk. Scope restriction, a family of $O(1)$ sinks, and a linear α-equivalence rename path come with it.
