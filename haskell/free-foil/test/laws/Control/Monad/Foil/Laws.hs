@@ -7,7 +7,12 @@
 -- | Generators and law statements for the foil: scopes, renamings between
 -- them, and the laws of 'Sinkable' and 'CoSinkable'.
 --
--- The laws are those of @MAP-categorical-framework.md@ (§2, §5, §9.6).
+-- The laws are stated for inclusions of scopes, which is what sinking needs.
+-- 'sinkabilityProof' and 'coSinkabilityProof' quantify over all renamings,
+-- but they are typing witnesses for 'sink' (Maclaurin, Radul and Paszke,
+-- "The Foil", §3.3 and §3.5), and the instances for binders return the
+-- identity on raw names as the renaming under a binder. So they compute the
+-- right action on inclusions only, where it is 'sink'.
 --
 -- 1. 'Sinkable' @e@ is a functor from scopes to sets, with
 --    'sinkabilityProof' its action on renamings.
@@ -27,9 +32,9 @@
 -- 'Control.Monad.Free.Foil.alphaEquiv' does.)
 --
 -- Renamings are generated in three classes, so that a law can be checked
--- separately over each candidate base category of §9.2 of the map:
--- inclusions ('sink', i.e. thinnings), injective renamings, and arbitrary
--- renamings.
+-- separately over each class: inclusions ('sink', i.e. thinnings),
+-- injective renamings, and arbitrary renamings. A law that holds on
+-- inclusions only is pinned as a known failure on the other two classes.
 module Control.Monad.Foil.Laws (
   -- * Scopes
   Ctx (..),
@@ -311,8 +316,8 @@ genInjection from to = do
   targets <- shuffle (ctxNames to)
   pure (Renaming (IntMap.fromList (zip (map nameId (ctxNames from)) targets)))
 
--- | The three classes of renamings, i.e. the three candidate base
--- categories of §9.2 of the map.
+-- | The three classes of renamings over which a law is checked, each
+-- contained in the next.
 data RenamingClass
   = Inclusions  -- ^ Thinnings: the identity on raw names, as 'sink' does.
   | Injections  -- ^ Injective renamings (the category \(\mathbb{I}\)).
@@ -390,7 +395,7 @@ data SinkableLaws e = SinkableLaws
     -- | @sinkabilityProof (g . f) = sinkabilityProof g . sinkabilityProof f@.
   , sinkComposition :: forall n l k. Ctx k -> Renaming n l -> Renaming l k -> e n -> Property
     -- | On an inclusion, @sinkabilityProof sink = sink@: the coercion that
-    -- 'sink' performs is the action of the functor (§2 of the map).
+    -- 'sink' performs is the action of the functor.
   , sinkInclusion   :: forall n l. Includes n l -> Ctx l -> e n -> Property
   }
 
@@ -477,9 +482,10 @@ genPatternCase genPat cls = do
   PatIn pat <- genPat n
   pure (PatternCase chain pat)
 
--- | The laws of 'coSinkabilityProof', reading a pattern type as a span
--- (§5 of the map). Each law is stated on a pattern @p : n → i@ and the
--- renamings @f : n → l@ and @g : l → k@ of a 'PatternCase'. Write
+-- | The laws of 'coSinkabilityProof', reading a pattern type as a span of
+-- scopes, from the scope a pattern extends to the scope it introduces. Each
+-- law is stated on a pattern @p : n → i@ and the renamings @f : n → l@ and
+-- @g : l → k@ of a 'PatternCase'. Write
 -- @(f', p')@ for the result of @coSinkabilityProof f p@: the extended
 -- renaming @f' : i → i'@ and the pushed pattern @p' : l → i'@.
 data CoSinkableLaws p = CoSinkableLaws
@@ -489,10 +495,9 @@ data CoSinkableLaws p = CoSinkableLaws
     -- pushed patterns agree and the extended renamings compose.
   , coSinkComposition :: PatternCase p -> Property
     -- | The extended renaming extends @f@: @f' (sink x) = f x@ for every
-    -- name @x@ of @n@, i.e. the square of scopes commutes. The map does not
-    -- spell this out, but it is what makes @(f, f')@ a morphism of spans,
-    -- and the documentation of 'coSinkabilityProof' calls @f'@ an
-    -- /extended/ renaming.
+    -- name @x@ of @n@, i.e. the square of scopes commutes. This is what
+    -- makes @(f, f')@ a morphism of spans, and the documentation of
+    -- 'coSinkabilityProof' calls @f'@ an /extended/ renaming.
   , coSinkExtension   :: PatternCase p -> Property
     -- | The extended renaming sends the binders of @p@ to the binders of
     -- @p'@, in order.
@@ -599,7 +604,7 @@ genNameBinderListPair ctx = withCtx ctx $ \scope -> do
 -- pairs their binders position by position: the renamings it prescribes
 -- send the @j@-th binder of each side to one and the same name, and
 -- distinct positions to distinct names. This is the reading of
--- 'UnifiablePattern' as equality in the quotient of §4 and §5 of the map
+-- 'UnifiablePattern' as equality of patterns up to renaming of their binders
 -- (the default instance compares "the number and order of binders").
 unifyPatternsLaw :: UnifiablePattern p => PatternNames p -> Ctx n -> PatPair p n -> Property
 unifyPatternsLaw binders ctx (PatPair l r) = withCtx ctx $ \scope ->

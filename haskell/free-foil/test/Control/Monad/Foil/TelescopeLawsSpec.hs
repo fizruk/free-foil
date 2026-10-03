@@ -7,7 +7,7 @@
 -- | The laws of "Control.Monad.Foil.Laws" for telescopes, the patterns that
 -- carry payloads, and one more law that only such patterns have:
 -- refreshing a telescope transports its payloads along the refreshed
--- binders ('Foil.PatternTransport', §5 of the categorical map).
+-- binders ('Foil.PatternTransport').
 --
 -- Payloads are either names or terms of the λ-calculus of
 -- "Control.Monad.Free.Foil.Example".

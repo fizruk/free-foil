@@ -6,8 +6,9 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- | Generators of scope-safe terms of any free foil signature, and the laws
--- of the relative monad @'AST' binder sig@ (§3 of
--- @MAP-categorical-framework.md@).
+-- of the relative monad @'AST' binder sig@ on 'Name', in the sense of
+-- Altenkirch, Chapman and Uustalu, with unit 'Var' and bind 'substitute'
+-- (and 'rbind').
 --
 -- A language plugs in with a 'SyntaxGen': the shapes of its nodes (with
 -- @()@ in place of subterms), a generator of its patterns, and a printer
