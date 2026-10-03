@@ -192,9 +192,8 @@ deriveUnifiablePattern
   \hand-written pattern GADT. Instead, derive GenericK and take an empty \
   \instance (see Control.Monad.Foil), or write the instance by hand as \
   \Language.LambdaPi.Impl.Foil does. Note that the empty instance compares \
-  \only the binders; see UnifiablePattern. Structural derivation is tracked \
-  \in https://github.com/fizruk/free-foil/issues/23. To be removed in the \
-  \next major release." #-}
+  \constructors and binders but not non-binding fields; see \
+  \UnifiablePattern. To be removed in the next major release." #-}
 deriveUnifiablePattern nameT patternT = do
   TyConI (DataD _ctx _name patternTVars _kind patternCons _deriv) <- reify patternT
 

@@ -901,7 +901,7 @@ unsafeOverrideBinderRenaming outer inner binder
 -- patterns: when two of its verdicts choose the same unified name for
 -- different binders, the chain answers 'NotUnifiable' (see
 -- 'unsafeMergeUnifyBinders'). To unify patterns of several binders, compare
--- their shapes and then use 'unifyPatternBinders'.
+-- their shapes and then use 'unifyPatternBinders', as 'gunifyPatterns' does.
 --
 -- @since 0.1.0
 andThenUnifyPatterns
@@ -1153,8 +1153,9 @@ instance UnifiablePattern U2 where
 -- | A pattern type is unifiable if it is possible to match two
 -- patterns and decide how to rename binders.
 --
--- Note that the default implementation compares patterns only up to their
--- binders. See 'unifyPatterns' for what that does and does not distinguish.
+-- Note that the default implementation compares the constructors of two
+-- patterns and their binders, but not their non-binding fields. See
+-- 'unifyPatterns' for what that does and does not distinguish.
 --
 -- @since 0.0.1
 class CoSinkable pattern => UnifiablePattern pattern where
@@ -1163,34 +1164,35 @@ class CoSinkable pattern => UnifiablePattern pattern where
   -- @since 0.1.0
   unifyPatterns :: Distinct n => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
 
-  -- | The default implementation flattens both patterns to their binders (via
-  -- 'nameBinderListOf') and unifies the resulting 'NameBinderList's, which is
-  -- 'unifyPatternBinders'. It therefore compares only the /number and order/ of
-  -- binders, and ignores
+  -- | The default implementation is 'gunifyPatterns', which compares two
+  -- patterns through their "Generics.Kind" representation. They unify when
+  -- they consist of the same constructors, nested in the same way, and their
+  -- binders are then paired in order by 'unifyPatternBinders'. So @(x, _)@ and
+  -- @(_, y)@ do not unify, although each binds one name: the first one binds
+  -- the first component of a pair and the second one the second. Since
+  -- α-equivalence is defined in terms of 'unifyPatterns', terms that differ in
+  -- the shape of a pattern are not α-equivalent.
   --
-  -- * the constructor, so two patterns built from /different/ constructors with
-  --   the same number of binders unify;
-  -- * non-binding fields (locations, sorts, literals), whatever their values;
-  -- * the nesting of sub-patterns, so @(x, (y, z))@ unifies with @((x, y), z)@.
+  -- The default ignores non-binding fields (locations, sorts, literals),
+  -- whatever their values. A pattern that carries semantically relevant data
+  -- in such a field needs the instance written by hand. Use
+  -- 'UnifiableInPattern' to compare non-binding fields, which also lets an
+  -- instance ignore some of them deliberately, as a generated instance does
+  -- for BNFC source positions.
   --
-  -- For most languages this is the intended notion of α-equivalence: what the
-  -- body of a binding construct can refer to is precisely the pattern's binders,
-  -- in order. Since α-equivalence is defined in terms of 'unifyPatterns', this
-  -- also means that terms differing only in such a pattern are α-equivalent.
-  --
-  -- A pattern that carries semantically relevant data needs the instance
-  -- written by hand instead. Use 'UnifiableInPattern' to compare non-binding
-  -- fields, which also lets an instance ignore some of them deliberately, as a
-  -- generated instance does for BNFC source positions.
+  -- A pattern type without a 'GenericK' instance, or one whose binders are all
+  -- that it means, can take @unifyPatterns = 'unifyPatternBinders'@, which
+  -- compares only the number and order of binders. Up to version 0.4.0, that
+  -- was the default.
   --
   -- A field that is /scope-indexed/, such as a telescope step's type, cannot be
   -- compared here at all, since comparing it up to α needs the ambient scope
   -- and this method is given only 'Distinct'. Write 'unifyPatternsIn' for that,
   -- and leave this one as the binder-only approximation.
   default unifyPatterns
-    :: (CoSinkable pattern, Distinct n)
+    :: (GenericK pattern, GUnifiablePattern (RepK pattern), Distinct n)
     => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
-  unifyPatterns = unifyPatternBinders
+  unifyPatterns = gunifyPatterns
 
   -- | Unify two patterns with the ambient scope at hand.
   --
@@ -1229,8 +1231,9 @@ instance UnifiablePattern NameBinderList where
   unifyPatterns l r
     -- Lists of different lengths are not unifiable. This case is reachable
     -- whenever a language has patterns that bind different numbers of names
-    -- (a wildcard and a variable, say), since the default 'unifyPatterns'
-    -- flattens every pattern to a 'NameBinderList'.
+    -- (a wildcard and a variable, say), since 'unifyPatternBinders', which
+    -- the default 'unifyPatterns' ends in, flattens every pattern to a
+    -- 'NameBinderList'.
     | Prelude.length ls /= Prelude.length rs = NotUnifiable
     | ls == rs  = unsafeCoerce (SameNameBinders (fromNameBindersList l))
     | otherwise = RenameRightNameBinder (fromNameBindersList l) rename
@@ -1295,7 +1298,12 @@ unsafeEqPattern l r =
 -- Nothing but the binders is compared, so this is the right verdict for two
 -- patterns once the rest of them (constructors, nesting, non-binding fields)
 -- is known to agree. A hand-written 'unifyPatterns' can compare that rest and
--- then call this. On its own, it is the default 'unifyPatterns'.
+-- then call this, as the default 'gunifyPatterns' does. On its own, it is the
+-- 'unifyPatterns' for a pattern whose binders are all that it means (and up
+-- to version 0.4.0, it was the default):
+--
+-- > instance UnifiablePattern MyPattern where
+-- >   unifyPatterns = unifyPatternBinders
 unifyPatternBinders
   :: (CoSinkable pattern, Distinct n)
   => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
@@ -1313,6 +1321,86 @@ unsafeUnifiablePatterns l r =
   case unifyPatterns @pattern @VoidS (unsafeCoerce l) (unsafeCoerce r) of
     NotUnifiable -> False
     _            -> True
+
+-- ** Structural unification of patterns
+
+-- | Unify two patterns structurally, through their "Generics.Kind"
+-- representation. They unify when they consist of the same constructors,
+-- nested in the same way, and their binders are then paired in order by
+-- 'unifyPatternBinders'.
+--
+-- This is the default 'unifyPatterns', so a pattern type that derives
+-- 'GenericK' gets it from an empty instance. It matters for a pattern whose
+-- shape means something, such as a pair pattern: @(x, _)@ and @(_, y)@ bind
+-- one name each, but from different components, and 'unifyPatternBinders',
+-- which compares only the binders, unifies them.
+--
+-- Note what is not compared:
+--
+-- * non-binding fields (source positions, labels, literals). A pattern whose
+--   non-binding fields matter needs 'unifyPatterns' written by hand,
+--   comparing them with 'UnifiableInPattern';
+-- * fields indexed by a scope (payloads), which need the scope and are what
+--   'unifyPatternsIn' is for.
+--
+-- A sub-pattern is compared with its own 'unifyPatterns', so its type needs a
+-- 'UnifiablePattern' instance, which a recursive pattern type has already.
+gunifyPatterns
+  :: forall pattern n l r.
+     (GenericK pattern, GUnifiablePattern (RepK pattern), CoSinkable pattern, Distinct n)
+  => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
+gunifyPatterns l r
+  | gsamePatternShape (fromK @_ @pattern @(n :&&: l :&&: LoT0) l)
+                      (fromK @_ @pattern @(n :&&: r :&&: LoT0) r)
+              = unifyPatternBinders l r
+  | otherwise = NotUnifiable
+
+-- | The shape of a pattern on its "Generics.Kind" representation, which is
+-- what 'gunifyPatterns' compares.
+class GUnifiablePattern f where
+  -- | Do two values consist of the same constructors, nested in the same way?
+  gsamePatternShape :: f as -> f bs -> Bool
+
+instance GUnifiablePattern V1 where
+  gsamePatternShape _ _ = True
+
+instance GUnifiablePattern U1 where
+  gsamePatternShape U1 U1 = True
+
+instance GUnifiablePattern f => GUnifiablePattern (M1 i c f) where
+  gsamePatternShape (M1 x) (M1 y) = gsamePatternShape x y
+
+instance (GUnifiablePattern f, GUnifiablePattern g) => GUnifiablePattern (f :+: g) where
+  gsamePatternShape (L1 x) (L1 y) = gsamePatternShape x y
+  gsamePatternShape (R1 x) (R1 y) = gsamePatternShape x y
+  gsamePatternShape _      _      = False
+
+instance (GUnifiablePattern f, GUnifiablePattern g) => GUnifiablePattern (f :*: g) where
+  gsamePatternShape (x :*: y) (x' :*: y') = gsamePatternShape x x' && gsamePatternShape y y'
+
+instance GUnifiablePattern f => GUnifiablePattern (c :=>: f) where
+  gsamePatternShape (SuchThat x) (SuchThat y) = gsamePatternShape x y
+
+instance GUnifiablePattern f => GUnifiablePattern (Exists k f) where
+  gsamePatternShape (Exists x) (Exists y) = gsamePatternShape x y
+
+-- | A non-binding field is ignored.
+instance GUnifiablePattern (Field (Kon a)) where
+  gsamePatternShape _ _ = True
+
+-- | A non-binding field is ignored.
+instance GUnifiablePattern (Field (Var x)) where
+  gsamePatternShape _ _ = True
+
+-- | A field indexed by one scope is a payload, and comparing it needs the
+-- scope (see 'unifyPatternsIn'), so it is ignored here.
+instance GUnifiablePattern (Field (Kon f :@: Var i)) where
+  gsamePatternShape _ _ = True
+
+-- | A binder or a sub-pattern is compared with its own 'unifyPatterns'. Two
+-- binders always unify.
+instance UnifiablePattern f => GUnifiablePattern (Field (Kon f :@: Var i :@: Var j)) where
+  gsamePatternShape (Field x) (Field y) = unsafeUnifiablePatterns x y
 
 -- * Safe sinking
 
