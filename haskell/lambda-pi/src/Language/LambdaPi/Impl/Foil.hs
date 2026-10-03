@@ -117,12 +117,23 @@ instance CoSinkable Pattern where
         withPattern withNameBinder id' combine scope' r $ \fr r' scope'' ->
               cont (combine fl fr) (PatternPair l' r') scope''
 
+-- | Two patterns unify when they have the same shape. Their binders are then
+-- paired in order by 'unifyPatternBinders'.
+--
+-- The shape matters: @(x, _)@ and @(_, y)@ bind one name each, but the first
+-- one binds the first component of a pair and the second one the second.
 instance UnifiablePattern Pattern where
-  unifyPatterns PatternWildcard PatternWildcard = SameNameBinders emptyNameBinders
-  unifyPatterns (PatternVar x) (PatternVar x') = unifyNameBinders x x'
-  unifyPatterns (PatternPair l r) (PatternPair l' r') = case (assertDistinct l, assertDistinct l') of
-    (Distinct, Distinct) -> unifyPatterns l l' `andThenUnifyPatterns` (r, r')
-  unifyPatterns _ _ = NotUnifiable
+  unifyPatterns l r
+    | samePatternShape l r = unifyPatternBinders l r
+    | otherwise            = NotUnifiable
+
+-- | Do two patterns consist of the same constructors, nested in the same way?
+samePatternShape :: Pattern n l -> Pattern n' l' -> Bool
+samePatternShape PatternWildcard PatternWildcard = True
+samePatternShape (PatternVar _) (PatternVar _) = True
+samePatternShape (PatternPair l r) (PatternPair l' r') =
+  samePatternShape l l' && samePatternShape r r'
+samePatternShape _ _ = False
 
 instance InjectName Expr where
   injectName = VarE

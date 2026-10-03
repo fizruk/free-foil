@@ -26,6 +26,7 @@ module Control.Monad.Foil.Telescope where
 
 import           Control.Monad.Foil.Internal
 import           Control.Monad.Foil.Relative (RelMonad, liftRM)
+import           Data.Coerce                 (coerce)
 
 -- | A labelled telescope: a chain of binders, each carrying a label and a
 -- payload in the scope before it.
@@ -112,14 +113,11 @@ instance Sinkable e => CoSinkable (Telescope label e) where
 -- it is what the library's α-equivalence calls.
 instance (Sinkable e, AlphaEquiv e, RelMonad Name e)
     => UnifiablePattern (Telescope label e) where
-  unifyPatterns TelescopeEmpty TelescopeEmpty =
-    SameNameBinders emptyNameBinders
-  unifyPatterns (TelescopeCons _ _ x xs) (TelescopeCons _ _ y ys) =
-    case (assertDistinct x, assertDistinct y) of
-      (Distinct, Distinct) ->
-        unifyNameBinders x y `andThenUnifyPatterns` (xs, ys)
-  -- Telescopes of different lengths bind different numbers of names.
-  unifyPatterns _ _ = NotUnifiable
+  -- The shape of a telescope is its length, so its binders are all there is to
+  -- compare. They are paired in order, as 'unifyPatternBinders' does, and
+  -- telescopes of different lengths do not unify.
+  unifyPatterns tele1 tele2 =
+    coerce (unifyPatterns (telescopeBinders tele1) (telescopeBinders tele2))
 
   unifyPatternsIn scope tele1 tele2
     | payloadsAgree scope tele1 tele2 verdict = verdict

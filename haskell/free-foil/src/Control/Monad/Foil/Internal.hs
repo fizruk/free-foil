@@ -778,6 +778,12 @@ data UnifyNameBinders (pattern :: S -> S -> Type) n l r where
 -- always grow with depth: a term built in a small scope keeps its small binder
 -- names when 'sink' places it in a larger one.
 --
+-- The direction is a convention for a single pair of binders. Patterns of
+-- several binders are unified by 'unifyPatternBinders', which renames the
+-- binders of the right pattern to those of the left one, since choosing the
+-- smaller name pair by pair can send two binders of one pattern to the same
+-- name.
+--
 -- @since 0.0.3
 unifyNameBinders
   :: forall i l r pattern. Distinct i
@@ -795,41 +801,107 @@ unifyNameBinders l@(UnsafeNameBinder (UnsafeName i1)) r@(UnsafeNameBinder (Unsaf
 -- | Unsafely merge results of unification for nested binders/patterns.
 -- Used in 'andThenUnifyPatterns'.
 --
+-- Each verdict renames only its own binders, so the merged renaming of a
+-- binder is the one of the verdict that binder belongs to (see
+-- 'unsafeOverrideBinderRenaming'). Composing the two renamings instead would
+-- send a binder through both of them, collapsing a chain such as @x2 ↦ x1@
+-- followed by @x1 ↦ x0@.
+--
+-- The two verdicts choose their unified names independently, so they may
+-- choose the same name for different binders. For @[x0 x1]@ against
+-- @[x1 x0]@, the first pair is unified as @x0@ by renaming the right @x1@,
+-- and the second one also as @x0@, by renaming the left @x1@. Such a merge
+-- would identify two binders of one pattern, and repairing it needs a name
+-- that is fresh for the scope, which is not at hand here. So the result is
+-- then 'NotUnifiable', which errs on the side of telling two patterns apart.
+-- 'unifyPatternBinders' unifies a whole pattern at once and has no such case.
+--
 -- @since 0.1.0
 unsafeMergeUnifyBinders :: UnifyNameBinders pattern a a' a'' -> UnifyNameBinders pattern a''' b' b'' -> UnifyNameBinders pattern a b' b''
-unsafeMergeUnifyBinders = \case
+unsafeMergeUnifyBinders outer inner =
+  case unsafeTryMergeUnifyBinders outer inner of
+    Just merged -> merged
+    Nothing     -> NotUnifiable
 
-  SameNameBinders x -> \case
-    SameNameBinders y -> SameNameBinders (x `unsafeMergeNameBinders` y)
-    RenameLeftNameBinder y f -> RenameLeftNameBinder (x `unsafeMergeNameBinders` y) (unsafeCoerce f)
-    RenameRightNameBinder y g -> RenameRightNameBinder (x `unsafeMergeNameBinders` y) (unsafeCoerce g)
-    RenameBothBinders y f g -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeCoerce f) (unsafeCoerce g)
-    NotUnifiable -> NotUnifiable
+-- | 'unsafeMergeUnifyBinders', or 'Nothing' if the two verdicts chose the
+-- same unified name for different binders.
+--
+-- The unified names of a verdict are those of the 'NameBinders' it carries,
+-- one for each of its positions. So two verdicts choose the same name for
+-- different binders exactly when these sets intersect.
+unsafeTryMergeUnifyBinders :: UnifyNameBinders pattern a a' a'' -> UnifyNameBinders pattern a''' b' b'' -> Maybe (UnifyNameBinders pattern a b' b'')
+unsafeTryMergeUnifyBinders outer inner
+  | collide (unifiedRawNames outer) (unifiedRawNames inner) = Nothing
+  | otherwise = Just (merge outer inner)
+  where
+    collide (Just xs) (Just ys) = not (IntSet.disjoint xs ys)
+    collide _ _                 = False
 
-  RenameLeftNameBinder x f -> \case
-    SameNameBinders y -> RenameLeftNameBinder (x `unsafeMergeNameBinders` y) (unsafeCoerce f)
-    RenameLeftNameBinder y g -> RenameLeftNameBinder (x `unsafeMergeNameBinders` y) (unsafeCoerce f . unsafeCoerce g)
-    RenameRightNameBinder y g -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeCoerce f) (unsafeCoerce g)
-    RenameBothBinders y f' g -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeCoerce f . unsafeCoerce f') (unsafeCoerce g)
-    NotUnifiable -> NotUnifiable
+    unifiedRawNames :: UnifyNameBinders pattern n l r -> Maybe IntSet
+    unifiedRawNames = \case
+      SameNameBinders (UnsafeNameBinders xs)         -> Just xs
+      RenameLeftNameBinder (UnsafeNameBinders xs) _  -> Just xs
+      RenameRightNameBinder (UnsafeNameBinders xs) _ -> Just xs
+      RenameBothBinders (UnsafeNameBinders xs) _ _   -> Just xs
+      NotUnifiable                                   -> Nothing
 
-  RenameRightNameBinder x g -> \case
-    SameNameBinders y -> RenameRightNameBinder (x `unsafeMergeNameBinders` y) (unsafeCoerce g)
-    RenameLeftNameBinder y f -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeCoerce f) (unsafeCoerce g)
-    RenameRightNameBinder y g' -> RenameRightNameBinder (x `unsafeMergeNameBinders` y) (unsafeCoerce g . unsafeCoerce g')
-    RenameBothBinders y f g' -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeCoerce f) (unsafeCoerce g . unsafeCoerce g')
-    NotUnifiable -> NotUnifiable
+    merge :: UnifyNameBinders pattern a a' a'' -> UnifyNameBinders pattern a''' b' b'' -> UnifyNameBinders pattern a b' b''
+    merge = \case
 
-  RenameBothBinders x f g -> \case
-    SameNameBinders y -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeCoerce f) (unsafeCoerce g)
-    RenameLeftNameBinder y f' -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeCoerce f . unsafeCoerce f') (unsafeCoerce g)
-    RenameRightNameBinder y g' -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeCoerce f) (unsafeCoerce g . unsafeCoerce g')
-    RenameBothBinders y f' g' -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeCoerce f . unsafeCoerce f') (unsafeCoerce g . unsafeCoerce g')
-    NotUnifiable -> NotUnifiable
+      SameNameBinders x -> \case
+        SameNameBinders y -> SameNameBinders (x `unsafeMergeNameBinders` y)
+        RenameLeftNameBinder y f -> RenameLeftNameBinder (x `unsafeMergeNameBinders` y) (unsafeCoerce f)
+        RenameRightNameBinder y g -> RenameRightNameBinder (x `unsafeMergeNameBinders` y) (unsafeCoerce g)
+        RenameBothBinders y f g -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeCoerce f) (unsafeCoerce g)
+        NotUnifiable -> NotUnifiable
 
-  NotUnifiable -> const (NotUnifiable)
+      RenameLeftNameBinder x f -> \case
+        SameNameBinders y -> RenameLeftNameBinder (x `unsafeMergeNameBinders` y) (unsafeCoerce f)
+        RenameLeftNameBinder y g -> RenameLeftNameBinder (x `unsafeMergeNameBinders` y) (unsafeOverrideBinderRenaming f g)
+        RenameRightNameBinder y g -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeCoerce f) (unsafeCoerce g)
+        RenameBothBinders y f' g -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeOverrideBinderRenaming f f') (unsafeCoerce g)
+        NotUnifiable -> NotUnifiable
+
+      RenameRightNameBinder x g -> \case
+        SameNameBinders y -> RenameRightNameBinder (x `unsafeMergeNameBinders` y) (unsafeCoerce g)
+        RenameLeftNameBinder y f -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeCoerce f) (unsafeCoerce g)
+        RenameRightNameBinder y g' -> RenameRightNameBinder (x `unsafeMergeNameBinders` y) (unsafeOverrideBinderRenaming g g')
+        RenameBothBinders y f g' -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeCoerce f) (unsafeOverrideBinderRenaming g g')
+        NotUnifiable -> NotUnifiable
+
+      RenameBothBinders x f g -> \case
+        SameNameBinders y -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeCoerce f) (unsafeCoerce g)
+        RenameLeftNameBinder y f' -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeOverrideBinderRenaming f f') (unsafeCoerce g)
+        RenameRightNameBinder y g' -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeCoerce f) (unsafeOverrideBinderRenaming g g')
+        RenameBothBinders y f' g' -> RenameBothBinders (x `unsafeMergeNameBinders` y) (unsafeOverrideBinderRenaming f f') (unsafeOverrideBinderRenaming g g')
+        NotUnifiable -> NotUnifiable
+
+      NotUnifiable -> const NotUnifiable
+
+-- | Combine the binder renamings of an outer and an inner verdict, for
+-- 'unsafeMergeUnifyBinders'.
+--
+-- Each verdict renames its own binders and leaves every other name as it is,
+-- and the binders of the two verdicts are distinct. So the inner renaming
+-- decides for the binders it moves, and the outer one for the rest.
+unsafeOverrideBinderRenaming
+  :: forall a b c d e f n l r.
+     (NameBinder a b -> NameBinder a c)  -- ^ Renaming of the outer verdict.
+  -> (NameBinder d e -> NameBinder d f)  -- ^ Renaming of the inner verdict.
+  -> NameBinder n l -> NameBinder n r
+unsafeOverrideBinderRenaming outer inner binder
+  | nameId (nameOf binder') /= nameId (nameOf binder) = binder'
+  | otherwise = (unsafeCoerce outer :: NameBinder n l -> NameBinder n r) binder
+  where
+    binder' = (unsafeCoerce inner :: NameBinder n l -> NameBinder n r) binder
 
 -- | Chain unification of nested patterns.
+--
+-- Note that a chain of verdicts cannot always pair the binders of two
+-- patterns: when two of its verdicts choose the same unified name for
+-- different binders, the chain answers 'NotUnifiable' (see
+-- 'unsafeMergeUnifyBinders'). To unify patterns of several binders, compare
+-- their shapes and then use 'unifyPatternBinders'.
 --
 -- @since 0.1.0
 andThenUnifyPatterns
@@ -841,13 +913,38 @@ andThenUnifyPatterns u (l, r) = unsafeMergeUnifyBinders u (unifyPatterns (unsafe
 
 -- | Chain unification of nested patterns with 'NameBinder's.
 --
+-- When the name that 'unifyNameBinders' chooses for the new pair is already
+-- the unified name of an outer binder, the pair is unified the other way
+-- instead. So a chain of two pairs is always unified correctly. A longer
+-- chain can still answer 'NotUnifiable' when both names are taken, as
+-- 'andThenUnifyPatterns' can.
+--
 -- @since 0.1.0
 andThenUnifyNameBinders
   :: (UnifiablePattern pattern, Distinct l, Distinct l')
   => UnifyNameBinders pattern n l l'    -- ^ Unifying action for some outer patterns.
   -> (NameBinder l r, NameBinder l' r') -- ^ Two nested binders (cannot be unified directly since they extend different scopes).
   -> UnifyNameBinders pattern n r r'
-andThenUnifyNameBinders u (l, r) = unsafeMergeUnifyBinders u (unifyNameBinders (unsafeCoerce l) r)
+andThenUnifyNameBinders u (l, r) =
+  case unsafeTryMergeUnifyBinders u (unifyNameBinders l' r) of
+    Just merged -> merged
+    Nothing     -> unsafeMergeUnifyBinders u (unifyNameBindersTowardsLarger l' r)
+  where
+    l' = unsafeCoerce l
+
+-- | 'unifyNameBinders' in the other direction: when the binders differ, the
+-- one with the /smaller/ name is renamed towards the one with the larger name.
+unifyNameBindersTowardsLarger
+  :: forall i l r pattern. Distinct i
+  => NameBinder i l -- ^ Left pattern.
+  -> NameBinder i r -- ^ Right pattern.
+  -> UnifyNameBinders pattern i l r
+unifyNameBindersTowardsLarger l@(UnsafeNameBinder (UnsafeName i1)) r@(UnsafeNameBinder (UnsafeName i2))
+  | i1 < i2   = RenameLeftNameBinder (nameBindersSingleton r) $ \(UnsafeNameBinder (UnsafeName i')) ->
+      if i'  == i1 then UnsafeNameBinder (UnsafeName i2) else UnsafeNameBinder (UnsafeName i')
+  | i1 > i2   = RenameRightNameBinder (nameBindersSingleton l) $ \(UnsafeNameBinder (UnsafeName i'')) ->
+      if i'' == i2 then UnsafeNameBinder (UnsafeName i1) else UnsafeNameBinder (UnsafeName i'')
+  | otherwise = unifyNameBinders l r
 
 -- | An /unordered/ collection of 'NameBinder's, that together extend scope @n@ to scope @l@.
 --
@@ -1067,8 +1164,9 @@ class CoSinkable pattern => UnifiablePattern pattern where
   unifyPatterns :: Distinct n => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
 
   -- | The default implementation flattens both patterns to their binders (via
-  -- 'nameBinderListOf') and unifies the resulting 'NameBinderList's. It therefore
-  -- compares only the /number and order/ of binders, and ignores
+  -- 'nameBinderListOf') and unifies the resulting 'NameBinderList's, which is
+  -- 'unifyPatternBinders'. It therefore compares only the /number and order/ of
+  -- binders, and ignores
   --
   -- * the constructor, so two patterns built from /different/ constructors with
   --   the same number of binders unify;
@@ -1092,7 +1190,7 @@ class CoSinkable pattern => UnifiablePattern pattern where
   default unifyPatterns
     :: (CoSinkable pattern, Distinct n)
     => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
-  unifyPatterns l r = coerce (unifyPatterns (nameBinderListOf l) (nameBinderListOf r))
+  unifyPatterns = unifyPatternBinders
 
   -- | Unify two patterns with the ambient scope at hand.
   --
@@ -1118,17 +1216,30 @@ class CoSinkable pattern => UnifiablePattern pattern where
     => Scope n -> pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
   unifyPatternsIn _scope = unifyPatterns
 
+-- | Two lists unify when they have the same length. Their binders are paired
+-- by position, and when they differ, the binders of the right list are renamed
+-- to those of the left one, all at once.
+--
+-- Unifying the pairs one at a time and merging the verdicts would not do: each
+-- pair would choose its unified name without regard to the others, and two
+-- pairs could choose the same one (see 'unsafeMergeUnifyBinders'). Renaming
+-- towards the left list cannot collide, since its binders are distinct, and
+-- its names are fresh for the scope, since they are binders over it.
 instance UnifiablePattern NameBinderList where
-  unifyPatterns NameBinderListEmpty NameBinderListEmpty = SameNameBinders emptyNameBinders
-  unifyPatterns (NameBinderListCons x xs) (NameBinderListCons y ys) =
-    case (assertDistinct x, assertDistinct y) of
-      (Distinct, Distinct) -> unifyNameBinders x y `andThenUnifyPatterns` (xs, ys)
-  -- Lists of different lengths are not unifiable. This case is reachable
-  -- whenever a language has patterns that bind different numbers of names --
-  -- a wildcard and a variable, say -- since the default 'unifyPatterns'
-  -- flattens every pattern to a 'NameBinderList'. Note that this module sets
-  -- @-Wno-incomplete-patterns@, so its absence was not reported.
-  unifyPatterns _ _ = NotUnifiable
+  unifyPatterns l r
+    -- Lists of different lengths are not unifiable. This case is reachable
+    -- whenever a language has patterns that bind different numbers of names
+    -- (a wildcard and a variable, say), since the default 'unifyPatterns'
+    -- flattens every pattern to a 'NameBinderList'.
+    | Prelude.length ls /= Prelude.length rs = NotUnifiable
+    | ls == rs  = unsafeCoerce (SameNameBinders (fromNameBindersList l))
+    | otherwise = RenameRightNameBinder (fromNameBindersList l) rename
+    where
+      ls = rawNameBinderList l
+      rs = rawNameBinderList r
+      leftOf = IntMap.fromList (Prelude.zip rs ls)
+      rename (UnsafeNameBinder (UnsafeName i)) =
+        UnsafeNameBinder (UnsafeName (IntMap.findWithDefault i i leftOf))
 
 -- | Comparison of scope-indexed values up to α, in a known scope.
 --
@@ -1174,6 +1285,34 @@ unsafeEqPattern l r =
   case unifyPatterns l (unsafeCoerce r) of
     SameNameBinders{} -> True
     _                 -> False
+
+-- | Unify two patterns by their binders alone, pairing them in order: the
+-- first binder of one pattern with the first binder of the other, and so on.
+-- Patterns that bind different numbers of names do not unify. When the
+-- binders differ, those of the right pattern are renamed to those of the left
+-- one.
+--
+-- Nothing but the binders is compared, so this is the right verdict for two
+-- patterns once the rest of them (constructors, nesting, non-binding fields)
+-- is known to agree. A hand-written 'unifyPatterns' can compare that rest and
+-- then call this. On its own, it is the default 'unifyPatterns'.
+unifyPatternBinders
+  :: (CoSinkable pattern, Distinct n)
+  => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
+unifyPatternBinders l r = coerce (unifyPatterns (nameBinderListOf l) (nameBinderListOf r))
+
+-- | Do two patterns unify? The patterns may extend different scopes, since
+-- only the constructor of the verdict is consulted, and that does not depend
+-- on the scopes. This is what a structural comparison asks of two
+-- sub-patterns, which extend different scopes once a binder before them has
+-- been renamed.
+unsafeUnifiablePatterns
+  :: forall pattern n l n' r. UnifiablePattern pattern
+  => pattern n l -> pattern n' r -> Bool
+unsafeUnifiablePatterns l r =
+  case unifyPatterns @pattern @VoidS (unsafeCoerce l) (unsafeCoerce r) of
+    NotUnifiable -> False
+    _            -> True
 
 -- * Safe sinking
 
