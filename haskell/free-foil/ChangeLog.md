@@ -2,6 +2,10 @@
 
 # Unreleased
 
+Fixes:
+
+- The generic `sinkabilityProof` no longer crashes on a binder. `SinkableK NameBinder` and `SinkableK NameBinders` matched a list of one renaming, while a binder has two scope indices and is handed two. The instances for a field indexed by the innermost scope variable (such as the body of `ScopedAST`) had the same problem under a binder. So `sinkabilityProof` on any `AST` with a binder, the default `coSinkabilityProof` of every pattern that derives `CoSinkable` generically, and `transportPayload` on such a payload threw `Non-exhaustive patterns in function sinkabilityProofK`, even for the identity renaming. As in the hand-written instances, the renaming under a binder is a coercion, so the result agrees with `sink` on inclusions, which is what the method is for. The bug went unnoticed because `Control.Monad.Foil.Internal` disables the warnings that report it.
+
 # 0.4.0 — 2026-08-29
 
 A release about *units*: checking a module independently of its neighbours, linking the results without renaming, and storing a checked one on disk. Scope restriction, a family of $O(1)$ sinks, and a linear α-equivalence rename path come with it.

@@ -2052,12 +2052,17 @@ sinkK _ _ = unsafeCoerce
 
 instance SinkableK Name where
   sinkabilityProofK renameK@(RCons rename RNil) name cont = cont renameK (rename name)
+-- | A binder has two scope indices, so it is handed two renamings: one for the
+-- scope it extends and one for the scope it extends that to. The binder keeps
+-- its name, and the renaming of the inner scope is the coercion that
+-- 'extendRenaming' also uses, so this agrees with 'sink' on inclusions.
 instance SinkableK NameBinder where
-  sinkabilityProofK (RCons _ RNil) (UnsafeNameBinder name) cont =
-    cont (RCons unsafeCoerce RNil) (UnsafeNameBinder name)
+  sinkabilityProofK (RCons rename (RCons _ RNil)) (UnsafeNameBinder name) cont =
+    cont (RCons rename (RCons unsafeCoerce RNil)) (UnsafeNameBinder name)
+-- | Two renamings, as for 'NameBinder'.
 instance SinkableK NameBinders where
-  sinkabilityProofK (RCons _ RNil) (UnsafeNameBinders s) cont =
-    cont (RCons unsafeCoerce RNil) (UnsafeNameBinders s)
+  sinkabilityProofK (RCons rename (RCons _ RNil)) (UnsafeNameBinders s) cont =
+    cont (RCons rename (RCons unsafeCoerce RNil)) (UnsafeNameBinders s)
 
 instance GenericK NameBinderList where
   type RepK NameBinderList = ((Var0 :~~: Var1) :=>: U1) :+: Exists S
@@ -2197,15 +2202,22 @@ instance (SinkableK f, ExtractRenamingK i) => GSinkableK (Field (Kon f :@: Var i
       RCons rename' RNil -> \x' ->
         cont (putBackRenamingK @_ @i rename' irename) (Field (unsafeCoerce x')) -- unsafeCoerce?
 
+-- | A field indexed by the innermost scope variable only, such as the body of
+-- 'Control.Monad.Free.Foil.ScopedAST'. Under a binder the traversal holds one
+-- renaming per scope variable, so the field takes the innermost one, as
+-- @t'Field' ('Kon' f ':@:' 'Var' i)@ does.
 instance SinkableK (f a) => GSinkableK (Field (Kon f :@: Kon a :@: Var0)) where
-  gsinkabilityProofK irename@(RCons _ RNil) (Field x) cont =
-    sinkabilityProofK irename x $ \rename' x' ->
-      cont rename' (Field x')
+  gsinkabilityProofK irename (Field x) cont =
+    sinkabilityProofK (RCons (extractRenamingK @_ @VZ irename) RNil) x $ \case
+      RCons rename' RNil -> \x' ->
+        cont (putBackRenamingK @_ @VZ rename' irename) (Field (unsafeCoerce x'))
 
+-- | As for @t'Field' ('Kon' f ':@:' 'Kon' a ':@:' 'Var0')@.
 instance SinkableK (f a b) => GSinkableK (Field (Kon f :@: Kon a :@: Kon b :@: Var0)) where
-  gsinkabilityProofK irename@(RCons _ RNil) (Field x) cont =
-    sinkabilityProofK irename x $ \rename' x' ->
-      cont rename' (Field x')
+  gsinkabilityProofK irename (Field x) cont =
+    sinkabilityProofK (RCons (extractRenamingK @_ @VZ irename) RNil) x $ \case
+      RCons rename' RNil -> \x' ->
+        cont (putBackRenamingK @_ @VZ rename' irename) (Field (unsafeCoerce x'))
 
 -- | Reading one scope index out of a list of them, and putting a renaming
 -- back at that position. This is what lets a generic traversal work on the
