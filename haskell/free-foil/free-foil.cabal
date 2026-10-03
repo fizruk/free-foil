@@ -104,6 +104,7 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
       Control.Monad.Foil.BlocksSpec
+      Control.Monad.Foil.ExampleLawsSpec
       Control.Monad.Foil.LawsSpec
       Control.Monad.Foil.NameMapSpec
       Control.Monad.Foil.NameRangeSpec
@@ -113,6 +114,7 @@ test-suite spec
       Control.Monad.Foil.UnifyNameBindersSpec
       Control.Monad.Free.Foil.AlphaEquivSpec
       Control.Monad.Free.Foil.AnnotatedSpec
+      Control.Monad.Free.Foil.ExampleSyntax
       Control.Monad.Free.Foil.LawsSpec
       Control.Monad.Free.Foil.SupportSpec
       Control.Monad.Free.Foil.TH.MkFreeFoilSpec
