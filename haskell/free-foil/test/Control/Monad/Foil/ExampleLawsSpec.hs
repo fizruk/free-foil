@@ -34,7 +34,7 @@ fromAST = \case
 
 mirror :: Mirror Foil.NameBinder FF.ExprF F.Expr
 mirror = Mirror
-  { mirrorSyntax = exprSyntax genNameBinder
+  { mirrorSyntax = exprSyntax genNameBinder nameBinderNames
   , mirrorFrom = fromAST
   , mirrorTo = toAST
   , mirrorSubstitute = F.substitute

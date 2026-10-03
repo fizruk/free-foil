@@ -137,7 +137,7 @@ mirrorSpec m verdict = do
                 alphaEquivE scope t t'
       law (verdict Inclusions MirrorAlphaEquivAgrees) "alphaEquiv agrees with a nameless comparison" $
         forAllShow (genPairCase sg) (showPairCase sg) $ \(PairCase n t1 t2) -> withCtx n $ \scope ->
-          alphaEquivE scope (from t1) (from t2) === alphaEqNameless t1 t2
+          alphaEquivE scope (from t1) (from t2) === alphaEqNameless (sgPatternNames sg) t1 t2
   where
     sg = mirrorSyntax m
     from :: AST binder sig n -> e n
@@ -151,7 +151,7 @@ mirrorSpec m verdict = do
     showE = showAST sg . to
 
     eqE :: e n -> e n -> Bool
-    eqE a b = alphaEqNameless (to a) (to b)
+    eqE a b = alphaEqNameless (sgPatternNames sg) (to a) (to b)
 
     cmp :: String -> e n -> String -> e n -> Property
     cmp lhsName lhs rhsName rhs =

@@ -11,7 +11,7 @@ module Control.Monad.Free.Foil.ExampleSyntax (exprSyntax) where
 
 import           Data.Bifunctor.TH               (deriveBifoldable, deriveBitraversable)
 
-import           Control.Monad.Foil.Laws         (GenPattern)
+import           Control.Monad.Foil.Laws         (GenPattern, PatternNames)
 import           Control.Monad.Free.Foil.Example (ExprF (..))
 import           Control.Monad.Free.Foil.Laws    (SyntaxGen (..))
 import           Data.ZipMatchK.TH               (deriveZipMatchK)
@@ -21,10 +21,11 @@ deriveBitraversable ''ExprF
 deriveZipMatchK ''ExprF
 
 -- | The λ-calculus, with a given kind of pattern.
-exprSyntax :: GenPattern binder -> SyntaxGen binder ExprF
-exprSyntax genPat = SyntaxGen
+exprSyntax :: GenPattern binder -> PatternNames binder -> SyntaxGen binder ExprF
+exprSyntax genPat names = SyntaxGen
   { sgShapes = [AppF () (), LamF ()]
   , sgPattern = genPat
+  , sgPatternNames = names
   , sgShowNode = \case
       AppF f x  -> "(" <> f <> " " <> x <> ")"
       LamF body -> body

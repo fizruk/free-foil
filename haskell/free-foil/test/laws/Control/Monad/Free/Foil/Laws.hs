@@ -94,6 +94,8 @@ data SyntaxGen binder sig = SyntaxGen
     sgShapes   :: [sig () ()]
     -- | Patterns out of a given scope.
   , sgPattern  :: GenPattern binder
+    -- | The names a pattern binds, in the order of its structure.
+  , sgPatternNames :: PatternNames binder
     -- | Print a node whose subterms are already printed.
   , sgShowNode :: sig String String -> String
   }
@@ -236,12 +238,12 @@ instance Applicative At where
      in ([ g y | g <- fs, y <- xs ], j'')
 
 -- | Print a term with raw names (@x3@), and scoped terms as @λ[x3 x4]. t@.
-showAST :: (Bifunctor sig, CoSinkable binder) => SyntaxGen binder sig -> AST binder sig n -> String
+showAST :: Bifunctor sig => SyntaxGen binder sig -> AST binder sig n -> String
 showAST sg = \case
   Var x -> showName x
   Node node -> sgShowNode sg (bimap showScoped (showAST sg) node)
   where
-    showScoped (ScopedAST pat body) = "λ" <> showPattern pat <> ". " <> showAST sg body
+    showScoped (ScopedAST pat body) = "λ" <> showPatternWith (sgPatternNames sg) pat <> ". " <> showAST sg body
 
 -- | A node printer from a derived 'Show' instance. The subterms are shown
 -- verbatim, in parentheses when they contain a space.
@@ -273,7 +275,7 @@ data Subst binder sig i o = Subst
   }
 
 -- | Show the explicit entries of a substitution.
-showSubst :: (Bifunctor sig, CoSinkable binder) => SyntaxGen binder sig -> Subst binder sig i o -> String
+showSubst :: Bifunctor sig => SyntaxGen binder sig -> Subst binder sig i o -> String
 showSubst sg s = show (substKind s) <> " {" <> intercalate ", "
   [ showName x <> " ↦ " <> showAST sg t | (x, t) <- substTable s ] <> "}"
 
@@ -334,7 +336,7 @@ shrinkTermCase :: Bitraversable sig => TermCase binder sig -> [TermCase binder s
 shrinkTermCase (TermCase n t) = map (TermCase n) (shrinkAST t)
 
 -- | Show a 'TermCase'.
-showTermCase :: (Bifunctor sig, CoSinkable binder) => SyntaxGen binder sig -> TermCase binder sig -> String
+showTermCase :: Bifunctor sig => SyntaxGen binder sig -> TermCase binder sig -> String
 showTermCase sg (TermCase n t) = unlines [ "n = " <> showCtx n, "t = " <> showAST sg t ]
 
 -- | Two composable substitutions and a term: @t : i@, @s1 : i → o1@ and
@@ -362,7 +364,7 @@ shrinkSubstCase :: Bitraversable sig => SubstCase binder sig -> [SubstCase binde
 shrinkSubstCase (SubstCase i o1 o2 s1 s2 t) = map (SubstCase i o1 o2 s1 s2) (shrinkAST t)
 
 -- | Show a 'SubstCase'.
-showSubstCase :: (Bifunctor sig, CoSinkable binder) => SyntaxGen binder sig -> SubstCase binder sig -> String
+showSubstCase :: Bifunctor sig => SyntaxGen binder sig -> SubstCase binder sig -> String
 showSubstCase sg (SubstCase i o1 o2 s1 s2 t) = unlines
   [ "i = " <> showCtx i, "o1 = " <> showCtx o1, "o2 = " <> showCtx o2
   , "s1 : i → o1 = " <> showSubst sg s1
@@ -386,7 +388,7 @@ shrinkRenamingCase :: Bitraversable sig => RenamingCase binder sig -> [RenamingC
 shrinkRenamingCase (RenamingCase chain t) = map (RenamingCase chain) (shrinkAST t)
 
 -- | Show a 'RenamingCase'.
-showRenamingCase :: (Bifunctor sig, CoSinkable binder) => SyntaxGen binder sig -> RenamingCase binder sig -> String
+showRenamingCase :: Bifunctor sig => SyntaxGen binder sig -> RenamingCase binder sig -> String
 showRenamingCase sg (RenamingCase chain t) = showChain chain <> "t = " <> showAST sg t
 
 -- * Laws of the relative monad
@@ -484,13 +486,13 @@ relMonadLaws sg = RelMonadLaws
 -- comparison is 'alphaEqNameless' and not the library's 'alphaEquiv',
 -- which gets patterns of two or more binders wrong (see 'alphaSpec').
 compareUpToAlpha
-  :: (Bitraversable sig, ZipMatchK sig, CoSinkable binder)
+  :: (Bitraversable sig, ZipMatchK sig)
   => SyntaxGen binder sig
   -> Scope x -> String -> AST binder sig x -> String -> AST binder sig x -> Property
 compareUpToAlpha sg _scope lhsName lhs rhsName rhs =
   counterexample (lhsName <> " = " <> showAST sg lhs) $
     counterexample (rhsName <> " = " <> showAST sg rhs) $
-      alphaEqNameless lhs rhs
+      alphaEqNameless (sgPatternNames sg) lhs rhs
 
 -- * Functoriality of terms
 
@@ -517,7 +519,7 @@ functorLaws
   => SyntaxGen binder sig -> FunctorLaws binder sig
 functorLaws sg = FunctorLaws
   { termSinkableLaws =
-      sinkableLaws (\_ a b -> alphaEqNameless a b) (showAST sg)
+      sinkableLaws (\_ a b -> alphaEqNameless (sgPatternNames sg) a b) (showAST sg)
   , liftRMIdentity = \(TermCase n t) -> withCtx n $ \scope ->
       cmp scope "liftRM n id t" (liftRMN scope id t) "t" t
   , liftRMComposition = \(RenamingCase (Chain' _ l k f g _) t) ->
@@ -547,18 +549,19 @@ data RelMonadLaw
   deriving (Eq, Show, Enum, Bounded)
 
 -- | All relative monad laws for a language. The laws on substitutions are
--- checked for each combination of 'SubstKind's.
+-- checked for each combination of 'SubstKind's, which the verdict is given
+-- (it is given 'Nothing' for the laws on terms).
 relMonadSpec
   :: (Bitraversable sig, ZipMatchK sig, CoSinkable binder, SinkableK binder)
-  => SyntaxGen binder sig -> (RelMonadLaw -> Verdict) -> Spec
+  => SyntaxGen binder sig -> (RelMonadLaw -> Maybe (SubstKind, SubstKind) -> Verdict) -> Spec
 relMonadSpec sg verdict = do
   let laws = relMonadLaws sg
-      onTerms name p = law (verdict name) (show name) $
+      onTerms name p = law (verdict name Nothing) (show name) $
         forAllShrinkShow (genTermCase sg) shrinkTermCase (showTermCase sg) $ \c@(TermCase n t) ->
           termCoverage n t (p c)
       onSubsts name p = describe (show name) $
         forM_ [ (k1, k2) | k1 <- [minBound .. maxBound], k2 <- [minBound .. maxBound] ] $ \(k1, k2) ->
-          law (verdict name) ("s1 " <> show k1 <> ", s2 " <> show k2) $
+          law (verdict name (Just (k1, k2))) ("s1 " <> show k1 <> ", s2 " <> show k2) $
             forAllShrinkShow (genSubstCase sg k1 k2) shrinkSubstCase (showSubstCase sg) $ \c ->
               substCoverage c (p c)
   onSubsts SubstLeftUnit (substLeftUnit laws)
@@ -589,7 +592,7 @@ functorSpec sg sinkVerdict verdict = do
           \c@(RenamingCase (Chain' n _ _ _ _ _) t) -> termCoverage n t (p c)
   describe "sinkabilityProof" $
     sinkableSpec
-      (\_ a b -> alphaEqNameless a b)
+      (\_ a b -> alphaEqNameless (sgPatternNames sg) a b)
       (showAST sg)
       (\ctx -> sized (genAST sg ctx . min 30))
       shrinkAST
@@ -613,11 +616,12 @@ functorSpec sg sinkVerdict verdict = do
 -- (a level counted along the path from the root, binder by binder), and a
 -- free name by its raw identifier. Patterns are compared up to their
 -- binders, i.e. by the number of names they bind, as the default
--- 'unifyPatterns' does.
+-- 'unifyPatterns' does. The binders of a pattern are listed in the order
+-- of its structure, by the given function.
 alphaEqNameless
-  :: forall binder sig x y. (Bitraversable sig, ZipMatchK sig, CoSinkable binder)
-  => AST binder sig x -> AST binder sig y -> Bool
-alphaEqNameless = go 0 IntMap.empty IntMap.empty
+  :: forall binder sig x y. (Bitraversable sig, ZipMatchK sig)
+  => PatternNames binder -> AST binder sig x -> AST binder sig y -> Bool
+alphaEqNameless binders = go 0 IntMap.empty IntMap.empty
   where
     go :: Int -> IntMap.IntMap Int -> IntMap.IntMap Int -> AST binder sig a -> AST binder sig b -> Bool
     go _ envL envR (Var a) (Var b) =
@@ -634,8 +638,8 @@ alphaEqNameless = go 0 IntMap.empty IntMap.empty
 
     scoped :: Int -> IntMap.IntMap Int -> IntMap.IntMap Int -> ScopedAST binder sig a -> ScopedAST binder sig b -> Bool
     scoped lvl envL envR (ScopedAST p body1) (ScopedAST q body2) =
-      let xs = patternRawNames p
-          ys = patternRawNames q
+      let xs = binders p
+          ys = binders q
           k = length xs
           bind env names = foldl (\e (name, i) -> IntMap.insert name i e) env (zip names [lvl ..])
        in length ys == k && go (lvl + k) (bind envL xs) (bind envR ys) body1 body2
@@ -684,12 +688,12 @@ alphaSpec sg verdict = do
           alphaEquiv scope t (refreshAST scope t)
   law (verdict AlphaEquivAgrees) "alphaEquiv agrees with a nameless comparison" $
     forAllShow (genPairCase sg) (showPairCase sg) $ \(PairCase n t1 t2) ->
-      withCtx n $ \scope -> alphaEquiv scope t1 t2 === alphaEqNameless t1 t2
+      withCtx n $ \scope -> alphaEquiv scope t1 t2 === alphaEqNameless (sgPatternNames sg) t1 t2
   law (verdict AlphaEquivRefreshedAgrees) "alphaEquivRefreshed agrees with a nameless comparison" $
     forAllShow (genPairCase sg) (showPairCase sg) $ \(PairCase n t1 t2) ->
-      withCtx n $ \scope -> alphaEquivRefreshed scope t1 t2 === alphaEqNameless t1 t2
+      withCtx n $ \scope -> alphaEquivRefreshed scope t1 t2 === alphaEqNameless (sgPatternNames sg) t1 t2
 
 -- | Show a 'PairCase'.
-showPairCase :: (Bifunctor sig, CoSinkable binder) => SyntaxGen binder sig -> PairCase binder sig -> String
+showPairCase :: Bifunctor sig => SyntaxGen binder sig -> PairCase binder sig -> String
 showPairCase sg (PairCase n t1 t2) = unlines
   [ "n = " <> showCtx n, "t1 = " <> showAST sg t1, "t2 = " <> showAST sg t2 ]

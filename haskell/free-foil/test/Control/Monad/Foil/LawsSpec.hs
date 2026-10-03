@@ -55,14 +55,15 @@ spec = do
         (\_ _ -> Holds)
 
   describe "CoSinkable" $ do
-    describe "NameBinder" $ coSinkableSpec genNameBinder extensionByCoercion
-    describe "NameBinderList" $ coSinkableSpec genNameBinderList extensionByCoercion
-    describe "NameBinders" $ coSinkableSpec genNameBinders extensionByCoercion
-    describe "U2" $ coSinkableSpec genU2 (\_ _ -> Holds)
+    describe "NameBinder" $ coSinkableSpec nameBinderNames genNameBinder extensionByCoercion
+    describe "NameBinderList" $ coSinkableSpec nameBinderListNames genNameBinderList extensionByCoercion
+    describe "NameBinders" $ coSinkableSpec patternRawNames genNameBinders extensionByCoercion
+    describe "U2" $ coSinkableSpec (const []) genU2 (\_ _ -> Holds)
 
   describe "UnifiablePattern" $ do
-    describe "NameBinder" $ unifyPatternsSpec genNameBinderPair Holds
-    describe "NameBinderList" $ unifyPatternsSpec genNameBinderListPair mergedBinderRenamings
+    describe "NameBinder" $ unifyPatternsSpec nameBinderNames genNameBinderPair Holds
+    describe "NameBinderList" $
+      unifyPatternsSpec nameBinderListNames genNameBinderListPair mergedBinderRenamings
 
 -- | Two single binders out of the same scope.
 genNameBinderPair :: GenPatternPair Foil.NameBinder

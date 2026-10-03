@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- | Generators and law statements for the foil: scopes, renamings between
@@ -51,8 +52,12 @@ module Control.Monad.Foil.Laws (
   GenPattern,
   genNameBinder,
   genNameBinderList,
+  PatternNames,
+  nameBinderNames,
+  nameBinderListNames,
   patternRawNames,
   showPattern,
+  showPatternWith,
   -- * Renamings
   Renaming (..),
   rename,
@@ -93,10 +98,13 @@ module Control.Monad.Foil.Laws (
   law,
   extensionByCoercion,
   mergedBinderRenamings,
+  genericCoSinkableCrash,
+  genericPatternOrder,
 ) where
 
 import           Control.Monad               (forM_)
 import           Data.IntMap                 (IntMap)
+import           Data.Kind                   (Type)
 import qualified Data.IntMap                 as IntMap
 import           Data.List                   (intercalate)
 import           Test.Hspec
@@ -229,18 +237,36 @@ genNameBinderList ctx = withCtx ctx $ \scope -> do
   k <- chooseInt (0, 3)
   withHintedBinders k scope (pure . PatIn)
 
--- | The raw names a pattern binds, in order. This needs no 'Distinct'
--- evidence, so it can be used under binders when printing.
-patternRawNames :: CoSinkable p => p n l -> [Int]
-patternRawNames = go . nameBinderListOf
-  where
-    go :: NameBinderList x y -> [Int]
-    go NameBinderListEmpty         = []
-    go (NameBinderListCons b rest) = nameId (nameOf b) : go rest
+-- | The raw names a pattern binds, in the order of its structure (left to
+-- right). Each pattern type gives its own, since the library's traversal
+-- ('patternRawNames') does not follow the structure for every type.
+type PatternNames (p :: S -> S -> Type) = forall n l. p n l -> [Int]
 
--- | Show the names a pattern binds.
+-- | The name of a single binder.
+nameBinderNames :: PatternNames NameBinder
+nameBinderNames b = [nameId (nameOf b)]
+
+-- | The names of a list of binders, in order.
+nameBinderListNames :: PatternNames NameBinderList
+nameBinderListNames = \case
+  NameBinderListEmpty         -> []
+  NameBinderListCons b rest -> nameId (nameOf b) : nameBinderListNames rest
+
+-- | The raw names a pattern binds, in the order in which the library's
+-- 'withPattern' visits them (through 'nameBinderListOf'). For a pattern
+-- type with a hand-written 'withPattern' this is the order of the
+-- structure. For the generic 'withPattern' it is the ascending order of
+-- the raw names, since that goes through the unordered 'NameBinders'.
+patternRawNames :: CoSinkable p => p n l -> [Int]
+patternRawNames = nameBinderListNames . nameBinderListOf
+
+-- | Show the names a pattern binds, in the library's order.
 showPattern :: CoSinkable p => p n l -> String
-showPattern pat = "[" <> unwords (map (("x" <>) . show) (patternRawNames pat)) <> "]"
+showPattern = showPatternWith patternRawNames
+
+-- | Show the names a pattern binds, in a given order.
+showPatternWith :: PatternNames p -> p n l -> String
+showPatternWith names pat = "[" <> unwords (map (("x" <>) . show) (names pat)) <> "]"
 
 -- * Renamings
 
@@ -440,8 +466,9 @@ sinkableSpec eq showE genE shrinkE verdict = do
 data PatternCase p where
   PatternCase :: DExt n i => Chain' n -> p n i -> PatternCase p
 
-instance CoSinkable p => Show (PatternCase p) where
-  show (PatternCase chain p) = showChain chain <> "p : n → i = " <> showPattern p
+-- | Show a 'PatternCase'.
+showPatternCase :: PatternNames p -> PatternCase p -> String
+showPatternCase names (PatternCase chain p) = showChain chain <> "p : n → i = " <> showPatternWith names p
 
 -- | A chain of the given class with a pattern out of its first scope.
 genPatternCase :: GenPattern p -> RenamingClass -> Gen (PatternCase p)
@@ -473,37 +500,37 @@ data CoSinkableLaws p = CoSinkableLaws
   }
 
 -- | The laws of 'coSinkabilityProof' for any 'CoSinkable' pattern type.
--- Names in different scopes are compared by their raw identifiers.
-coSinkableLaws :: CoSinkable p => CoSinkableLaws p
-coSinkableLaws = CoSinkableLaws
+-- Names in different scopes are compared by their raw identifiers, and the
+-- binders of a pattern are listed by the given function.
+coSinkableLaws :: CoSinkable p => PatternNames p -> CoSinkableLaws p
+coSinkableLaws binders = CoSinkableLaws
   { coSinkIdentity = \(PatternCase (Chain' n _ _ _ _ _) p) ->
       coSinkabilityProof id p $ \f' p' ->
         let xs = namesUnder n p
-         in counterexample ("pushed pattern p' = " <> showPattern p') $
+         in counterexample ("pushed pattern p' = " <> showPatternWith binders p') $
               counterexample ("f' on i = " <> showOn f' xs) $
-                patternRawNames p' === patternRawNames p
+                binders p' === binders p
                   .&&. map (nameId . f') xs === map nameId xs
   , coSinkComposition = \(PatternCase (Chain' n _ _ f g _) p) ->
       coSinkabilityProof (rename g . rename f) p $ \h q ->
         coSinkabilityProof (rename f) p $ \f' p' ->
           coSinkabilityProof (rename g) p' $ \g' p'' ->
             let xs = namesUnder n p
-             in counterexample ("pushed along g . f: " <> showPattern q) $
-                  counterexample ("pushed along f, then g: " <> showPattern p'') $
+             in counterexample ("pushed along g . f: " <> showPatternWith binders q) $
+                  counterexample ("pushed along f, then g: " <> showPatternWith binders p'') $
                     counterexample ("(g . f)' on i = " <> showOn h xs) $
                       counterexample ("g' . f' on i = " <> showOn (g' . f') xs) $
-                        patternRawNames q === patternRawNames p''
+                        binders q === binders p''
                           .&&. map (nameId . h) xs === map (nameId . g' . f') xs
   , coSinkExtension = \(PatternCase (Chain' n _ _ f _ _) p) ->
       coSinkabilityProof (rename f) p $ \f' _p' ->
         let outer = ctxNames n
          in counterexample ("f' on n = " <> showOn (f' . sink) outer) $
               map (nameId . f' . sink) outer === map (nameId . rename f) outer
-  , coSinkBinders = \(PatternCase (Chain' n _ _ f _ _) p) ->
+  , coSinkBinders = \(PatternCase (Chain' _ _ _ f _ _) p) ->
       coSinkabilityProof (rename f) p $ \f' p' ->
-        withCtx n $ \_ ->
-          counterexample ("pushed pattern p' = " <> showPattern p') $
-            map (nameId . f') (namesOfPattern p) === patternRawNames p'
+        counterexample ("pushed pattern p' = " <> showPatternWith binders p') $
+          map (nameId . f' . UnsafeName) (binders p) === binders p'
   }
   where
     -- The names of the scope a pattern extends to: the outer ones, then
@@ -514,24 +541,43 @@ coSinkableLaws = CoSinkableLaws
     showOn :: (Name a -> Name b) -> [Name a] -> String
     showOn h xs = "{" <> intercalate ", " [ showName x <> " ↦ " <> showName (h x) | x <- xs ] <> "}"
 
--- | The laws of 'CoSinkableLaws', by name.
-data CoSinkLaw = CoSinkIdentity | CoSinkComposition | CoSinkExtension | CoSinkBinders
+-- | The laws of 'CoSinkableLaws', by name, and the law of the traversal
+-- order of 'withPattern'.
+data CoSinkLaw
+  = CoSinkIdentity | CoSinkComposition | CoSinkExtension | CoSinkBinders
+  | WithPatternOrder
   deriving (Eq, Show, Enum, Bounded)
 
+-- | 'withPattern' visits the binders of a pattern in the order of its
+-- structure. Everything that pairs the binders of a pattern with other
+-- data relies on this: 'addSubstPattern' pairs them with terms,
+-- 'nameBinderListOf' lists them, and 'withRefreshedPattern' puts the
+-- refreshed names back.
+withPatternOrderLaw :: CoSinkable p => PatternNames p -> p n l -> Property
+withPatternOrderLaw binders p =
+  counterexample "the order of the pattern is on the left, the order of withPattern on the right" $
+    binders p === patternRawNames p
+
 -- | All laws of 'coSinkabilityProof' for a pattern type, along each class
--- of renamings.
-coSinkableSpec :: CoSinkable p => GenPattern p -> (RenamingClass -> CoSinkLaw -> Verdict) -> Spec
-coSinkableSpec genPat verdict =
+-- of renamings, and the law of the traversal order of 'withPattern'.
+coSinkableSpec
+  :: CoSinkable p
+  => PatternNames p -> GenPattern p -> (RenamingClass -> CoSinkLaw -> Verdict) -> Spec
+coSinkableSpec binders genPat verdict = do
+  law (verdict Inclusions WithPatternOrder) "withPattern visits binders in the order of the pattern" $
+    forAllShow (genPatternCase genPat Inclusions) (showPatternCase binders) $
+      \(PatternCase _ p) -> withPatternOrderLaw binders p
   forM_ allRenamingClasses $ \cls -> describe ("along " <> show cls) $
-    forM_ [minBound .. maxBound] $ \name ->
+    forM_ [CoSinkIdentity, CoSinkComposition, CoSinkExtension, CoSinkBinders] $ \name ->
       law (verdict cls name) (show name) $
-        forAll (genPatternCase genPat cls) (lawOf name)
+        forAllShow (genPatternCase genPat cls) (showPatternCase binders) (lawOf name)
   where
-    laws = coSinkableLaws
+    laws = coSinkableLaws binders
     lawOf CoSinkIdentity    = coSinkIdentity laws
     lawOf CoSinkComposition = coSinkComposition laws
     lawOf CoSinkExtension   = coSinkExtension laws
     lawOf CoSinkBinders     = coSinkBinders laws
+    lawOf WithPatternOrder  = \(PatternCase _ p) -> withPatternOrderLaw binders p
 
 -- * Laws of 'UnifiablePattern'
 
@@ -555,38 +601,38 @@ genNameBinderListPair ctx = withCtx ctx $ \scope -> do
 -- distinct positions to distinct names. This is the reading of
 -- 'UnifiablePattern' as equality in the quotient of §4 and §5 of the map
 -- (the default instance compares "the number and order of binders").
-unifyPatternsLaw :: UnifiablePattern p => Ctx n -> PatPair p n -> Property
-unifyPatternsLaw ctx (PatPair l r) = withCtx ctx $ \scope ->
-  let xs = namesOfPattern l
-      ys = namesOfPattern r
+unifyPatternsLaw :: UnifiablePattern p => PatternNames p -> Ctx n -> PatPair p n -> Property
+unifyPatternsLaw binders ctx (PatPair l r) = withCtx ctx $ \scope ->
+  let xs = binders l
+      ys = binders r
       positional us vs =
         counterexample ("left binders become " <> show us) $
           counterexample ("right binders become " <> show vs) $
             us === vs .&&. counterexample "two positions are merged" (distinct us)
-   in counterexample ("left pattern = " <> showPattern l) $
-        counterexample ("right pattern = " <> showPattern r) $
+   in counterexample ("left pattern = " <> showPatternWith binders l) $
+        counterexample ("right pattern = " <> showPatternWith binders r) $
           case unifyPatternsIn scope l r of
             SameNameBinders _ ->
-              counterexample "SameNameBinders" $ positional (map nameId xs) (map nameId ys)
+              counterexample "SameNameBinders" $ positional xs ys
             RenameLeftNameBinder _ f ->
-              counterexample "RenameLeftNameBinder" $ positional (map (renamed f) xs) (map nameId ys)
+              counterexample "RenameLeftNameBinder" $ positional (map (renamed f) xs) ys
             RenameRightNameBinder _ g ->
-              counterexample "RenameRightNameBinder" $ positional (map nameId xs) (map (renamed g) ys)
+              counterexample "RenameRightNameBinder" $ positional xs (map (renamed g) ys)
             RenameBothBinders _ f g ->
               counterexample "RenameBothBinders" $ positional (map (renamed f) xs) (map (renamed g) ys)
             NotUnifiable ->
               counterexample "NotUnifiable" False
   where
     -- The name a binder renaming assigns to a bound name.
-    renamed :: (NameBinder a b -> NameBinder a c) -> Name b -> Int
-    renamed f x = nameId (nameOf (f (UnsafeNameBinder x)))
+    renamed :: (NameBinder a b -> NameBinder a c) -> Int -> Int
+    renamed f x = nameId (nameOf (f (UnsafeNameBinder (UnsafeName x))))
     distinct us = and [ u /= v | (i, u) <- zip [0 :: Int ..] us, (j, v) <- zip [0 :: Int ..] us, i < j ]
 
 -- | The positional law of 'unifyPatternsIn' on pairs of patterns.
-unifyPatternsSpec :: UnifiablePattern p => GenPatternPair p -> Verdict -> Spec
-unifyPatternsSpec genPair verdict =
+unifyPatternsSpec :: UnifiablePattern p => PatternNames p -> GenPatternPair p -> Verdict -> Spec
+unifyPatternsSpec binders genPair verdict =
   law verdict "unifyPatternsIn pairs binders position by position" $
-    forAllShow (genSomePair genPair) showSomePair $ \(SomePair ctx pair) -> unifyPatternsLaw ctx pair
+    forAllShow (genSomePair genPair) showSomePair $ \(SomePair ctx pair) -> unifyPatternsLaw binders ctx pair
   where
     showSomePair (SomePair ctx _) = "n = " <> showCtx ctx
 
@@ -623,6 +669,19 @@ extensionByCoercion _ _ = Holds
 mergedBinderRenamings :: Verdict
 mergedBinderRenamings = KnownFailure
   "unsafeMergeUnifyBinders composes the renamings of successive binders, so a chain of them collapses"
+
+-- | The verdict for 'coSinkabilityProof' of a pattern type whose instance
+-- is the generic default, which goes through 'SinkableK' 'NameBinder'.
+genericCoSinkableCrash :: Verdict
+genericCoSinkableCrash = KnownFailure
+  "the generic coSinkabilityProof crashes on a binder: SinkableK NameBinder matches one renaming, a binder has two indices"
+
+-- | The verdict for laws that go through the generic 'withPattern' (the
+-- default for a pattern type with 'HasNameBinders') on patterns of several
+-- binders.
+genericPatternOrder :: Verdict
+genericPatternOrder = KnownFailure
+  "the generic withPattern visits binders in ascending order of raw names and puts them back in that order"
 
 -- | Check a law on at least 1000 cases, or pin it as a known failure.
 law :: Testable p => Verdict -> String -> p -> Spec
