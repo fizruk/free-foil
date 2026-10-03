@@ -25,6 +25,8 @@ Fixes:
 
 - The generic `withPattern`, the default for a pattern type that derives `HasNameBinders`, keeps each binder of a pattern at its position. It went through `NameBinders`, which is a set, so it visited the binders in ascending order of their names and put them back in that order. A pattern whose names do not ascend had its binders permuted, which changes the meaning of the term it binds in. `substitute`, `liftRM` and `refreshAST` produce such patterns themselves, since a refreshed binder gets a name larger than those of the binders after it. In `Impl.FreeFoilTH` of `lambda-pi`, `liftRM` along the identity turned `λ (x8, x4). x4` into the first projection. Everything built on `withPattern` inherited the order, including `nameBinderListOf`, `addSubstPattern`, the default `unifyPatterns` and `alphaEquivRefreshed`. The instances that `mkFreeFoil` generates were not affected.
 
+- In `lambda-pi`, `alphaEquiv` of `Impl.Foil` no longer captures a free name when a binder shadows the scope. A term built in a smaller scope and sunk may bind a name of the scope, as `λx0. x0` sunk into the scope `{x0}` does. `alphaEquiv` renamed the binder of `λx1. x0` to `x0`, which captured its free `x0`, so it called the two terms α-equivalent. When a unified binder is a name of the scope, it now compares the terms with `alphaEquivRefreshed`. The `alphaEquiv` of the free foil compares bound names by level and was not affected.
+
 # 0.4.0 — 2026-08-29
 
 A release about *units*: checking a module independently of its neighbours, linking the results without renaming, and storing a checked one on disk. Scope restriction, a family of $O(1)$ sinks, and a linear α-equivalence rename path come with it.

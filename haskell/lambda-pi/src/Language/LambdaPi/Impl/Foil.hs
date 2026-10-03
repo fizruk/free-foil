@@ -514,11 +514,19 @@ unsafeEqExpr e1 e2 = case (e1, e2) of
 --
 -- Compared to 'alphaEquivRefreshed', this function might skip unnecessary
 -- changes of bound variables when both binders in two matching scoped terms coincide.
+--
+-- The renaming that unification prescribes sends binders of one side to
+-- binders of the other, and this is sound only when those are fresh for the
+-- scope. A term built in a smaller scope and sunk may bind a name of the scope,
+-- as @λx0. x0@ sunk into the scope @{x0}@ does. Renaming the binder of
+-- @λx1. x0@ to @x0@ would then capture its free @x0@. In that case, the two
+-- terms are compared with 'alphaEquivRefreshed' instead.
 alphaEquiv :: Distinct n => Scope n -> Expr n -> Expr n -> Bool
 alphaEquiv scope e1 e2 = case (e1, e2) of
   (VarE x, VarE x') -> x == coerce x'
   (AppE t1 t2, AppE t1' t2') -> alphaEquiv scope t1 t1' && alphaEquiv scope t2 t2'
   (LamE x body, LamE x' body') -> case unifyPatterns x x' of
+    verdict | unifiedBindersShadow scope verdict -> alphaEquivRefreshed scope e1 e2
     SameNameBinders z    -> case assertDistinct z of
       Distinct -> alphaEquiv (extendScopePattern z scope) body body'
     RenameLeftNameBinder z renameL -> case assertDistinct z of
@@ -535,6 +543,7 @@ alphaEquiv scope e1 e2 = case (e1, e2) of
         in alphaEquiv scope' (liftRM scope' (fromNameBinderRenaming renameL) body) (liftRM scope' (fromNameBinderRenaming renameR) body')
     NotUnifiable -> False
   (PiE x a b, PiE x' a' b') -> alphaEquiv scope a a' && case unifyPatterns x x' of
+    verdict | unifiedBindersShadow scope verdict -> alphaEquivRefreshed scope e1 e2
     SameNameBinders z    -> case assertDistinct z of Distinct -> alphaEquiv (extendScopePattern z scope) b b'
     RenameLeftNameBinder z renameL -> case assertDistinct z of
       Distinct ->
@@ -555,6 +564,19 @@ alphaEquiv scope e1 e2 = case (e1, e2) of
   (ProductE l r, ProductE l' r') -> alphaEquiv scope l l' && alphaEquiv scope r r'
   (UniverseE, UniverseE) -> True
   _ -> False
+
+-- | Does a binder of the unified pattern in a verdict bind a name of the scope?
+unifiedBindersShadow :: Distinct n => Scope n -> UnifyNameBinders Pattern n l r -> Bool
+unifiedBindersShadow scope = \case
+  SameNameBinders z         -> bindersShadow scope z
+  RenameLeftNameBinder z _  -> bindersShadow scope z
+  RenameRightNameBinder z _ -> bindersShadow scope z
+  RenameBothBinders z _ _   -> bindersShadow scope z
+  NotUnifiable              -> False
+
+-- | Does one of the binders bind a name of the scope?
+bindersShadow :: Distinct n => Scope n -> NameBinders n l -> Bool
+bindersShadow scope z = any (`member` scope) (namesOfPattern z)
 
 -- * Interpreter
 
