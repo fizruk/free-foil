@@ -1683,35 +1683,47 @@ transportUnderBinder transport binder binder'
   where
     unchanged = nameId (nameOf binder) == nameId (nameOf binder')
 
--- | Carry a payload along a transport.
+-- | Carry a payload along a transport, into the ambient scope.
 --
--- The 'Sinkable' instance does the walking, and only when it has to. While no
--- binder has been refreshed the payload is taken over as it stands, so the
--- traversals that never rename ('extendScopePattern', 'namesOfPattern',
+-- While no binder has been refreshed, the payload is taken over as it stands,
+-- so the traversals that never rename ('extendScopePattern', 'namesOfPattern',
 -- 'nameBinderListOf') do not walk payloads at all.
+--
+-- Otherwise the payload is renamed with 'rbind', which refreshes the payload's
+-- own binders against the ambient scope wherever they would capture. The
+-- transport is not an inclusion, so this is not what 'sinkabilityProof' is for,
+-- and it needs the scope. For instance, if a binder @x0@ of the pattern is
+-- refreshed to @x1@, then a later payload @λx1. x0@ has to become @λx2. x1@,
+-- and only the scope says that @x2@ is free.
 --
 -- The whole recipe for a payload-carrying pattern, at a telescope of labelled
 -- steps:
 --
--- > instance Sinkable e => CoSinkable (Telescope label e) where
+-- > instance (Sinkable e, RelMonad Name e) => CoSinkable (Telescope label e) where
 -- >   withPattern withBinder unit comp = go verbatimTransport
 -- >     where
--- >       go _transport _scope TelescopeEmpty cont = cont unit TelescopeEmpty
+-- >       go _transport scope TelescopeEmpty cont = cont unit TelescopeEmpty scope
 -- >       go transport scope (TelescopeCons label payload binder rest) cont =
 -- >         withBinder scope binder $ \fbinder binder' ->
 -- >           go (transportUnderBinder transport binder binder')
--- >              (extendScope binder' scope) rest $ \frest rest' ->
+-- >              (extendScope binder' scope) rest $ \frest rest' scope'' ->
 -- >             cont (comp fbinder frest)
--- >               (TelescopeCons label (transportPayload transport payload)
+-- >               (TelescopeCons label (transportPayload scope transport payload)
 -- >                              binder' rest')
+-- >               scope''
 --
--- Note which transport each payload takes: the one accumulated /before/ its own
--- binder, since that is the scope the payload lives in.
+-- Note which transport and which scope each payload takes: those reached
+-- /before/ its own binder, since that is the scope the payload lives in.
 --
 -- @since 0.4.0
-transportPayload :: Sinkable e => PatternTransport n o -> e n -> e o
-transportPayload TransportVerbatim         = unsafeCoerce
-transportPayload (TransportRenamed rename) = sinkabilityProof rename
+transportPayload
+  :: (RelMonad Name e, Distinct o)
+  => Scope o                -- ^ The ambient scope the payload is carried into.
+  -> PatternTransport n o
+  -> e n
+  -> e o
+transportPayload _scope TransportVerbatim         payload = unsafeCoerce payload
+transportPayload scope  (TransportRenamed rename) payload = rbind scope payload (rreturn . rename)
 
 -- | Carry a single name along a transport.
 --
@@ -2144,6 +2156,35 @@ class InjectName (e :: S -> Type) where
   --
   -- @since 0.0.1
   injectName :: Name n -> e n
+
+-- | Relative monads, restricted to types indexed by scopes in kind 'S'.
+--
+-- @since 0.0.1
+class RelMonad (f :: S -> Type) (m :: S -> Type) where
+  -- | Relative version of 'return'.
+  --
+  -- @since 0.0.1
+  rreturn :: f a -> m a
+
+  -- | Relative version of '>>='.
+  --
+  -- Note the two special additions to the usual definition of a relative binding operation:
+  --
+  -- 1. @'Scope' b@ is added since is corresponds to the runtime counterpart of the type parameter @b@.
+  -- 2. @t'Distinct' b@ constraint helps to ensure we only work with scopes that are distinct.
+  --
+  -- Technically, it is also possible add similar components for @a@ parameter.
+  -- Also, we could probably treat types in 'S' as singletons and extract distinct scopes that way,
+  -- preserving the more general type signature for 'rbind'.
+  --
+  -- @since 0.0.1
+  rbind :: Distinct b => Scope b -> m a -> (f a -> m b) -> m b
+
+-- | A name has no binders, so renaming it needs no scope. This is what lets a
+-- pattern carry names as payloads (see 'transportPayload').
+instance RelMonad Name Name where
+  rreturn = id
+  rbind _scope name f = f name
 
 -- * Kind-polymorphic sinkability
 

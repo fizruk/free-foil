@@ -26,7 +26,6 @@ module Control.Monad.Free.Foil where
 
 import           Control.DeepSeq
 import qualified Control.Monad.Foil.Internal as Foil
-import qualified Control.Monad.Foil.Relative as Foil
 import           Data.Bifoldable
 import           Data.Bitraversable
 import           Data.Bifunctor

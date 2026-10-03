@@ -25,7 +25,7 @@
 module Control.Monad.Foil.Telescope where
 
 import           Control.Monad.Foil.Internal
-import           Control.Monad.Foil.Relative (RelMonad, liftRM)
+import           Control.Monad.Foil.Relative (liftRM)
 import           Data.Coerce                 (coerce)
 
 -- | A labelled telescope: a chain of binders, each carrying a label and a
@@ -60,8 +60,10 @@ data Telescope label e n l where
 -- that binder used to have. This instance follows the recipe in
 -- 'transportPayload': a 'PatternTransport' threaded through the traversal,
 -- with each payload moved by the transport accumulated /before/ its own
--- binder, that being the scope the payload lives in.
-instance Sinkable e => CoSinkable (Telescope label e) where
+-- binder, into the ambient scope reached there, that being the scope the
+-- payload lives in. Moving a payload may have to refresh the payload's own
+-- binders, which is why it takes @'RelMonad' 'Name' e@.
+instance (Sinkable e, RelMonad Name e) => CoSinkable (Telescope label e) where
   coSinkabilityProof rename TelescopeEmpty cont = cont rename TelescopeEmpty
   coSinkabilityProof rename (TelescopeCons label payload binder rest) cont =
     coSinkabilityProof rename binder $ \rename' binder' ->
@@ -99,7 +101,7 @@ instance Sinkable e => CoSinkable (Telescope label e) where
              (extendScope binder' scope)
              rest $ \frest rest' scope'' ->
             cont (comp fbinder frest)
-              (TelescopeCons label (transportPayload transport payload) binder' rest')
+              (TelescopeCons label (transportPayload scope transport payload) binder' rest')
               scope''
 
 -- | Two telescopes unify when their binders line up and their payloads agree.
@@ -212,7 +214,9 @@ telescopeParams
   => Telescope label e n l -> [Param label e l]
 telescopeParams TelescopeEmpty = []
 telescopeParams (TelescopeCons label ty binder rest) =
-  case (assertExt binder, assertExt rest) of
+  -- The evidence for the rest is read off its binders, which are a pattern
+  -- whatever the payloads are. 'assertExt' does not look at its argument.
+  case (assertExt binder, assertExt (telescopeBinders rest)) of
     (Ext, Ext) ->
       Param label (sink (nameOf binder)) (sink ty)
         : telescopeParams rest

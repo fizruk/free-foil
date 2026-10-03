@@ -2,6 +2,13 @@
 
 # Unreleased
 
+Breaking changes:
+
+- **`transportPayload` takes the ambient scope and requires `RelMonad Name e` instead of `Sinkable e`, and `CoSinkable (Telescope label e)` requires `RelMonad Name e` too.** When a binder of a pattern is refreshed, the payloads after it are renamed, and that renaming is not an inclusion. For instance, if a binder `x0` is refreshed to `x1`, then a later payload `λx1. x0` has to become `λx2. x1`, and choosing `x2` needs the scope. `transportPayload` ran `sinkabilityProof`, which is lawful on inclusions only: through the generic instance it crashed on a payload with a binder, and through one built on `extendRenaming` it gave `λx1. x0`, whose `x0` then named an unrelated variable of the ambient scope. It now renames with `rbind`. A hand-written `withPattern` passes the scope it holds before the payload's binder (see the recipe in the documentation of `transportPayload`), and an instance carrying payloads of type `e` adds `RelMonad Name e` to its context.
+  - The new `instance RelMonad Name Name` keeps telescopes of names working.
+  - `RelMonad` is now defined in `Control.Monad.Foil.Internal`. `Control.Monad.Foil.Relative` re-exports it, so imports need no change.
+  - `telescopeParams` and `telescopePayloads` keep their constraints.
+
 Fixes:
 
 - The generic `sinkabilityProof` no longer crashes on a binder. `SinkableK NameBinder` and `SinkableK NameBinders` matched a list of one renaming, while a binder has two scope indices and is handed two. The instances for a field indexed by the innermost scope variable (such as the body of `ScopedAST`) had the same problem under a binder. So `sinkabilityProof` on any `AST` with a binder, the default `coSinkabilityProof` of every pattern that derives `CoSinkable` generically, and `transportPayload` on such a payload threw `Non-exhaustive patterns in function sinkabilityProofK`, even for the identity renaming. As in the hand-written instances, the renaming under a binder is a coercion, so the result agrees with `sink` on inclusions, which is what the method is for. The bug went unnoticed because `Control.Monad.Foil.Internal` disables the warnings that report it.
