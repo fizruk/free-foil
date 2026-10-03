@@ -37,7 +37,7 @@ spec = do
     -- with each other. They disagree where 'substitute' reaches an empty
     -- substitution under a binder and stops, and 'rbind' goes on
     -- reordering. For a β-substitution @s1@ this is rare: one case in
-    -- several hundred, or none in 20000.
+    -- several hundred, or none in 20000 (seen in two runs out of twenty).
     (SubstituteAgreesWithRbind, Just (Beta, _)) -> Unstable
       "substitute and rbind reorder alike, except below an empty substitution"
     _ -> genericPatternOrder
