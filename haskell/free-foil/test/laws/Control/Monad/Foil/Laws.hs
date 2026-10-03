@@ -104,6 +104,7 @@ module Control.Monad.Foil.Laws (
   extensionByCoercion,
   mergedBinderRenamings,
   genericCoSinkableCrash,
+  genericCoSinkExtension,
   genericPatternOrder,
 ) where
 
@@ -686,6 +687,16 @@ mergedBinderRenamings = KnownFailure
 genericCoSinkableCrash :: Verdict
 genericCoSinkableCrash = KnownFailure
   "the generic coSinkabilityProof crashes on a binder: SinkableK NameBinder matches one renaming, a binder has two indices"
+
+-- | The verdict for the extension law of a pattern type whose
+-- 'coSinkabilityProof' is the generic default. Along an inclusion, the law
+-- fails only because the generic instance crashes ('genericCoSinkableCrash').
+-- Along any other renaming, it would fail without the crash too, as in
+-- 'extensionByCoercion', so the pin names both causes.
+genericCoSinkExtension :: RenamingClass -> Verdict
+genericCoSinkExtension Inclusions = genericCoSinkableCrash
+genericCoSinkExtension _          = KnownFailure
+  "the generic coSinkabilityProof crashes on a binder, and without the crash the extended renaming is a coercion, so it extends f only when f is an inclusion"
 
 -- | The verdict for laws that go through the generic 'withPattern' (the
 -- default for a pattern type with 'HasNameBinders') on patterns of several

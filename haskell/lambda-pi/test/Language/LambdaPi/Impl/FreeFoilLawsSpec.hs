@@ -14,6 +14,6 @@ spec :: Spec
 spec = do
   describe "α-equivalence" $ alphaSpec lambdaPiSyntax (const Holds)
   describe "relative monad" $ relMonadSpec lambdaPiSyntax (\_ _ -> Holds)
-  describe "functor" $ functorSpec lambdaPiSyntax (\_ _ -> genericSinkableCrash) $ \_ -> \case
-    SinkAgreesWithLiftRM -> genericSinkableCrash
+  describe "functor" $ functorSpec lambdaPiSyntax (\_ _ -> genericSinkableCrash) $ \cls -> \case
+    SinkAgreesWithLiftRM -> genericSinkAgreesWithLiftRM cls
     _                    -> Holds

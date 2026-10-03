@@ -19,8 +19,9 @@ import           Language.LambdaPi.Impl.LawsSyntax (foilPatternNames, genFoilPat
 spec :: Spec
 spec = do
   describe "CoSinkable FoilPattern" $
-    coSinkableSpec foilPatternNames genFoilPattern $ \_ -> \case
+    coSinkableSpec foilPatternNames genFoilPattern $ \cls -> \case
       WithPatternOrder -> genericPatternOrder
+      CoSinkExtension  -> genericCoSinkExtension cls
       _                -> genericCoSinkableCrash
   describe "UnifiablePattern FoilPattern" $
     unifyPatternsSpec foilPatternNames genFoilPatternPair mergedBinderRenamings
@@ -41,6 +42,6 @@ spec = do
     (SubstituteAgreesWithRbind, Just (Beta, _)) -> Unstable
       "substitute and rbind reorder alike, except below an empty substitution"
     _ -> genericPatternOrder
-  describe "functor" $ functorSpec termSyntax (\_ _ -> genericSinkableCrash) $ \_ -> \case
-    SinkAgreesWithLiftRM -> genericSinkableCrash
+  describe "functor" $ functorSpec termSyntax (\_ _ -> genericSinkableCrash) $ \cls -> \case
+    SinkAgreesWithLiftRM -> genericSinkAgreesWithLiftRM cls
     _                    -> genericPatternOrder

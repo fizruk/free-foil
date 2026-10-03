@@ -97,5 +97,13 @@ spec = do
     MirrorSinkAgreesWithLiftRM | cls /= Inclusions -> KnownFailure
       "extendRenaming is a coercion, so free names under a binder are not renamed"
     MirrorAlphaEquivRefresh -> mergedBinderRenamings
-    MirrorAlphaEquivAgrees  -> mergedBinderRenamings
+    -- 'F.alphaEquiv' pushes the verdict's renaming through a body with
+    -- 'liftRM'. When a binder of the left pattern shadows a name of the scope
+    -- (a term built in a small scope and sunk), the right binder renamed to it
+    -- is conflated with a free occurrence of that name on the right, as in
+    -- λx0. x0 against λx1. x0 in the scope {x0}. On patterns of several
+    -- binders, the law also fails as 'mergedBinderRenamings' says, but the
+    -- capture remains once that is fixed.
+    MirrorAlphaEquivAgrees  -> KnownFailure
+      "renaming a right binder to a left binder that shadows the scope captures a free name"
     _ -> Holds

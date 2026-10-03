@@ -79,6 +79,6 @@ spec = do
     AlphaEquivRefreshedAgrees -> Holds
     _                         -> mergedBinderRenamings
   describe "relative monad" $ relMonadSpec termSyntax (\_ _ -> Holds)
-  describe "functor" $ functorSpec termSyntax (\_ _ -> genericSinkableCrash) $ \_ -> \case
-    SinkAgreesWithLiftRM -> genericSinkableCrash
+  describe "functor" $ functorSpec termSyntax (\_ _ -> genericSinkableCrash) $ \cls -> \case
+    SinkAgreesWithLiftRM -> genericSinkAgreesWithLiftRM cls
     _                    -> Holds

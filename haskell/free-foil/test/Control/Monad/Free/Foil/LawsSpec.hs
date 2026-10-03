@@ -24,9 +24,10 @@ spec = do
     describe "relative monad" $ relMonadSpec sg (\_ _ -> Holds)
     describe "functor" $ functorSpec sg (\_ _ -> genericSinkableCrash) functorVerdict
   where
-    -- 'liftRM' is lawful; 'sinkabilityProof' crashes before it can agree.
-    functorVerdict _ SinkAgreesWithLiftRM = genericSinkableCrash
-    functorVerdict _ _                    = Holds
+    -- 'liftRM' is lawful; 'sinkabilityProof' crashes before it can agree,
+    -- and outside inclusions it would not agree without the crash either.
+    functorVerdict cls SinkAgreesWithLiftRM = genericSinkAgreesWithLiftRM cls
+    functorVerdict _   _                    = Holds
     -- 'alphaEquiv' goes wrong on patterns of several binders;
     -- 'alphaEquivRefreshed' does not use the renamings and is fine.
     alphaVerdict AlphaEquivRefreshedAgrees = Holds

@@ -35,6 +35,7 @@ module Control.Monad.Free.Foil.Laws (
   genPairCase,
   showPairCase,
   genericSinkableCrash,
+  genericSinkAgreesWithLiftRM,
   -- * Substitutions
   SubstKind (..),
   Subst (..),
@@ -650,6 +651,17 @@ alphaEqNameless binders = go 0 IntMap.empty IntMap.empty
 genericSinkableCrash :: Verdict
 genericSinkableCrash = KnownFailure
   "the generic sinkabilityProof crashes on a binder: SinkableK NameBinder matches one renaming, a binder has two indices"
+
+-- | The verdict for the agreement of 'sinkabilityProof' with 'liftRM' on
+-- terms whose 'Sinkable' instance is the generic one. Along an inclusion, the
+-- two disagree only because the generic instance crashes
+-- ('genericSinkableCrash'). Along any other renaming, they would disagree
+-- without the crash too, since under a binder the renaming is a coercion, so
+-- the pin names both causes.
+genericSinkAgreesWithLiftRM :: RenamingClass -> Verdict
+genericSinkAgreesWithLiftRM Inclusions = genericSinkableCrash
+genericSinkAgreesWithLiftRM _          = KnownFailure
+  "the generic sinkabilityProof crashes on a binder, and without the crash the renaming under a binder is a coercion, so sinkabilityProof agrees with liftRM on inclusions only"
 
 -- | Checks of the library's α-equivalence against 'alphaEqNameless'.
 data AlphaLaw
