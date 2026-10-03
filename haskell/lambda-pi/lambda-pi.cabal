@@ -121,12 +121,20 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      Language.LambdaPi.Impl.FoilLawsSpec
       Language.LambdaPi.Impl.FoilSpec
+      Language.LambdaPi.Impl.FreeFoilLawsSpec
       Language.LambdaPi.Impl.FreeFoilSpec
+      Language.LambdaPi.Impl.FreeFoilTHLawsSpec
+      Language.LambdaPi.Impl.LawsSyntax
       SpecHook
+      Control.Monad.Foil.Laws
+      Control.Monad.Free.Foil.Laws
+      Control.Monad.Free.Foil.Laws.Mirror
       Paths_lambda_pi
   hs-source-dirs:
       test
+      ../free-foil/test/laws
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -optP-Wno-nonportable-include-path -threaded -rtsopts -with-rtsopts=-N
   build-tools:
       alex >=3.2.4
