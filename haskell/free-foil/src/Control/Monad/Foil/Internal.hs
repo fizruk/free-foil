@@ -829,6 +829,8 @@ unsafeMergeUnifyBinders outer inner =
 -- The unified names of a verdict are those of the 'NameBinders' it carries,
 -- one for each of its positions. So two verdicts choose the same name for
 -- different binders exactly when these sets intersect.
+--
+-- @since 0.5.0
 unsafeTryMergeUnifyBinders :: UnifyNameBinders pattern a a' a'' -> UnifyNameBinders pattern a''' b' b'' -> Maybe (UnifyNameBinders pattern a b' b'')
 unsafeTryMergeUnifyBinders outer inner
   | collide (unifiedRawNames outer) (unifiedRawNames inner) = Nothing
@@ -884,6 +886,8 @@ unsafeTryMergeUnifyBinders outer inner
 -- Each verdict renames its own binders and leaves every other name as it is,
 -- and the binders of the two verdicts are distinct. So the inner renaming
 -- decides for the binders it moves, and the outer one for the rest.
+--
+-- @since 0.5.0
 unsafeOverrideBinderRenaming
   :: forall a b c d e f n l r.
      (NameBinder a b -> NameBinder a c)  -- ^ Renaming of the outer verdict.
@@ -934,6 +938,8 @@ andThenUnifyNameBinders u (l, r) =
 
 -- | 'unifyNameBinders' in the other direction: when the binders differ, the
 -- one with the /smaller/ name is renamed towards the one with the larger name.
+--
+-- @since 0.5.0
 unifyNameBindersTowardsLarger
   :: forall i l r pattern. Distinct i
   => NameBinder i l -- ^ Left pattern.
@@ -1304,6 +1310,8 @@ unsafeEqPattern l r =
 --
 -- > instance UnifiablePattern MyPattern where
 -- >   unifyPatterns = unifyPatternBinders
+--
+-- @since 0.5.0
 unifyPatternBinders
   :: (CoSinkable pattern, Distinct n)
   => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
@@ -1314,6 +1322,8 @@ unifyPatternBinders l r = coerce (unifyPatterns (nameBinderListOf l) (nameBinder
 -- on the scopes. This is what a structural comparison asks of two
 -- sub-patterns, which extend different scopes once a binder before them has
 -- been renamed.
+--
+-- @since 0.5.0
 unsafeUnifiablePatterns
   :: forall pattern n l n' r. UnifiablePattern pattern
   => pattern n l -> pattern n' r -> Bool
@@ -1345,6 +1355,8 @@ unsafeUnifiablePatterns l r =
 --
 -- A sub-pattern is compared with its own 'unifyPatterns', so its type needs a
 -- 'UnifiablePattern' instance, which a recursive pattern type has already.
+--
+-- @since 0.5.0
 gunifyPatterns
   :: forall pattern n l r.
      (GenericK pattern, GUnifiablePattern (RepK pattern), CoSinkable pattern, Distinct n)
@@ -1357,8 +1369,12 @@ gunifyPatterns l r
 
 -- | The shape of a pattern on its "Generics.Kind" representation, which is
 -- what 'gunifyPatterns' compares.
+--
+-- @since 0.5.0
 class GUnifiablePattern f where
   -- | Do two values consist of the same constructors, nested in the same way?
+  --
+  -- @since 0.5.0
   gsamePatternShape :: f as -> f bs -> Bool
 
 instance GUnifiablePattern V1 where
@@ -2270,6 +2286,8 @@ class RelMonad (f :: S -> Type) (m :: S -> Type) where
 
 -- | A name has no binders, so renaming it needs no scope. This is what lets a
 -- pattern carry names as payloads (see 'transportPayload').
+--
+-- @since 0.5.0
 instance RelMonad Name Name where
   rreturn = id
   rbind _scope name f = f name
@@ -2596,6 +2614,8 @@ gunsafeWithPatternViaHasNameBinders withBinder id_ comp_ scope pat cont =
     raw = ggetNameBindersRaw (fromK @_ @pattern @(n :&&: l :&&: LoT0) pat)
 
 -- | The binders of a pattern, in the order of the pattern, from their raw names.
+--
+-- @since 0.5.0
 unsafeNameBinderListFromRaw :: [RawName] -> NameBinderList n l
 unsafeNameBinderListFromRaw []       = unsafeCoerce NameBinderListEmpty
 unsafeNameBinderListFromRaw (x : xs) =
@@ -2603,6 +2623,8 @@ unsafeNameBinderListFromRaw (x : xs) =
 
 -- | Replace the binders of a pattern by position, the first binder of the
 -- list going to the first binder of the pattern, and so on.
+--
+-- @since 0.5.0
 gunsafeSetNameBinderList
   :: forall f n l l'. (GenericK f, GValidNameBinders f (RepK f), GHasNameBinders (RepK f))
   => f n l -> NameBinderList n l' -> f n l'
