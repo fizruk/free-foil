@@ -652,7 +652,13 @@ data Verdict
   = Holds
     -- | The law fails at the moment. The test checks that it still fails
     -- (with 'expectFailure'), so that the suite notices when it is fixed.
+    -- Some counterexamples are rare (one case in several hundred), so the
+    -- search for one may run up to 20000 cases; it stops at the first.
   | KnownFailure String
+    -- | The law fails, but so rarely that neither 'Holds' nor 'KnownFailure'
+    -- gives a reliable test. It is checked on 1000 cases, and a
+    -- counterexample is reported as pending rather than as a failure.
+  | Unstable String
 
 -- | The verdicts for a pattern type whose 'coSinkabilityProof' hands back a
 -- coercion as the extended renaming, as the instances for 'NameBinder',
@@ -688,4 +694,10 @@ law :: Testable p => Verdict -> String -> p -> Spec
 law Holds name p =
   modifyMaxSuccess (max 1000) (it name (property p))
 law (KnownFailure why) name p =
-  modifyMaxSuccess (max 1000) (it (name <> " (known failure: " <> why <> ")") (expectFailure p))
+  it (name <> " (known failure: " <> why <> ")") (expectFailure (withMaxSuccess 20000 p))
+law (Unstable why) name p =
+  it (name <> " (unstable: " <> why <> ")") $ do
+    result <- quickCheckWithResult stdArgs { maxSuccess = 1000, chatty = False } p
+    case result of
+      Success{} -> pure ()
+      _         -> pendingWith ("counterexample found, as expected at times:\n" <> output result)

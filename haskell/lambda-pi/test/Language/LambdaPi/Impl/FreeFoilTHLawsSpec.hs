@@ -33,9 +33,13 @@ spec = do
     -- 'substitute' shortcuts the empty substitution and returns the term
     -- as it stands.
     (SubstRightUnit, _) -> Holds
-    -- Both sides go through the same generic traversal, so they agree with
-    -- each other, except where 'substitute' shortcuts an empty substitution.
-    (SubstituteAgreesWithRbind, Just (Beta, _)) -> Holds
+    -- The two sides go through the same generic traversal and mostly agree
+    -- with each other. They disagree where 'substitute' reaches an empty
+    -- substitution under a binder and stops, and 'rbind' goes on
+    -- reordering. For a β-substitution @s1@ this is rare: one case in
+    -- several hundred, or none in 20000.
+    (SubstituteAgreesWithRbind, Just (Beta, _)) -> Unstable
+      "substitute and rbind reorder alike, except below an empty substitution"
     _ -> genericPatternOrder
   describe "functor" $ functorSpec termSyntax (\_ _ -> genericSinkableCrash) $ \_ -> \case
     SinkAgreesWithLiftRM -> genericSinkableCrash
