@@ -19,8 +19,11 @@
 -- empty scope through 'withRefreshed', names are read off a scope, and a
 -- binder that shadows a name of the ambient scope arises only the way it
 -- arises in real code, by 'sink'ing a value built in an outer scope.
--- The single unsafe ingredient is 'UnsafeName' for the /hint/ given to
--- 'withRefreshed', which only decides which raw name a fresh binder gets.
+-- The generators use one unsafe ingredient, 'UnsafeName' for the /hint/
+-- given to 'withRefreshed', which only decides which raw name a fresh
+-- binder gets. (The law of 'unifyPatterns' also wraps a bound name back
+-- into a binder to read off a verdict's renaming, as the library's own
+-- 'Control.Monad.Free.Foil.alphaEquiv' does.)
 --
 -- Renamings are generated in three classes, so that a law can be checked
 -- separately over each candidate base category of §9.2 of the map:
@@ -36,6 +39,7 @@ module Control.Monad.Foil.Laws (
   ctxNames,
   extendCtx,
   genHint,
+  withHintedBinder,
   withHintedBinders,
   extendCtxBy,
   genCtx,
@@ -146,6 +150,17 @@ extendCtx ctx pat = withCtx ctx $ \scope ->
 genHint :: Gen Int
 genHint = chooseInt (0, 15)
 
+-- | Bind a name: the hint if it is free in the scope, and a fresh name
+-- otherwise.
+withHintedBinder
+  :: Distinct n
+  => Scope n
+  -> (forall l. DExt n l => NameBinder n l -> Gen r)
+  -> Gen r
+withHintedBinder scope cont = do
+  hint <- genHint
+  withRefreshed scope (UnsafeName hint) cont
+
 -- | Bind @k@ names, each one the hint if it is free in the scope and a
 -- fresh name otherwise.
 withHintedBinders
@@ -155,9 +170,8 @@ withHintedBinders
   -> Gen r
 withHintedBinders k scope cont
   | k <= 0 = cont NameBinderListEmpty
-  | otherwise = do
-      hint <- genHint
-      withRefreshed scope (UnsafeName hint) $ \binder ->
+  | otherwise =
+      withHintedBinder scope $ \binder ->
         withHintedBinders (k - 1) (extendScope binder scope) $ \binders ->
           cont (NameBinderListCons binder binders)
 
@@ -207,9 +221,7 @@ type GenPattern p = forall n. Ctx n -> Gen (PatIn p n)
 
 -- | A single binder with a hinted name.
 genNameBinder :: GenPattern NameBinder
-genNameBinder ctx = withCtx ctx $ \scope -> do
-  hint <- genHint
-  withRefreshed scope (UnsafeName hint) (pure . PatIn)
+genNameBinder ctx = withCtx ctx $ \scope -> withHintedBinder scope (pure . PatIn)
 
 -- | Up to three binders with hinted names.
 genNameBinderList :: GenPattern NameBinderList

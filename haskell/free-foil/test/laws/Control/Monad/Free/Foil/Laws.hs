@@ -30,6 +30,9 @@ module Control.Monad.Free.Foil.Laws (
   alphaEqNameless,
   AlphaLaw (..),
   alphaSpec,
+  PairCase (..),
+  genPairCase,
+  showPairCase,
   genericSinkableCrash,
   -- * Substitutions
   SubstKind (..),
@@ -680,11 +683,13 @@ alphaSpec sg verdict = do
         counterexample ("refreshAST n t = " <> showAST sg (refreshAST scope t)) $
           alphaEquiv scope t (refreshAST scope t)
   law (verdict AlphaEquivAgrees) "alphaEquiv agrees with a nameless comparison" $
-    forAllShow (genPairCase sg) showPair $ \(PairCase n t1 t2) ->
+    forAllShow (genPairCase sg) (showPairCase sg) $ \(PairCase n t1 t2) ->
       withCtx n $ \scope -> alphaEquiv scope t1 t2 === alphaEqNameless t1 t2
   law (verdict AlphaEquivRefreshedAgrees) "alphaEquivRefreshed agrees with a nameless comparison" $
-    forAllShow (genPairCase sg) showPair $ \(PairCase n t1 t2) ->
+    forAllShow (genPairCase sg) (showPairCase sg) $ \(PairCase n t1 t2) ->
       withCtx n $ \scope -> alphaEquivRefreshed scope t1 t2 === alphaEqNameless t1 t2
-  where
-    showPair (PairCase n t1 t2) = unlines
-      [ "n = " <> showCtx n, "t1 = " <> showAST sg t1, "t2 = " <> showAST sg t2 ]
+
+-- | Show a 'PairCase'.
+showPairCase :: (Bifunctor sig, CoSinkable binder) => SyntaxGen binder sig -> PairCase binder sig -> String
+showPairCase sg (PairCase n t1 t2) = unlines
+  [ "n = " <> showCtx n, "t1 = " <> showAST sg t1, "t2 = " <> showAST sg t2 ]
