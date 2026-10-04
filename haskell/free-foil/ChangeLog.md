@@ -1,6 +1,6 @@
 # CHANGELOG for `free-foil`
 
-# 0.5.0 — Unreleased
+# Unreleased
 
 Breaking changes:
 
