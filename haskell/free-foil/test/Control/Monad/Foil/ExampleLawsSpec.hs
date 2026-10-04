@@ -43,6 +43,6 @@ mirror = Mirror
 
 spec :: Spec
 spec = mirrorSpec mirror $ \cls -> \case
-  MirrorSinkAgreesWithLiftRM | cls /= Inclusions -> KnownFailure
+  MirrorSinkAgreesWithLiftRM | cls /= Inclusions -> ByDesign
     "extendRenaming is a coercion, so free names under a binder are not renamed"
   _ -> Holds

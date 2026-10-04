@@ -31,8 +31,7 @@ module Control.Monad.Free.Foil.Laws (
   PairCase (..),
   genPairCase,
   showPairCase,
-  genericSinkableCrash,
-  genericSinkAgreesWithLiftRM,
+  sinkAgreesOnInclusions,
   -- * Substitutions
   SubstKind (..),
   Subst (..),
@@ -639,20 +638,13 @@ alphaEqNameless binders = go 0 IntMap.empty IntMap.empty
           bind env names = foldl (\e (name, i) -> IntMap.insert name i e) env (zip names [lvl ..])
        in length ys == k && go (lvl + k) (bind envL xs) (bind envR ys) body1 body2
 
--- | The verdict for 'sinkabilityProof' on terms whose 'Sinkable' instance
--- is the generic one, through 'SinkableK' 'NameBinder'.
-genericSinkableCrash :: Verdict
-genericSinkableCrash = KnownFailure
-  "the generic sinkabilityProof crashes on a binder"
-
--- | The verdict for the agreement of 'sinkabilityProof' with 'liftRM' on
--- terms with the generic 'Sinkable' instance. It crashes along every class,
--- and outside inclusions the two would disagree without the crash too, so
--- the pin names both causes.
-genericSinkAgreesWithLiftRM :: RenamingClass -> Verdict
-genericSinkAgreesWithLiftRM Inclusions = genericSinkableCrash
-genericSinkAgreesWithLiftRM _          = KnownFailure
-  "the generic sinkabilityProof crashes on a binder, and its renaming under a binder is a coercion, so it agrees with liftRM on inclusions only"
+-- | The verdict for the agreement of 'sinkabilityProof' with 'liftRM'. Under
+-- a binder, 'sinkabilityProof' extends the renaming by a coercion, so the two
+-- agree on inclusions only, which is the domain of the laws.
+sinkAgreesOnInclusions :: RenamingClass -> Verdict
+sinkAgreesOnInclusions Inclusions = Holds
+sinkAgreesOnInclusions _          = ByDesign
+  "under a binder the renaming is a coercion, so sinkabilityProof agrees with liftRM on inclusions only"
 
 -- | Checks of the library's α-equivalence against 'alphaEqNameless'.
 data AlphaLaw

@@ -92,15 +92,8 @@ spec :: Spec
 spec = do
   describe "CoSinkable Pattern" $ coSinkableSpec patternNames genPattern extensionByCoercion
   describe "UnifiablePattern Pattern" $
-    unifyPatternsSpec patternNames genPatternPair mergedBinderRenamings
+    unifyPatternsSpec patternNames genPatternPair Holds
   mirrorSpec mirror $ \cls -> \case
-    MirrorSinkAgreesWithLiftRM | cls /= Inclusions -> KnownFailure
+    MirrorSinkAgreesWithLiftRM | cls /= Inclusions -> ByDesign
       "extendRenaming is a coercion, so free names under a binder are not renamed"
-    MirrorAlphaEquivRefresh -> mergedBinderRenamings
-    -- 'F.alphaEquiv' may rename a right binder to a left binder that
-    -- shadows the scope, capturing a free name: λx0. x0 against λx1. x0 in
-    -- the scope {x0}. With several binders the law also fails for
-    -- 'mergedBinderRenamings'.
-    MirrorAlphaEquivAgrees  -> KnownFailure
-      "renaming a right binder to a left binder that shadows the scope captures a free name"
     _ -> Holds

@@ -63,7 +63,7 @@ spec = do
   describe "UnifiablePattern" $ do
     describe "NameBinder" $ unifyPatternsSpec nameBinderNames genNameBinderPair Holds
     describe "NameBinderList" $
-      unifyPatternsSpec nameBinderListNames genNameBinderListPair mergedBinderRenamings
+      unifyPatternsSpec nameBinderListNames genNameBinderListPair Holds
 
 -- | Two single binders out of the same scope.
 genNameBinderPair :: GenPatternPair Foil.NameBinder

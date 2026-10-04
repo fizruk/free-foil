@@ -131,11 +131,6 @@ spec = do
     law Holds "withRefreshedPattern transports payloads along refreshed binders" $
       transportLaw Var (\case Var x -> Just x; _ -> Nothing) genNamePayload
   describe "Telescope () Expr" $ do
-    -- The laws of 'coSinkabilityProof' look at binders and renamings only,
-    -- and the pushed payloads are never forced, so they do not crash here.
     coSinkableSpec telescopeNames (genTelescope genTermPayload) extensionByCoercion
-    law payloadCrash "withRefreshedPattern transports payloads along refreshed binders" $
+    law Holds "withRefreshedPattern transports payloads along refreshed binders" $
       transportLaw id Just genTermPayload
-  where
-    payloadCrash = KnownFailure
-      "a payload is moved by sinkabilityProof, which crashes on a term with a binder"

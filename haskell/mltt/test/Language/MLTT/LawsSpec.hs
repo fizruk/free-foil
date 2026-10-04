@@ -91,11 +91,9 @@ spec :: Spec
 spec = do
   describe "CoSinkable Pattern" $ coSinkableSpec patternNames genPattern extensionByCoercion
   describe "UnifiablePattern Pattern" $
-    unifyPatternsSpec patternNames genPatternPair mergedBinderRenamings
-  describe "α-equivalence" $ alphaSpec termSyntax $ \case
-    AlphaEquivRefreshedAgrees -> Holds
-    _                         -> mergedBinderRenamings
+    unifyPatternsSpec patternNames genPatternPair Holds
+  describe "α-equivalence" $ alphaSpec termSyntax (const Holds)
   describe "relative monad" $ relMonadSpec termSyntax (\_ _ -> Holds)
-  describe "functor" $ functorSpec termSyntax (\_ _ -> genericSinkableCrash) $ \cls -> \case
-    SinkAgreesWithLiftRM -> genericSinkAgreesWithLiftRM cls
+  describe "functor" $ functorSpec termSyntax (\_ _ -> Holds) $ \cls -> \case
+    SinkAgreesWithLiftRM -> sinkAgreesOnInclusions cls
     _                    -> Holds

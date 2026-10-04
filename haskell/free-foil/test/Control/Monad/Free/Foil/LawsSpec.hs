@@ -17,18 +17,13 @@ spec = do
     let sg = exprSyntax genNameBinder nameBinderNames
     describe "α-equivalence" $ alphaSpec sg (const Holds)
     describe "relative monad" $ relMonadSpec sg (\_ _ -> Holds)
-    describe "functor" $ functorSpec sg (\_ _ -> genericSinkableCrash) functorVerdict
+    describe "functor" $ functorSpec sg (\_ _ -> Holds) functorVerdict
   describe "λ-calculus with NameBinderList" $ do
     let sg = exprSyntax genNameBinderList nameBinderListNames
-    describe "α-equivalence" $ alphaSpec sg alphaVerdict
+    describe "α-equivalence" $ alphaSpec sg (const Holds)
     describe "relative monad" $ relMonadSpec sg (\_ _ -> Holds)
-    describe "functor" $ functorSpec sg (\_ _ -> genericSinkableCrash) functorVerdict
+    describe "functor" $ functorSpec sg (\_ _ -> Holds) functorVerdict
   where
-    -- 'liftRM' is lawful; 'sinkabilityProof' crashes before it can agree,
-    -- and outside inclusions it would not agree without the crash either.
-    functorVerdict cls SinkAgreesWithLiftRM = genericSinkAgreesWithLiftRM cls
+    -- 'liftRM' is lawful; 'sinkabilityProof' agrees with it on inclusions.
+    functorVerdict cls SinkAgreesWithLiftRM = sinkAgreesOnInclusions cls
     functorVerdict _   _                    = Holds
-    -- 'alphaEquiv' goes wrong on patterns of several binders;
-    -- 'alphaEquivRefreshed' does not use the renamings and is fine.
-    alphaVerdict AlphaEquivRefreshedAgrees = Holds
-    alphaVerdict _                         = mergedBinderRenamings

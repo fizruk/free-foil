@@ -15,7 +15,7 @@
 -- binders extend a renaming by a coercion, which is right on inclusions
 -- only. So renamings come in three classes (inclusions, injections and
 -- arbitrary functions), and a law that holds on inclusions only is pinned
--- as a known failure on the other two.
+-- as failing by design on the other two.
 --
 -- The generators are scope-safe by construction. Scopes grow from the empty
 -- scope through 'withRefreshed', and a binder shadows a name of the scope
@@ -89,10 +89,6 @@ module Control.Monad.Foil.Laws (
   Verdict (..),
   law,
   extensionByCoercion,
-  mergedBinderRenamings,
-  genericCoSinkableCrash,
-  genericCoSinkExtension,
-  genericPatternOrder,
 ) where
 
 import           Control.Monad               (forM_)
@@ -631,15 +627,11 @@ genSomePair genPair = do
 -- | What we expect of a law.
 data Verdict
   = Holds
-    -- | The law fails at the moment. The test checks that it still fails
-    -- ('expectFailure'), so that the suite notices a fix. Some
-    -- counterexamples are rare, so the search runs up to 50000 cases and
-    -- stops at the first.
-  | KnownFailure String
-    -- | The law fails too rarely for 'Holds' or 'KnownFailure' to give a
-    -- reliable test. It is checked on 1000 cases, and a counterexample is
-    -- reported as pending.
-  | Unstable String
+    -- | The law fails by design, for the reason given. The test checks that
+    -- it still fails ('expectFailure'), so that the suite notices a change.
+    -- Some counterexamples are rare, so the search runs up to 50000 cases
+    -- and stops at the first.
+  | ByDesign String
 
 -- | The verdicts for a pattern type whose 'coSinkabilityProof' returns a
 -- coercion as the extended renaming, as those of 'NameBinder',
@@ -647,47 +639,14 @@ data Verdict
 -- when @f@ is an inclusion.
 extensionByCoercion :: RenamingClass -> CoSinkLaw -> Verdict
 extensionByCoercion Inclusions _ = Holds
-extensionByCoercion _ CoSinkExtension = KnownFailure
+extensionByCoercion _ CoSinkExtension = ByDesign
   "the extended renaming is a coercion, so it extends inclusions only"
 extensionByCoercion _ _ = Holds
 
--- | The verdict for 'unifyPatterns' on patterns of several binders, which
--- go through the instance for 'NameBinderList'.
-mergedBinderRenamings :: Verdict
-mergedBinderRenamings = KnownFailure
-  "unsafeMergeUnifyBinders composes binder renamings, so a chain of them collapses"
-
--- | The verdict for 'coSinkabilityProof' of a pattern type whose instance
--- is the generic default, which goes through 'SinkableK' 'NameBinder'.
-genericCoSinkableCrash :: Verdict
-genericCoSinkableCrash = KnownFailure
-  "the generic coSinkabilityProof crashes on a binder"
-
--- | The verdict for the extension law of the generic 'coSinkabilityProof'.
--- It crashes along every class, and outside inclusions it would fail
--- without the crash too ('extensionByCoercion'), so the pin names both
--- causes.
-genericCoSinkExtension :: RenamingClass -> Verdict
-genericCoSinkExtension Inclusions = genericCoSinkableCrash
-genericCoSinkExtension _          = KnownFailure
-  "the generic coSinkabilityProof crashes on a binder, and its extended renaming is a coercion, so it extends inclusions only"
-
--- | The verdict for laws that go through the generic 'withPattern' (the
--- default for a pattern type with 'HasNameBinders') on patterns of several
--- binders.
-genericPatternOrder :: Verdict
-genericPatternOrder = KnownFailure
-  "the generic withPattern sorts binders by raw name"
-
--- | Check a law on at least 1000 cases, or pin it as a known failure.
+-- | Check a law on at least 1000 cases, or check that a law that fails by
+-- design still fails.
 law :: Testable p => Verdict -> String -> p -> Spec
 law Holds name p =
   modifyMaxSuccess (max 1000) (it name (property p))
-law (KnownFailure why) name p =
-  it (name <> " (known failure: " <> why <> ")") (expectFailure (withMaxSuccess 50000 p))
-law (Unstable why) name p =
-  it (name <> " (unstable: " <> why <> ")") $ do
-    result <- quickCheckWithResult stdArgs { maxSuccess = 1000, chatty = False } p
-    case result of
-      Success{} -> pure ()
-      _         -> pendingWith ("counterexample found, as expected at times:\n" <> output result)
+law (ByDesign why) name p =
+  it (name <> " (fails by design: " <> why <> ")") (expectFailure (withMaxSuccess 50000 p))
