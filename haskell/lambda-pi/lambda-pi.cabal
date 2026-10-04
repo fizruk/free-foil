@@ -126,6 +126,7 @@ test-suite spec
       Language.LambdaPi.Impl.FreeFoilLawsSpec
       Language.LambdaPi.Impl.FreeFoilSpec
       Language.LambdaPi.Impl.FreeFoilTHLawsSpec
+      Language.LambdaPi.Impl.FreeFoilTHSpec
       Language.LambdaPi.Impl.LawsSyntax
       SpecHook
       Control.Monad.Foil.Laws
