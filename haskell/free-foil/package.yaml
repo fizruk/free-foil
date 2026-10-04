@@ -49,7 +49,9 @@ library:
 tests:
   spec:
     main: Spec.hs
-    source-dirs: test
+    source-dirs:
+      - test
+      - test/laws
     ghc-options:
       - -threaded
       - -rtsopts

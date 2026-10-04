@@ -81,7 +81,9 @@ executables:
 tests:
   spec:
     main: Spec.hs
-    source-dirs: test
+    source-dirs:
+      - test
+      - ../free-foil/test/laws
     ghc-options:
       - -threaded
       - -rtsopts
@@ -93,6 +95,7 @@ tests:
       - filepath
       - hspec
       - hspec-discover
+      - QuickCheck
 
   doctests:
     source-dirs:
