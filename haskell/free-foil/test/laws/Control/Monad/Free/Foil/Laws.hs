@@ -109,7 +109,7 @@ genAST
   => SyntaxGen binder sig -> Ctx n -> Int -> Gen (AST binder sig n)
 genAST sg ctx size = case ctx of
   Under parent _ _ | size > 0 ->
-    frequency [ (1, sink <$> genAST sg parent size), (6, here) ]
+    frequency [ (1, sink1 (genAST sg parent size)), (6, here) ]
   _ -> here
   where
     vars = ctxNames ctx
@@ -182,7 +182,7 @@ mutations names = \case
     scoped :: ScopedAST binder sig n -> [ScopedAST binder sig n]
     scoped (ScopedAST pat body) = case (assertDistinct pat, assertExt pat) of
       (Distinct, Ext) ->
-        [ ScopedAST pat body' | body' <- mutations (map sink names ++ namesOfPattern pat) body ]
+        [ ScopedAST pat body' | body' <- mutations (sink1 names ++ namesOfPattern pat) body ]
 
 -- | Whether some binder of the term binds a name that is already in scope
 -- at that point, given the raw names of the scope of the term. Such binders
