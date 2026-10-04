@@ -95,10 +95,10 @@ deriveBinaryPattern ''Pattern'
 -- | Two patterns unify when they have the same shape, and their binders are
 -- then paired in order. This is the default instance ('Foil.gunifyPatterns').
 --
--- The shape matters: @λ (x, _) ⇒ x@ is the first projection and
--- @λ (_, y) ⇒ y@ the second one, although each pattern binds one name.
--- Comparing only the binders ('Foil.unifyPatternBinders') would identify the
--- two, so conversion would accept @refl@ as a proof that they are equal.
+-- The shape matters, since @λ (x, _) ⇒ x@ is the first projection and
+-- @λ (_, y) ⇒ y@ the second, although each pattern binds one name. Comparing
+-- only the binders ('Foil.unifyPatternBinders') would make conversion
+-- identify them.
 instance Foil.UnifiablePattern (Pattern' a)
 
 -- | Ignore source positions when unifying patterns.

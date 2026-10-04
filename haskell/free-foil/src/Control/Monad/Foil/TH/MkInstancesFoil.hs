@@ -229,11 +229,10 @@ deriveUnifiablePattern nameT patternT = do
         paramsR = zipWith (mkConParamPattern "r") params [1..]
         mkConParamPattern s _ i = VarP (mkName (s ++ show i))
 
-        -- The shape of the two patterns is compared field by field. Binders
-        -- always agree, sub-patterns are compared recursively, and other
-        -- fields with 'Foil.unifyInPattern'. The binders are then paired in
-        -- order, all at once: chaining the verdicts for the binders and
-        -- sub-patterns can send two binders of one pattern to the same name.
+        -- Compare the shapes field by field (binders always agree,
+        -- sub-patterns are compared recursively, and other fields with
+        -- 'Foil.unifyInPattern'), then pair all binders in order at once.
+        -- Chaining per-field verdicts can give two binders the same name.
         (checks, eqTypes) = mconcat (zipWith check [1 :: Int ..] params)
 
         check i (_bang, PeelConT tyName _tyParams)

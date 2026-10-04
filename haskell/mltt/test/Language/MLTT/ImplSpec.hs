@@ -79,7 +79,7 @@ spec = do
   -- differently, and conversion has to pair the binders by position.
   describe "conversion of pattern binders" $ do
     it "does not accept refl fst2 as a proof that fst2 is the second projection" $
-      -- Accepting it gave a closed coerce : 𝕌 that computes to tt.
+      -- Accepting it would give a closed coerce : 𝕌 that computes to tt.
       run (unlines
         [ "module Unsound"
         , "def fst2 : (𝕌 × 𝕌) → 𝕌"

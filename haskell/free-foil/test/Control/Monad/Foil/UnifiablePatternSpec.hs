@@ -5,16 +5,10 @@
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE TypeFamilies      #-}
 
--- | The default 'Foil.unifyPatterns' is 'Foil.gunifyPatterns': two patterns
--- unify when they consist of the same constructors, nested in the same way, and
--- their binders are then paired in order. This module pins down what it tells
--- apart and what it does not (non-binding fields), since the default is what
--- every client gets from an empty instance.
---
--- It also pins down 'Foil.unifyPatternBinders', which compares only the number
--- and order of binders. That was the default up to version 0.4.0, and it is
--- still what a pattern type without 'GenericK' can take. Two of its
--- consequences are surprising the first time they are met.
+-- | What the default 'Foil.unifyPatterns' ('Foil.gunifyPatterns') tells
+-- apart and what it does not (non-binding fields), since every client gets it
+-- from an empty instance. Also what 'Foil.unifyPatternBinders', which
+-- compares only the number and order of binders, does not tell apart.
 --
 -- Since α-equivalence is defined in terms of 'Foil.unifyPatterns', these are also
 -- statements about which terms the library considers α-equivalent.
@@ -174,10 +168,8 @@ binderSpec = describe "unifyPatternBinders" $ do
       `shouldBe` True
 
   it "still tells apart patterns binding different numbers of names" $
-    -- The binders themselves are compared. This case used to throw
-    -- 'PatternMatchFail', because the 'NameBinderList' instance had no case
-    -- for lists of unequal length and "Control.Monad.Foil.Internal" disables
-    -- @-Wincomplete-patterns@.
+    -- The binders themselves are compared. This is a regression test for a
+    -- missing case of the 'NameBinderList' instance.
     withThreeBinders (\x y _z ->
       unifiesWithoutRenaming
         (BinderVar x)

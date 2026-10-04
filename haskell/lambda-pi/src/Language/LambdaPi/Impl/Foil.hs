@@ -120,8 +120,8 @@ instance CoSinkable Pattern where
 -- | Two patterns unify when they have the same shape. Their binders are then
 -- paired in order by 'unifyPatternBinders'.
 --
--- The shape matters: @(x, _)@ and @(_, y)@ bind one name each, but the first
--- one binds the first component of a pair and the second one the second.
+-- The shape matters, since @(x, _)@ and @(_, y)@ bind one name each, but from
+-- different components of a pair.
 instance UnifiablePattern Pattern where
   unifyPatterns l r
     | samePatternShape l r = unifyPatternBinders l r
@@ -515,12 +515,11 @@ unsafeEqExpr e1 e2 = case (e1, e2) of
 -- Compared to 'alphaEquivRefreshed', this function might skip unnecessary
 -- changes of bound variables when both binders in two matching scoped terms coincide.
 --
--- The renaming that unification prescribes sends binders of one side to
--- binders of the other, and this is sound only when those are fresh for the
--- scope. A term built in a smaller scope and sunk may bind a name of the scope,
--- as @λx0. x0@ sunk into the scope @{x0}@ does. Renaming the binder of
--- @λx1. x0@ to @x0@ would then capture its free @x0@. In that case, the two
--- terms are compared with 'alphaEquivRefreshed' instead.
+-- Renaming binders by the verdict of unification is sound only when the
+-- unified binders are fresh for the scope, and a sunk term may bind a name of
+-- the scope. For instance, in the scope @{x0}@, renaming the binder of
+-- @λx1. x0@ to that of a sunk @λx0. x0@ would capture the free @x0@. In that
+-- case, the terms are compared with 'alphaEquivRefreshed'.
 alphaEquiv :: Distinct n => Scope n -> Expr n -> Expr n -> Bool
 alphaEquiv scope e1 e2 = case (e1, e2) of
   (VarE x, VarE x') -> x == coerce x'

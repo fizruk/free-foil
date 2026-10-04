@@ -61,8 +61,8 @@ data Telescope label e n l where
 -- 'transportPayload': a 'PatternTransport' threaded through the traversal,
 -- with each payload moved by the transport accumulated /before/ its own
 -- binder, into the ambient scope reached there, that being the scope the
--- payload lives in. Moving a payload may have to refresh the payload's own
--- binders, which is why it takes @'RelMonad' 'Name' e@.
+-- payload lives in. Moving a payload may refresh its own binders, hence
+-- @'RelMonad' 'Name' e@.
 instance (Sinkable e, RelMonad Name e) => CoSinkable (Telescope label e) where
   coSinkabilityProof rename TelescopeEmpty cont = cont rename TelescopeEmpty
   coSinkabilityProof rename (TelescopeCons label payload binder rest) cont =
