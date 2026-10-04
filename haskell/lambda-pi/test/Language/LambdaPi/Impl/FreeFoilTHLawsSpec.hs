@@ -31,14 +31,12 @@ spec = do
   describe "relative monad" $ relMonadSpec termSyntax $ \name kinds -> case (name, kinds) of
     (SubstLeftUnit, _)  -> Holds
     (RbindLeftUnit, _)  -> Holds
-    -- 'substitute' shortcuts the empty substitution and returns the term
-    -- as it stands.
+    -- 'substitute' returns the term as it is for the empty substitution.
     (SubstRightUnit, _) -> Holds
-    -- The two sides go through the same generic traversal and mostly agree
-    -- with each other. They disagree where 'substitute' reaches an empty
-    -- substitution under a binder and stops, and 'rbind' goes on
-    -- reordering. For a β-substitution @s1@ this is rare: one case in
-    -- several hundred, or none in 20000 (seen in two runs out of twenty).
+    -- Both sides reorder binders through the same generic traversal, except
+    -- where 'substitute' stops at an empty substitution under a binder and
+    -- 'rbind' does not. For a β-substitution @s1@ this is rare, from one
+    -- case in several hundred to none in 20000.
     (SubstituteAgreesWithRbind, Just (Beta, _)) -> Unstable
       "substitute and rbind reorder alike, except below an empty substitution"
     _ -> genericPatternOrder

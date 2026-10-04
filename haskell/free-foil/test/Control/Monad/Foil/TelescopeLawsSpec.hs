@@ -4,13 +4,10 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RankNTypes      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
--- | The laws of "Control.Monad.Foil.Laws" for telescopes, the patterns that
--- carry payloads, and one more law that only such patterns have:
--- refreshing a telescope transports its payloads along the refreshed
--- binders ('Foil.PatternTransport').
---
--- Payloads are either names or terms of the λ-calculus of
--- "Control.Monad.Free.Foil.Example".
+-- | The laws of "Control.Monad.Foil.Laws" for telescopes, and one law that
+-- only patterns with payloads have: refreshing a telescope transports its
+-- payloads along the refreshed binders ('Foil.PatternTransport'). Payloads
+-- are names or terms of the λ-calculus of "Control.Monad.Free.Foil.Example".
 module Control.Monad.Foil.TelescopeLawsSpec (spec) where
 
 import           Test.Hspec
@@ -85,11 +82,10 @@ decode f k t
       Just (Decoded (TelescopeCons () payload binder tele) body)
   | otherwise = Nothing
 
--- | Refreshing a telescope with 'withRefreshedPattern', and the body with the
--- substitution it hands back, gives an α-variant. To make the refresh do
--- something, the telescope is built in a scope @n@ and 'sink'ed (through
--- its encoding) to an extension @o@ of @n@ that binds the names of the
--- telescope's binders, so that every one of them clashes.
+-- | Refreshing a telescope with 'withRefreshedPattern', and its body with
+-- the substitution it returns, gives an α-variant. The telescope is built
+-- in a scope @n@ and sunk (through its encoding) into an extension @o@ of
+-- @n@ that binds the names of its binders, so that every binder clashes.
 transportLaw
   :: Sinkable e
   => (forall x. e x -> Expr x) -> (forall x. Expr x -> Maybe (e x))

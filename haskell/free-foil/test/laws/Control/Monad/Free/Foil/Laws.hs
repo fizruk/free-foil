@@ -6,17 +6,14 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- | Generators of scope-safe terms of any free foil signature, and the laws
--- of the relative monad @'AST' binder sig@ on 'Name', in the sense of
--- Altenkirch, Chapman and Uustalu, with unit 'Var' and bind 'substitute'
+-- of the relative monad @'AST' binder sig@ on 'Name' (in the sense of
+-- Altenkirch, Chapman and Uustalu), with unit 'Var' and bind 'substitute'
 -- (and 'rbind').
 --
--- A language plugs in with a 'SyntaxGen': the shapes of its nodes (with
--- @()@ in place of subterms), a generator of its patterns, and a printer
--- for its nodes. 'genAST' fills the shapes, at every step choosing between
--- building a subterm here and building it in an outer scope of the context
--- and 'sink'ing it. The latter is how real code produces binders that
--- shadow names of the ambient scope, and it is what exercises
--- capture-avoidance in 'substitute'.
+-- A language plugs in with a 'SyntaxGen'. 'genAST' fills its node shapes,
+-- and sometimes builds a subterm in an outer scope and 'sink's it. This is
+-- how real code produces binders that shadow names of the scope, which
+-- 'substitute' has to handle.
 module Control.Monad.Free.Foil.Laws (
   -- * Terms
   SyntaxGen (..),
@@ -174,8 +171,7 @@ alterOneHole onScoped onTerm node = concat
 
 -- | All terms that differ from the given one in exactly one occurrence of a
 -- variable, replaced by another name in scope at that point. Most of them
--- are not α-equivalent to the original, which makes them good test cases
--- for an α-equivalence check.
+-- are not α-equivalent to the original.
 mutations
   :: forall binder sig n. (Bitraversable sig, CoSinkable binder, Distinct n)
   => [Name n] -> AST binder sig n -> [AST binder sig n]
@@ -395,7 +391,7 @@ showRenamingCase sg (RenamingCase chain t) = showChain chain <> "t = " <> showAS
 
 -- * Laws of the relative monad
 
--- | 'rbind' at 'Name', the unit of the relative monad of terms.
+-- | 'rbind' at 'Name'.
 rbindN
   :: (Bifunctor sig, CoSinkable binder, SinkableK binder, Distinct b)
   => Scope b -> AST binder sig a -> (Name a -> AST binder sig b) -> AST binder sig b
@@ -485,8 +481,8 @@ relMonadLaws sg = RelMonadLaws
     cmp = compareUpToAlpha sg
 
 -- | Compare two terms up to α-equivalence, printing both on failure. The
--- comparison is 'alphaEqNameless' and not the library's 'alphaEquiv',
--- which gets patterns of two or more binders wrong (see 'alphaSpec').
+-- comparison is 'alphaEqNameless', so that these laws do not depend on the
+-- library's 'alphaEquiv', which 'alphaSpec' tests.
 compareUpToAlpha
   :: (Bitraversable sig, ZipMatchK sig)
   => SyntaxGen binder sig
@@ -614,12 +610,9 @@ functorSpec sg sinkVerdict verdict = do
 -- * α-equivalence
 
 -- | α-equivalence by a nameless comparison, independent of the library's
--- 'unifyPatterns'. A bound name is compared by the position of its binder
--- (a level counted along the path from the root, binder by binder), and a
--- free name by its raw identifier. Patterns are compared up to their
--- binders, i.e. by the number of names they bind, as the default
--- 'unifyPatterns' does. The binders of a pattern are listed in the order
--- of its structure, by the given function.
+-- 'unifyPatterns'. A bound name is compared by the level of its binder, and
+-- a free name by its raw identifier. Patterns are compared by the names
+-- they bind, listed by the given function, and not by their shape.
 alphaEqNameless
   :: forall binder sig x y. (Bitraversable sig, ZipMatchK sig)
   => PatternNames binder -> AST binder sig x -> AST binder sig y -> Bool
@@ -650,18 +643,16 @@ alphaEqNameless binders = go 0 IntMap.empty IntMap.empty
 -- is the generic one, through 'SinkableK' 'NameBinder'.
 genericSinkableCrash :: Verdict
 genericSinkableCrash = KnownFailure
-  "the generic sinkabilityProof crashes on a binder: SinkableK NameBinder matches one renaming, a binder has two indices"
+  "the generic sinkabilityProof crashes on a binder"
 
 -- | The verdict for the agreement of 'sinkabilityProof' with 'liftRM' on
--- terms whose 'Sinkable' instance is the generic one. Along an inclusion, the
--- two disagree only because the generic instance crashes
--- ('genericSinkableCrash'). Along any other renaming, they would disagree
--- without the crash too, since under a binder the renaming is a coercion, so
+-- terms with the generic 'Sinkable' instance. It crashes along every class,
+-- and outside inclusions the two would disagree without the crash too, so
 -- the pin names both causes.
 genericSinkAgreesWithLiftRM :: RenamingClass -> Verdict
 genericSinkAgreesWithLiftRM Inclusions = genericSinkableCrash
 genericSinkAgreesWithLiftRM _          = KnownFailure
-  "the generic sinkabilityProof crashes on a binder, and without the crash the renaming under a binder is a coercion, so sinkabilityProof agrees with liftRM on inclusions only"
+  "the generic sinkabilityProof crashes on a binder, and its renaming under a binder is a coercion, so it agrees with liftRM on inclusions only"
 
 -- | Checks of the library's α-equivalence against 'alphaEqNameless'.
 data AlphaLaw

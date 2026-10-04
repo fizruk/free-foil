@@ -4,37 +4,24 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
--- | Generators and law statements for the foil: scopes, renamings between
--- them, and the laws of 'Sinkable' and 'CoSinkable'.
+-- | Generators and laws for the foil: scopes, renamings between them, and
+-- the laws of 'Sinkable', 'CoSinkable' and 'UnifiablePattern'.
 --
--- The laws are stated for inclusions of scopes, which is what sinking needs.
--- 'sinkabilityProof' and 'coSinkabilityProof' quantify over all renamings,
--- but they are typing witnesses for 'sink' (Maclaurin, Radul and Paszke,
--- "The Foil", §3.3 and §3.5), and the instances for binders return the
--- identity on raw names as the renaming under a binder. So they compute the
--- right action on inclusions only, where it is 'sink'.
+-- 'Sinkable' @e@ is read as a functor from scopes to sets, with
+-- 'sinkabilityProof' its action on renamings. 'coSinkabilityProof' lifts a
+-- renaming of the outer scope of a pattern to its inner scope,
+-- functorially. Both methods are typing witnesses for 'sink' (Maclaurin,
+-- Radul and Paszke, "The Foil", §3.3 and §3.5), and the instances for
+-- binders extend a renaming by a coercion, which is right on inclusions
+-- only. So renamings come in three classes (inclusions, injections and
+-- arbitrary functions), and a law that holds on inclusions only is pinned
+-- as a known failure on the other two.
 --
--- 1. 'Sinkable' @e@ is a functor from scopes to sets, with
---    'sinkabilityProof' its action on renamings.
--- 2. 'CoSinkable' @p@ makes the projection of a pattern to the scope it
---    extends an opfibration: 'coSinkabilityProof' lifts a renaming of the
---    outer scope to a renaming of the inner one and a pushed pattern, and
---    the lift is functorial.
---
--- The generators are scope-safe by construction. Scopes grow from the
--- empty scope through 'withRefreshed', names are read off a scope, and a
--- binder that shadows a name of the ambient scope arises only the way it
--- arises in real code, by 'sink'ing a value built in an outer scope.
--- The generators use one unsafe ingredient, 'UnsafeName' for the /hint/
--- given to 'withRefreshed', which only decides which raw name a fresh
--- binder gets. (The law of 'unifyPatterns' also wraps a bound name back
--- into a binder to read off a verdict's renaming, as the library's own
--- 'Control.Monad.Free.Foil.alphaEquiv' does.)
---
--- Renamings are generated in three classes, so that a law can be checked
--- separately over each class: inclusions ('sink', i.e. thinnings),
--- injective renamings, and arbitrary renamings. A law that holds on
--- inclusions only is pinned as a known failure on the other two classes.
+-- The generators are scope-safe by construction. Scopes grow from the empty
+-- scope through 'withRefreshed', and a binder shadows a name of the scope
+-- only after 'sink', as in real code. The unsafe ingredients are
+-- 'UnsafeName' for the hint given to 'withRefreshed' and, in the law of
+-- 'unifyPatterns', 'UnsafeNameBinder' to read the renaming of a verdict.
 module Control.Monad.Foil.Laws (
   -- * Scopes
   Ctx (..),
@@ -258,11 +245,9 @@ nameBinderListNames = \case
   NameBinderListEmpty         -> []
   NameBinderListCons b rest -> nameId (nameOf b) : nameBinderListNames rest
 
--- | The raw names a pattern binds, in the order in which the library's
--- 'withPattern' visits them (through 'nameBinderListOf'). For a pattern
--- type with a hand-written 'withPattern' this is the order of the
--- structure. For the generic 'withPattern' it is the ascending order of
--- the raw names, since that goes through the unordered 'NameBinders'.
+-- | The raw names a pattern binds, in the order in which 'withPattern'
+-- visits them (through 'nameBinderListOf'). The generic 'withPattern'
+-- visits them in ascending order of raw names.
 patternRawNames :: CoSinkable p => p n l -> [Int]
 patternRawNames = nameBinderListNames . nameBinderListOf
 
@@ -395,8 +380,7 @@ data SinkableLaws e = SinkableLaws
     sinkIdentity    :: forall n. Ctx n -> e n -> Property
     -- | @sinkabilityProof (g . f) = sinkabilityProof g . sinkabilityProof f@.
   , sinkComposition :: forall n l k. Ctx k -> Renaming n l -> Renaming l k -> e n -> Property
-    -- | On an inclusion, @sinkabilityProof sink = sink@: the coercion that
-    -- 'sink' performs is the action of the functor.
+    -- | On an inclusion, @sinkabilityProof sink = sink@.
   , sinkInclusion   :: forall n l. Includes n l -> Ctx l -> e n -> Property
   }
 
@@ -483,10 +467,8 @@ genPatternCase genPat cls = do
   PatIn pat <- genPat n
   pure (PatternCase chain pat)
 
--- | The laws of 'coSinkabilityProof', reading a pattern type as a span of
--- scopes, from the scope a pattern extends to the scope it introduces. Each
--- law is stated on a pattern @p : n → i@ and the renamings @f : n → l@ and
--- @g : l → k@ of a 'PatternCase'. Write
+-- | The laws of 'coSinkabilityProof', for a pattern @p : n → i@ and the
+-- renamings @f : n → l@ and @g : l → k@ of a 'PatternCase'. Write
 -- @(f', p')@ for the result of @coSinkabilityProof f p@: the extended
 -- renaming @f' : i → i'@ and the pushed pattern @p' : l → i'@.
 data CoSinkableLaws p = CoSinkableLaws
@@ -496,9 +478,7 @@ data CoSinkableLaws p = CoSinkableLaws
     -- pushed patterns agree and the extended renamings compose.
   , coSinkComposition :: PatternCase p -> Property
     -- | The extended renaming extends @f@: @f' (sink x) = f x@ for every
-    -- name @x@ of @n@, i.e. the square of scopes commutes. This is what
-    -- makes @(f, f')@ a morphism of spans, and the documentation of
-    -- 'coSinkabilityProof' calls @f'@ an /extended/ renaming.
+    -- name @x@ of @n@.
   , coSinkExtension   :: PatternCase p -> Property
     -- | The extended renaming sends the binders of @p@ to the binders of
     -- @p'@, in order.
@@ -555,10 +535,8 @@ data CoSinkLaw
   deriving (Eq, Show, Enum, Bounded)
 
 -- | 'withPattern' visits the binders of a pattern in the order of its
--- structure. Everything that pairs the binders of a pattern with other
--- data relies on this: 'addSubstPattern' pairs them with terms,
--- 'nameBinderListOf' lists them, and 'withRefreshedPattern' puts the
--- refreshed names back.
+-- structure. 'addSubstPattern', 'nameBinderListOf' and
+-- 'withRefreshedPattern' rely on this.
 withPatternOrderLaw :: CoSinkable p => PatternNames p -> p n l -> Property
 withPatternOrderLaw binders p =
   counterexample "the order of the pattern is on the left, the order of withPattern on the right" $
@@ -602,11 +580,8 @@ genNameBinderListPair ctx = withCtx ctx $ \scope -> do
     withHintedBinders k scope $ \r -> pure (PatPair l r)
 
 -- | The verdict of 'unifyPatternsIn' on two patterns of the same shape
--- pairs their binders position by position: the renamings it prescribes
--- send the @j@-th binder of each side to one and the same name, and
--- distinct positions to distinct names. This is the reading of
--- 'UnifiablePattern' as equality of patterns up to renaming of their binders
--- (the default instance compares "the number and order of binders").
+-- pairs their binders by position: its renamings send the @j@-th binder of
+-- each side to the same name, and distinct positions to distinct names.
 unifyPatternsLaw :: UnifiablePattern p => PatternNames p -> Ctx n -> PatPair p n -> Property
 unifyPatternsLaw binders ctx (PatPair l r) = withCtx ctx $ \scope ->
   let xs = binders l
@@ -657,53 +632,52 @@ genSomePair genPair = do
 data Verdict
   = Holds
     -- | The law fails at the moment. The test checks that it still fails
-    -- (with 'expectFailure'), so that the suite notices when it is fixed.
-    -- Some counterexamples are rare (one case in a few thousand), so the
-    -- search for one may run up to 50000 cases; it stops at the first.
+    -- ('expectFailure'), so that the suite notices a fix. Some
+    -- counterexamples are rare, so the search runs up to 50000 cases and
+    -- stops at the first.
   | KnownFailure String
-    -- | The law fails, but so rarely that neither 'Holds' nor 'KnownFailure'
-    -- gives a reliable test. It is checked on 1000 cases, and a
-    -- counterexample is reported as pending rather than as a failure.
+    -- | The law fails too rarely for 'Holds' or 'KnownFailure' to give a
+    -- reliable test. It is checked on 1000 cases, and a counterexample is
+    -- reported as pending.
   | Unstable String
 
--- | The verdicts for a pattern type whose 'coSinkabilityProof' hands back a
--- coercion as the extended renaming, as the instances for 'NameBinder',
--- 'NameBinders' and (through them) 'NameBinderList' do. Such a renaming
--- extends @f@ only when @f@ is the identity on raw names, i.e. an inclusion.
+-- | The verdicts for a pattern type whose 'coSinkabilityProof' returns a
+-- coercion as the extended renaming, as those of 'NameBinder',
+-- 'NameBinders' and 'NameBinderList' do. Such a renaming extends @f@ only
+-- when @f@ is an inclusion.
 extensionByCoercion :: RenamingClass -> CoSinkLaw -> Verdict
 extensionByCoercion Inclusions _ = Holds
 extensionByCoercion _ CoSinkExtension = KnownFailure
-  "the extended renaming is a coercion, so it extends f only when f is an inclusion"
+  "the extended renaming is a coercion, so it extends inclusions only"
 extensionByCoercion _ _ = Holds
 
 -- | The verdict for 'unifyPatterns' on patterns of several binders, which
 -- go through the instance for 'NameBinderList'.
 mergedBinderRenamings :: Verdict
 mergedBinderRenamings = KnownFailure
-  "unsafeMergeUnifyBinders composes the renamings of successive binders, so a chain of them collapses"
+  "unsafeMergeUnifyBinders composes binder renamings, so a chain of them collapses"
 
 -- | The verdict for 'coSinkabilityProof' of a pattern type whose instance
 -- is the generic default, which goes through 'SinkableK' 'NameBinder'.
 genericCoSinkableCrash :: Verdict
 genericCoSinkableCrash = KnownFailure
-  "the generic coSinkabilityProof crashes on a binder: SinkableK NameBinder matches one renaming, a binder has two indices"
+  "the generic coSinkabilityProof crashes on a binder"
 
--- | The verdict for the extension law of a pattern type whose
--- 'coSinkabilityProof' is the generic default. Along an inclusion, the law
--- fails only because the generic instance crashes ('genericCoSinkableCrash').
--- Along any other renaming, it would fail without the crash too, as in
--- 'extensionByCoercion', so the pin names both causes.
+-- | The verdict for the extension law of the generic 'coSinkabilityProof'.
+-- It crashes along every class, and outside inclusions it would fail
+-- without the crash too ('extensionByCoercion'), so the pin names both
+-- causes.
 genericCoSinkExtension :: RenamingClass -> Verdict
 genericCoSinkExtension Inclusions = genericCoSinkableCrash
 genericCoSinkExtension _          = KnownFailure
-  "the generic coSinkabilityProof crashes on a binder, and without the crash the extended renaming is a coercion, so it extends f only when f is an inclusion"
+  "the generic coSinkabilityProof crashes on a binder, and its extended renaming is a coercion, so it extends inclusions only"
 
 -- | The verdict for laws that go through the generic 'withPattern' (the
 -- default for a pattern type with 'HasNameBinders') on patterns of several
 -- binders.
 genericPatternOrder :: Verdict
 genericPatternOrder = KnownFailure
-  "the generic withPattern visits binders in ascending order of raw names and puts them back in that order"
+  "the generic withPattern sorts binders by raw name"
 
 -- | Check a law on at least 1000 cases, or pin it as a known failure.
 law :: Testable p => Verdict -> String -> p -> Spec

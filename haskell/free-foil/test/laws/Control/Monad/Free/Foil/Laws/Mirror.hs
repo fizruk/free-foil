@@ -4,14 +4,11 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
--- | The laws for a language written with the plain foil (no free monad),
--- tested through a /mirror/: a free foil syntax with the same constructors.
--- Terms are generated as mirror terms and converted, and compared by
--- converting back and using 'alphaEqNameless'.
---
--- The laws are those of "Control.Monad.Free.Foil.Laws", for the
--- language's own 'Sinkable' instance, relative monad ('rbind'),
--- 'substitute' and α-equivalence.
+-- | The laws of "Control.Monad.Free.Foil.Laws" for a language written with
+-- the plain foil: its 'Sinkable' instance, 'rbind', 'substitute' and
+-- α-equivalence. Terms are generated in a /mirror/, a free foil syntax with
+-- the same constructors, and compared by converting them back and using
+-- 'alphaEqNameless'.
 module Control.Monad.Free.Foil.Laws.Mirror (
   Mirror (..),
   AlphaEquivOf (..),
