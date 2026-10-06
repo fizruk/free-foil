@@ -92,11 +92,9 @@ instance (Binary a, Binary s, Binary t) => Binary (Term'Sig a s t)
 -- names lie in on the way in.
 deriveBinaryPattern ''Pattern'
 
--- | Two patterns unify when they have the same shape, and their binders are
--- then paired in order. This is the default instance ('Foil.gunifyPatterns').
---
--- The shape matters, since @λ (x, _) ⇒ x@ is the first projection and
--- @λ (_, y) ⇒ y@ the second, although each pattern binds one name.
+-- | This instance takes the default ('Foil.gunifyPatterns'). Two patterns
+-- unify when they have the same shape, so conversion tells apart
+-- @λ (x, _) ⇒ x@ and @λ (_, y) ⇒ y@, although each pattern binds one name.
 instance Foil.UnifiablePattern (Pattern' a)
 
 -- | Ignore source positions when unifying patterns.

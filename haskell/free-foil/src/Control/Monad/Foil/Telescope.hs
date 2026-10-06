@@ -59,10 +59,9 @@ data Telescope label e n l where
 -- would leave a payload that names a refreshed binder pointing at the name
 -- that binder used to have. This instance follows the recipe in
 -- 'transportPayload': a 'PatternTransport' threaded through the traversal,
--- with each payload moved by the transport accumulated /before/ its own
--- binder, into the ambient scope reached there, that being the scope the
--- payload lives in. Moving a payload may refresh its own binders, hence
--- @'RelMonad' 'Name' e@.
+-- with each payload moved by the transport and the scope reached /before/ its
+-- own binder. Moving a payload may refresh its own binders, which is why the
+-- instance needs @'RelMonad' 'Name' e@.
 instance (Sinkable e, RelMonad Name e) => CoSinkable (Telescope label e) where
   coSinkabilityProof rename TelescopeEmpty cont = cont rename TelescopeEmpty
   coSinkabilityProof rename (TelescopeCons label payload binder rest) cont =
@@ -110,14 +109,13 @@ instance (Sinkable e, RelMonad Name e) => CoSinkable (Telescope label e) where
 -- parameter's spelling is no more relevant than a bound variable's. Payloads
 -- are not, since two telescopes agreeing on binders may well disagree on types.
 --
--- 'unifyPatterns' is the binder-only approximation, which is all a caller
--- without a scope can be given. 'unifyPatternsIn' is the real answer, and
+-- 'unifyPatterns' compares the binders only, which is all a caller without a
+-- scope can be given. 'unifyPatternsIn' is the real answer, and
 -- it is what the library's α-equivalence calls.
 instance (Sinkable e, AlphaEquiv e, RelMonad Name e)
     => UnifiablePattern (Telescope label e) where
-  -- The shape of a telescope is its length, so its binders are all there is to
-  -- compare. They are paired in order, as 'unifyPatternBinders' does, and
-  -- telescopes of different lengths do not unify.
+  -- The shape of a telescope is its length, so pairing its binders in order is
+  -- enough here.
   unifyPatterns tele1 tele2 =
     coerce (unifyPatterns (telescopeBinders tele1) (telescopeBinders tele2))
 
@@ -214,8 +212,8 @@ telescopeParams
   => Telescope label e n l -> [Param label e l]
 telescopeParams TelescopeEmpty = []
 telescopeParams (TelescopeCons label ty binder rest) =
-  -- The evidence for the rest is read off its binders, which are a pattern
-  -- whatever the payloads are. 'assertExt' does not look at its argument.
+  -- 'assertExt' does not look at its argument. The binders of the rest are a
+  -- pattern without the 'RelMonad' constraint that the telescope itself needs.
   case (assertExt binder, assertExt (telescopeBinders rest)) of
     (Ext, Ext) ->
       Param label (sink (nameOf binder)) (sink ty)

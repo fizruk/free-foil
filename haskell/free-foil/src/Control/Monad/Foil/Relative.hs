@@ -1,4 +1,4 @@
--- | Relative monads over scopes, and the renaming they give.
+-- | Relative monads over scopes, and 'liftRM' for renaming with them.
 module Control.Monad.Foil.Relative (
   RelMonad (..),
   liftRM,

@@ -104,8 +104,8 @@ spec = do
         `shouldBe` []
 
     it "tells apart λ (x, _) ⇒ x and λ (_, y) ⇒ y, which bind one name each" $
-      -- No outer binder is needed: both patterns bind one name, x0, and only
-      -- their shapes differ.
+      -- No outer binder is needed, since both patterns bind one name, x0, and
+      -- only their shapes differ.
       run (unlines
         [ "module Shape"
         , "def p1 : (𝕌 × 𝕌) → 𝕌"

@@ -93,9 +93,9 @@ instance Foil.CoSinkable (FoilPattern' a)
 mkToFoilPattern ''Raw.VarIdent ''Raw.Pattern'
 mkFromFoilPattern ''Raw.VarIdent ''Raw.Pattern'
 
--- | Two patterns unify when they have the same shape, and their binders are
--- then paired in order. This is the default instance ('Foil.gunifyPatterns').
--- Comparing only the binders would identify @λ(x, _). x@ with @λ(_, y). y@.
+-- | This instance takes the default ('Foil.gunifyPatterns'). Two patterns
+-- unify when they have the same shape, so @λ(x, _). x@ and @λ(_, y). y@ are
+-- not α-equivalent.
 instance Foil.UnifiablePattern (FoilPattern' a)
 -- | Ignoring location information when unifying patterns.
 instance Foil.UnifiableInPattern Raw.BNFC'Position where

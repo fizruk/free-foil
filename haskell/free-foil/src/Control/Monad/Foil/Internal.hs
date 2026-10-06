@@ -778,10 +778,10 @@ data UnifyNameBinders (pattern :: S -> S -> Type) n l r where
 -- always grow with depth: a term built in a small scope keeps its small binder
 -- names when 'sink' places it in a larger one.
 --
--- This direction is a convention for a single pair of binders.
--- 'unifyPatternBinders' renames the binders of the right pattern to those of
--- the left one instead, since choosing the smaller name pair by pair can send
--- two binders of one pattern to the same name.
+-- This convention is for a single pair of binders. For patterns of several
+-- binders, those of the right pattern are renamed to those of the left one
+-- instead (see 'unifyPatternBinders'), since choosing the smaller name pair by
+-- pair can give two binders of one pattern the same name.
 --
 -- @since 0.0.3
 unifyNameBinders
@@ -800,15 +800,12 @@ unifyNameBinders l@(UnsafeNameBinder (UnsafeName i1)) r@(UnsafeNameBinder (Unsaf
 -- | Unsafely merge results of unification for nested binders/patterns.
 -- Used in 'andThenUnifyPatterns'.
 --
--- Each binder is renamed by the verdict it belongs to
--- ('unsafeOverrideBinderRenaming'). Composing the two renamings would
--- collapse a chain such as @x2 ↦ x1@ followed by @x1 ↦ x0@.
+-- Each binder is renamed by the verdict it belongs to, not by a composition of
+-- the two renamings (see 'unsafeOverrideBinderRenaming').
 --
 -- The two verdicts choose their unified names independently, so they may give
 -- two binders of one pattern the same name (for @[x0 x1]@ against @[x1 x0]@,
--- both pairs are unified as @x0@). Repairing this needs a name fresh for the
--- scope, so the result is then 'NotUnifiable'. 'unifyPatternBinders' unifies
--- a whole pattern at once and has no such case.
+-- both pairs are unified as @x0@). The result is then 'NotUnifiable'.
 --
 -- @since 0.1.0
 unsafeMergeUnifyBinders :: UnifyNameBinders pattern a a' a'' -> UnifyNameBinders pattern a''' b' b'' -> UnifyNameBinders pattern a b' b''
@@ -817,11 +814,8 @@ unsafeMergeUnifyBinders outer inner =
     Just merged -> merged
     Nothing     -> NotUnifiable
 
--- | 'unsafeMergeUnifyBinders', or 'Nothing' if the two verdicts chose the
--- same unified name for different binders.
---
--- Two verdicts collide exactly when the 'NameBinders' they carry (their
--- unified names) intersect.
+-- | 'unsafeMergeUnifyBinders', or 'Nothing' if the unified names of the two
+-- verdicts intersect, i.e. if they give two binders the same name.
 --
 -- @since 0.5.0
 unsafeTryMergeUnifyBinders :: UnifyNameBinders pattern a a' a'' -> UnifyNameBinders pattern a''' b' b'' -> Maybe (UnifyNameBinders pattern a b' b'')
@@ -876,9 +870,8 @@ unsafeTryMergeUnifyBinders outer inner
 -- | Combine the binder renamings of an outer and an inner verdict, for
 -- 'unsafeMergeUnifyBinders'.
 --
--- Each verdict renames only its own binders, which are distinct from those of
--- the other. So the inner renaming decides for the binders it moves, and the
--- outer one for the rest.
+-- The inner renaming decides for the binders it moves, and the outer one for
+-- the rest. This is sound since each verdict renames only its own binders.
 --
 -- @since 0.5.0
 unsafeOverrideBinderRenaming
@@ -895,9 +888,8 @@ unsafeOverrideBinderRenaming outer inner binder
 -- | Chain unification of nested patterns.
 --
 -- Note that a chain answers 'NotUnifiable' when two of its verdicts give
--- different binders the same name (see 'unsafeMergeUnifyBinders'). To unify
--- patterns of several binders, compare their shapes and then use
--- 'unifyPatternBinders', as 'gunifyPatterns' does.
+-- different binders the same name. The default 'unifyPatterns'
+-- ('gunifyPatterns') unifies all binders of a pattern at once and avoids this.
 --
 -- @since 0.1.0
 andThenUnifyPatterns
@@ -909,9 +901,9 @@ andThenUnifyPatterns u (l, r) = unsafeMergeUnifyBinders u (unifyPatterns (unsafe
 
 -- | Chain unification of nested patterns with 'NameBinder's.
 --
--- When the name that 'unifyNameBinders' chooses for the new pair is taken by
--- an outer binder, the pair is unified the other way. So a chain of two pairs
--- always unifies, and a longer one can still answer 'NotUnifiable'.
+-- If the name that 'unifyNameBinders' chooses for the new pair is taken by an
+-- outer binder, the pair is unified in the other direction. So a chain of two
+-- pairs always unifies, while a longer one may answer 'NotUnifiable'.
 --
 -- @since 0.1.0
 andThenUnifyNameBinders
@@ -1163,20 +1155,16 @@ class CoSinkable pattern => UnifiablePattern pattern where
   -- | The default implementation is 'gunifyPatterns'. Two patterns unify when
   -- they consist of the same constructors, nested in the same way, and their
   -- binders are then paired in order. So @(x, _)@ and @(_, y)@ do not unify,
-  -- although each binds one name. Since α-equivalence is defined in terms of
-  -- 'unifyPatterns', terms that differ in the shape of a pattern are not
-  -- α-equivalent.
+  -- although each binds one name, and @λ(x, _). x@ is not α-equivalent to
+  -- @λ(_, y). y@.
   --
-  -- The default ignores non-binding fields (locations, sorts, literals). A
-  -- pattern that carries meaningful data in them needs a hand-written
-  -- instance, which can compare them with 'UnifiableInPattern' (and ignore
-  -- some deliberately, as a generated instance does for BNFC source
-  -- positions).
+  -- The default ignores non-binding fields (such as locations, sorts or
+  -- literals). A pattern that carries meaningful data in them needs a
+  -- hand-written instance, which can compare them with 'UnifiableInPattern'.
   --
-  -- A field that is /scope-indexed/, such as a telescope step's type, cannot be
-  -- compared here at all, since comparing it up to α needs the ambient scope
-  -- and this method is given only 'Distinct'. Write 'unifyPatternsIn' for that,
-  -- and leave this one as the binder-only approximation.
+  -- A /scope-indexed/ field, such as the type in a telescope step, cannot be
+  -- compared here, since comparing it up to α needs the ambient scope. Compare
+  -- it in 'unifyPatternsIn', and keep this method for the rest of the pattern.
   default unifyPatterns
     :: (GenericK pattern, GUnifiablePattern (RepK pattern), Distinct n)
     => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
@@ -1198,7 +1186,7 @@ class CoSinkable pattern => UnifiablePattern pattern where
   --
   -- The default ignores the scope and answers with 'unifyPatterns'. An instance
   -- that overrides this one should leave 'unifyPatterns' in place as the
-  -- binder-only approximation rather than remove it. That is what
+  -- comparison without a scope rather than remove it. That is what
   -- 'unsafeEqPattern' and any caller without a scope will get, and it may be
   -- more permissive than this one, never less.
   unifyPatternsIn
@@ -1207,14 +1195,13 @@ class CoSinkable pattern => UnifiablePattern pattern where
   unifyPatternsIn _scope = unifyPatterns
 
 -- | Two lists unify when they have the same length. Their binders are paired
--- by position, and when they differ, the binders of the right list are renamed
--- to those of the left one, all at once. This cannot give two positions the
--- same name, since the left binders are distinct, whereas merging the verdicts
--- of single pairs can (see 'unsafeMergeUnifyBinders').
+-- by position, and the binders of the right list are renamed to those of the
+-- left one, all at once. Since the left binders are distinct, no two positions
+-- get the same name.
 instance UnifiablePattern NameBinderList where
   unifyPatterns l r
-    -- Lists of different lengths do not unify. 'unifyPatternBinders' reaches
-    -- this case for patterns that bind different numbers of names.
+    -- Reached through 'unifyPatternBinders' for patterns that bind different
+    -- numbers of names.
     | Prelude.length ls /= Prelude.length rs = NotUnifiable
     | ls == rs  = unsafeCoerce (SameNameBinders (fromNameBindersList l))
     | otherwise = RenameRightNameBinder (fromNameBindersList l) rename
@@ -1285,10 +1272,9 @@ unifyPatternBinders
   => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
 unifyPatternBinders l r = coerce (unifyPatterns (nameBinderListOf l) (nameBinderListOf r))
 
--- | Do two patterns unify? They may extend different scopes, since only the
--- constructor of the verdict is consulted. A structural comparison needs this
--- for sub-patterns, which extend different scopes once a binder before them
--- has been renamed.
+-- | Do two patterns unify? The patterns may extend different scopes, as
+-- sub-patterns do once a binder before them has been renamed. This is safe
+-- since only the constructor of the verdict is consulted.
 --
 -- @since 0.5.0
 unsafeUnifiablePatterns
@@ -1303,18 +1289,17 @@ unsafeUnifiablePatterns l r =
 
 -- | Unify two patterns structurally, through their "Generics.Kind"
 -- representation. They unify when they consist of the same constructors,
--- nested in the same way, and their binders are then paired in order by
--- 'unifyPatternBinders'. This is the default 'unifyPatterns', so a pattern
--- type that derives 'GenericK' gets it from an empty instance.
+-- nested in the same way, and their binders are then paired in order. A
+-- sub-pattern is compared with its own 'unifyPatterns'.
 --
--- It does not compare:
+-- This is the default 'unifyPatterns', so a pattern type that derives
+-- 'GenericK' gets it from an empty instance. A hand-written instance can call
+-- it after comparing the fields that it ignores:
 --
--- * non-binding fields (source positions, labels, literals), which a
---   hand-written 'unifyPatterns' can compare with 'UnifiableInPattern';
+-- * non-binding fields (such as source positions, labels or literals), which
+--   can be compared with 'UnifiableInPattern';
 -- * fields indexed by a scope (payloads), which need the scope (see
 --   'unifyPatternsIn').
---
--- A sub-pattern is compared with its own 'unifyPatterns'.
 --
 -- @since 0.5.0
 gunifyPatterns
@@ -1754,11 +1739,9 @@ transportUnderBinder transport binder binder'
 -- 'nameBinderListOf') do not walk payloads at all.
 --
 -- Otherwise the payload is renamed with 'rbind', which refreshes the payload's
--- own binders against the ambient scope where they would capture. For
--- instance, if a binder @x0@ of the pattern is refreshed to @x1@, a later
--- payload @λx1. x0@ becomes @λx2. x1@, and only the scope says that @x2@ is
--- free. The transport is not an inclusion, so 'sinkabilityProof' does not
--- apply.
+-- own binders where they would capture. For instance, if a binder @x0@ of the
+-- pattern is refreshed to @x1@, a later payload @λx1. x0@ becomes @λx2. x1@,
+-- and choosing @x2@ needs the ambient scope.
 --
 -- The whole recipe for a payload-carrying pattern, at a telescope of labelled
 -- steps:
@@ -2234,18 +2217,18 @@ class RelMonad (f :: S -> Type) (m :: S -> Type) where
   --
   -- Note the two special additions to the usual definition of a relative binding operation:
   --
-  -- 1. @'Scope' b@ is added since is corresponds to the runtime counterpart of the type parameter @b@.
+  -- 1. @'Scope' b@ is added since it corresponds to the runtime counterpart of the type parameter @b@.
   -- 2. @t'Distinct' b@ constraint helps to ensure we only work with scopes that are distinct.
   --
-  -- Technically, it is also possible add similar components for @a@ parameter.
+  -- Technically, it is also possible to add similar components for @a@ parameter.
   -- Also, we could probably treat types in 'S' as singletons and extract distinct scopes that way,
   -- preserving the more general type signature for 'rbind'.
   --
   -- @since 0.0.1
   rbind :: Distinct b => Scope b -> m a -> (f a -> m b) -> m b
 
--- | A name has no binders, so renaming it needs no scope. This is what lets a
--- pattern carry names as payloads (see 'transportPayload').
+-- | A name has no binders, so renaming it needs no scope. This lets a pattern
+-- carry names as payloads (see 'transportPayload').
 --
 -- @since 0.5.0
 instance RelMonad Name Name where

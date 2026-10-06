@@ -6,9 +6,8 @@
 {-# LANGUAGE TypeFamilies      #-}
 
 -- | What the default 'Foil.unifyPatterns' ('Foil.gunifyPatterns') tells
--- apart and what it does not (non-binding fields), since every client gets it
--- from an empty instance. Also what 'Foil.Internal.unifyPatternBinders', which
--- compares only the number and order of binders, does not tell apart.
+-- apart, and what 'Foil.Internal.unifyPatternBinders' ignores when used on its
+-- own.
 --
 -- Since α-equivalence is defined in terms of 'Foil.unifyPatterns', these are also
 -- statements about which terms the library considers α-equivalent.
@@ -130,8 +129,8 @@ defaultSpec = describe "the default unifyPatterns" $ do
       `shouldBe` True
 
   it "pairs the binders of two patterns of one shape in order" $
-    -- (x0, x1) against (x1, x0): the right binders are renamed to the left
-    -- ones position by position, so x1 goes to x0 and x0 to x1.
+    -- For (x0, x1) against (x1, x0), the right binders are renamed to the
+    -- left ones by position, so x1 goes to x0 and x0 to x1.
     withThreeBinders (\x y _z ->
       Foil.withRefreshed Foil.emptyScope (Foil.nameOf y) (\x' ->
         Foil.withRefreshed (Foil.extendScope x' Foil.emptyScope) (Foil.nameOf x) (\y' ->
@@ -148,9 +147,8 @@ defaultSpec = describe "the default unifyPatterns" $ do
 binderSpec :: Spec
 binderSpec = describe "unifyPatternBinders" $ do
   it "ignores the constructor, so different constructors with equal binders unify" $
-    -- The consequence worth knowing: for a pattern type whose constructors mean
-    -- different things -- the branches of a @match@, say -- this calls two of
-    -- them equal, and no type error says so.
+    -- For a pattern type whose constructors mean different things (the
+    -- branches of a @match@, say), this calls two of them equal.
     Foil.withFresh Foil.emptyScope (\x ->
       unifiesWithoutRenaming (BinderVar x) (BinderBox x))
       `shouldBe` True

@@ -173,11 +173,11 @@ deriveCoSinkable nameT patternT = do
             xi = mkName ("x" ++ show i)
 
 -- | Generate a structural 'Foil.UnifiablePattern' instance, comparing
--- constructors and non-binding fields rather than only the binders. When the
--- two patterns agree on those, their binders are paired in order by
--- 'Foil.Internal.unifyPatternBinders'.
+-- constructors and non-binding fields as well as binders.
 --
--- This deriver does not work and has no call sites. See the deprecation note.
+-- This deriver does not support the pattern types that @mkFoilPattern@ and
+-- @mkFreeFoil@ generate. Derive @GenericK@ and take an empty
+-- 'Foil.UnifiablePattern' instance instead, or write the instance by hand.
 --
 -- @since 0.1.0
 deriveUnifiablePattern
@@ -185,15 +185,10 @@ deriveUnifiablePattern
   -> Name -- ^ Type name for raw patterns.
   -> Q [Dec]
 {-# DEPRECATED deriveUnifiablePattern
-  "This deriver does not work and has no call sites. It reifies the raw \
-  \(BNFC) pattern type and guesses the scope-safe type and constructor names \
-  \by prefixing \"Foil\", and it rejects GADT constructors -- so it cannot \
-  \handle the pattern types that mkFoilPattern and mkFreeFoil generate, nor a \
-  \hand-written pattern GADT. Instead, derive GenericK and take an empty \
-  \instance (see Control.Monad.Foil), or write the instance by hand as \
-  \Language.LambdaPi.Impl.Foil does. Note that the empty instance compares \
-  \constructors and binders but not non-binding fields; see \
-  \UnifiablePattern. To be removed in the next major release." #-}
+  "Does not support the pattern types that mkFoilPattern and mkFreeFoil \
+  \generate, nor a hand-written pattern GADT. Derive GenericK and take an \
+  \empty UnifiablePattern instance instead, or write the instance by hand as \
+  \Language.LambdaPi.Impl.Foil does. To be removed in the next major release." #-}
 deriveUnifiablePattern nameT patternT = do
   TyConI (DataD _ctx _name patternTVars _kind patternCons _deriv) <- reify patternT
 
@@ -229,10 +224,10 @@ deriveUnifiablePattern nameT patternT = do
         paramsR = zipWith (mkConParamPattern "r") params [1..]
         mkConParamPattern s _ i = VarP (mkName (s ++ show i))
 
-        -- Compare the shapes field by field (binders always agree,
-        -- sub-patterns are compared recursively, and other fields with
-        -- 'Foil.unifyInPattern'), then pair all binders in order at once.
-        -- Chaining per-field verdicts can give two binders the same name.
+        -- Compare the fields (binders always agree, sub-patterns are compared
+        -- recursively, other fields with 'Foil.unifyInPattern'), then pair all
+        -- binders in order at once, since chaining per-field verdicts can give
+        -- two binders the same name.
         (checks, eqTypes) = mconcat (zipWith check [1 :: Int ..] params)
 
         check i (_bang, PeelConT tyName _tyParams)
