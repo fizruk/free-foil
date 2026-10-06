@@ -514,12 +514,8 @@ unsafeEqExpr e1 e2 = case (e1, e2) of
 --
 -- Compared to 'alphaEquivRefreshed', this function might skip unnecessary
 -- changes of bound variables when both binders in two matching scoped terms coincide.
---
--- Renaming binders by the verdict of unification is sound only when the
--- unified binders are fresh for the scope, and a sunk term may bind a name of
--- the scope. For instance, in the scope @{x0}@, renaming the binder of
--- @λx1. x0@ to that of a sunk @λx0. x0@ would capture the free @x0@. In that
--- case, the terms are compared with 'alphaEquivRefreshed'.
+-- It falls back to 'alphaEquivRefreshed' when a unified binder is already in
+-- the scope, as for a term built in a smaller scope and sunk.
 alphaEquiv :: Distinct n => Scope n -> Expr n -> Expr n -> Bool
 alphaEquiv scope e1 e2 = case (e1, e2) of
   (VarE x, VarE x') -> x == coerce x'
@@ -564,7 +560,7 @@ alphaEquiv scope e1 e2 = case (e1, e2) of
   (UniverseE, UniverseE) -> True
   _ -> False
 
--- | Does a binder of the unified pattern in a verdict bind a name of the scope?
+-- | Is a binder of the unified pattern already in the scope?
 unifiedBindersShadow :: Distinct n => Scope n -> UnifyNameBinders Pattern n l r -> Bool
 unifiedBindersShadow scope = \case
   SameNameBinders z         -> bindersShadow scope z
@@ -573,7 +569,7 @@ unifiedBindersShadow scope = \case
   RenameBothBinders z _ _   -> bindersShadow scope z
   NotUnifiable              -> False
 
--- | Does one of the binders bind a name of the scope?
+-- | Is one of the binders already in the scope?
 bindersShadow :: Distinct n => Scope n -> NameBinders n l -> Bool
 bindersShadow scope z = any (`member` scope) (namesOfPattern z)
 
