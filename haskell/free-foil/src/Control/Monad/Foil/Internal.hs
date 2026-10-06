@@ -1173,10 +1173,6 @@ class CoSinkable pattern => UnifiablePattern pattern where
   -- some deliberately, as a generated instance does for BNFC source
   -- positions).
   --
-  -- A pattern type without a 'GenericK' instance, or one whose binders are all
-  -- that it means, can take @unifyPatterns = 'unifyPatternBinders'@, which
-  -- compares only the number and order of binders.
-  --
   -- A field that is /scope-indexed/, such as a telescope step's type, cannot be
   -- compared here at all, since comparing it up to α needs the ambient scope
   -- and this method is given only 'Distinct'. Write 'unifyPatternsIn' for that,
@@ -1274,17 +1270,14 @@ unsafeEqPattern l r =
     SameNameBinders{} -> True
     _                 -> False
 
--- | Unify two patterns by their binders alone, pairing them in order.
--- Patterns that bind different numbers of names do not unify. When the
--- binders differ, those of the right pattern are renamed to those of the left
--- one.
+-- | Unify the binders of two patterns, pairing them in order. Patterns that
+-- bind different numbers of names do not unify. When the binders differ, those
+-- of the right pattern are renamed to those of the left one.
 --
--- This is the right verdict once the rest of the two patterns (constructors,
--- nesting, non-binding fields) is known to agree, as in 'gunifyPatterns'. On
--- its own, it suits a pattern whose binders are all that it means:
---
--- > instance UnifiablePattern MyPattern where
--- >   unifyPatterns = unifyPatternBinders
+-- This is a building block for 'unifyPatterns', with a precondition: use it
+-- only once the two patterns are known to agree on everything else
+-- (constructors, nesting and non-binding fields), as 'gunifyPatterns' does.
+-- On its own it ignores all of these, so it unifies @(x, _)@ with @(_, y)@.
 --
 -- @since 0.5.0
 unifyPatternBinders

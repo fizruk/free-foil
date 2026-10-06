@@ -11,7 +11,7 @@ Breaking changes:
 
 - **The default `unifyPatterns` is structural, and it requires `GenericK`.** It is the new `gunifyPatterns`, which compares two patterns through their generic representation: they unify when they consist of the same constructors, nested in the same way, and their binders are then paired in order. The old default compared only the binders, which is wrong for a pattern that takes a value apart: `(x, _)` and `(_, y)` bind one name each, and the old default unified them. `mltt` took the default, so its conversion check accepted `refl p1 : Id (…, λ (x, _) ⇒ x, λ (_, y) ⇒ y)`, from which a program derived `tt : 𝕌`. Non-binding fields are still ignored.
   - This reverses the statement in the 0.3.3 entry below that structural derivation "will be opt-in rather than a new default". The change does alter α-equivalence for every client that takes the default. It is made now because this release breaks the API anyway.
-  - A pattern type that takes the default and has no `GenericK` instance no longer compiles. It can keep the old behaviour with `unifyPatterns = unifyPatternBinders`.
+  - A pattern type that takes the default and has no `GenericK` instance no longer compiles. Derive `GenericK` for it or write `unifyPatterns` by hand.
   - `mltt`, `soas` and `Impl.FreeFoilTH` of `lambda-pi` take the default. For `soas`, whose binders form a flat list, the result is the same as before.
 
 Fixes:

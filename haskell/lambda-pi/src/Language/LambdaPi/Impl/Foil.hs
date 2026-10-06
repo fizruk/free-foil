@@ -34,6 +34,7 @@
 module Language.LambdaPi.Impl.Foil where
 
 import           Control.Monad.Foil
+import           Control.Monad.Foil.Internal     (unifyPatternBinders)
 import           Control.Monad.Foil.Relative
 import           Data.Coerce                     (coerce)
 import           Data.Map                        (Map)
@@ -118,10 +119,9 @@ instance CoSinkable Pattern where
               cont (combine fl fr) (PatternPair l' r') scope''
 
 -- | Two patterns unify when they have the same shape. Their binders are then
--- paired in order by 'unifyPatternBinders'.
---
--- The shape matters, since @(x, _)@ and @(_, y)@ bind one name each, but from
--- different components of a pair.
+-- paired in order by 'unifyPatternBinders', whose precondition the shape
+-- check establishes. The shape matters: @(x, _)@ and @(_, y)@ bind one name
+-- each, but from different components of a pair.
 instance UnifiablePattern Pattern where
   unifyPatterns l r
     | samePatternShape l r = unifyPatternBinders l r

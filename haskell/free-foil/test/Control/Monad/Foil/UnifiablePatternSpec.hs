@@ -7,7 +7,7 @@
 
 -- | What the default 'Foil.unifyPatterns' ('Foil.gunifyPatterns') tells
 -- apart and what it does not (non-binding fields), since every client gets it
--- from an empty instance. Also what 'Foil.unifyPatternBinders', which
+-- from an empty instance. Also what 'Foil.Internal.unifyPatternBinders', which
 -- compares only the number and order of binders, does not tell apart.
 --
 -- Since α-equivalence is defined in terms of 'Foil.unifyPatterns', these are also
@@ -16,8 +16,9 @@ module Control.Monad.Foil.UnifiablePatternSpec (spec) where
 
 import           Test.Hspec
 
-import qualified Control.Monad.Foil as Foil
-import           Generics.Kind.TH   (deriveGenericK)
+import qualified Control.Monad.Foil          as Foil
+import qualified Control.Monad.Foil.Internal as Foil.Internal
+import           Generics.Kind.TH            (deriveGenericK)
 
 -- | A pattern type with just enough structure to observe the default:
 -- two constructors binding one name each, a nesting constructor, and a
@@ -36,8 +37,8 @@ instance Foil.HasNameBinders DemoPattern
 instance Foil.CoSinkable DemoPattern
 instance Foil.UnifiablePattern DemoPattern
 
--- | The same pattern type, comparing only binders with
--- 'Foil.unifyPatternBinders'.
+-- | The same pattern type, with 'Foil.Internal.unifyPatternBinders' used on
+-- its own, to show what it ignores when its precondition is not checked.
 data BinderPattern (n :: Foil.S) (l :: Foil.S) where
   BinderVar   :: Foil.NameBinder n l -> BinderPattern n l
   BinderBox   :: Foil.NameBinder n l -> BinderPattern n l
@@ -49,7 +50,7 @@ instance Foil.SinkableK BinderPattern
 instance Foil.HasNameBinders BinderPattern
 instance Foil.CoSinkable BinderPattern
 instance Foil.UnifiablePattern BinderPattern where
-  unifyPatterns = Foil.unifyPatternBinders
+  unifyPatterns = Foil.Internal.unifyPatternBinders
 
 -- | Do the two patterns unify, with or without a renaming?
 unifies
@@ -143,7 +144,7 @@ defaultSpec = describe "the default unifyPatterns" $ do
             _ -> [])))
       `shouldBe` [0, 1]
 
--- | What 'Foil.unifyPatternBinders' does not tell apart.
+-- | What 'Foil.Internal.unifyPatternBinders' does not tell apart.
 binderSpec :: Spec
 binderSpec = describe "unifyPatternBinders" $ do
   it "ignores the constructor, so different constructors with equal binders unify" $

@@ -96,9 +96,7 @@ deriveBinaryPattern ''Pattern'
 -- then paired in order. This is the default instance ('Foil.gunifyPatterns').
 --
 -- The shape matters, since @λ (x, _) ⇒ x@ is the first projection and
--- @λ (_, y) ⇒ y@ the second, although each pattern binds one name. Comparing
--- only the binders ('Foil.unifyPatternBinders') would make conversion
--- identify them.
+-- @λ (_, y) ⇒ y@ the second, although each pattern binds one name.
 instance Foil.UnifiablePattern (Pattern' a)
 
 -- | Ignore source positions when unifying patterns.

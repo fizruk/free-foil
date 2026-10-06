@@ -175,7 +175,7 @@ deriveCoSinkable nameT patternT = do
 -- | Generate a structural 'Foil.UnifiablePattern' instance, comparing
 -- constructors and non-binding fields rather than only the binders. When the
 -- two patterns agree on those, their binders are paired in order by
--- 'Foil.unifyPatternBinders'.
+-- 'Foil.Internal.unifyPatternBinders'.
 --
 -- This deriver does not work and has no call sites. See the deprecation note.
 --
@@ -245,7 +245,7 @@ deriveUnifiablePattern nameT patternT = do
         li i = VarE (mkName ("l" ++ show i))
         ri i = VarE (mkName ("r" ++ show i))
 
-        unifyBinders = AppE (AppE (VarE 'Foil.unifyPatternBinders) (VarE l)) (VarE r)
+        unifyBinders = AppE (AppE (VarE 'Foil.Internal.unifyPatternBinders) (VarE l)) (VarE r)
         body = case checks of
           [] -> unifyBinders
           _  -> CondE
