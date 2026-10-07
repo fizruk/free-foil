@@ -312,10 +312,22 @@ toFreeFoilSigCon config FreeFoilTermConfig{..} sigName rawRetType scope term = g
       ForallC params ctx con -> fmap (ForallC params ctx) <$> go con
       RecGadtC conNames argTypes retType -> go (GadtC conNames (map removeName argTypes) retType)
 
-toFreeFoilBindingCon :: FreeFoilConfig -> Type -> Type -> Con -> Q Con
-toFreeFoilBindingCon config rawRetType theOuterScope = go
+-- | How a generated binding type is declared.
+data BindingFlavour
+  = BindingNewtype
+    -- ^ A @newtype@, whose one field takes no strictness annotation.
+  | BindingData
+    -- ^ A @data@ type.
+
+toFreeFoilBindingCon :: FreeFoilConfig -> BindingFlavour -> Type -> Type -> Con -> Q Con
+toFreeFoilBindingCon config flavour rawRetType theOuterScope = go
   where
     goType = toFreeFoilType SortBinder config theOuterScope
+
+    -- The fields keep the annotations of the raw fields.
+    fieldBang rawBang = case flavour of
+      BindingNewtype -> Bang NoSourceUnpackedness NoSourceStrictness
+      BindingData    -> rawBang
 
     goTypeArgs :: Int -> Type -> [BangType] -> Q (Type, [BangType])
     goTypeArgs _ outerScope [] = pure (outerScope, [])
@@ -326,18 +338,18 @@ toFreeFoilBindingCon config rawRetType theOuterScope = go
             innerScope <- VarT <$> newName ("i" <> show i)
             let argType = toFreeFoilType SortBinder config outerScope innerScope rawArgType
             (theInnerScope, argTypes) <- goTypeArgs (i + 1) innerScope rawArgs
-            return (theInnerScope, ((bang_, argType) : argTypes))
+            return (theInnerScope, ((fieldBang bang_, argType) : argTypes))
 
           | Just _ <- lookupBindingName rawTypeName (freeFoilTermConfigs config) -> do
             innerScope <- VarT <$> newName ("i" <> show i)
             let argType = toFreeFoilType SortBinder config outerScope innerScope rawArgType
             (theInnerScope, argTypes) <- goTypeArgs (i + 1) innerScope rawArgs
-            return (theInnerScope, ((bang_, argType) : argTypes))
+            return (theInnerScope, ((fieldBang bang_, argType) : argTypes))
 
         _ -> do
           let argType = toFreeFoilType SortBinder config outerScope outerScope rawArgType
           (theInnerScope, argTypes) <- goTypeArgs (i + 1) outerScope rawArgs
-          return (theInnerScope, ((bang_, argType) : argTypes))
+          return (theInnerScope, ((fieldBang bang_, argType) : argTypes))
 
     go :: Con -> Q Con
     go = \case
@@ -353,6 +365,28 @@ toFreeFoilBindingCon config rawRetType theOuterScope = go
       InfixC l conName r -> go (GadtC [conName] [l, r] rawRetType)
       ForallC params ctx con -> ForallC params ctx <$> go con
       RecGadtC conNames argTypes retType -> go (GadtC conNames (map removeName argTypes) retType)
+
+-- | Is the binding type generated from these raw constructors a @newtype@?
+--
+-- It is when there is exactly one constructor, declared without an explicit
+-- @forall@ or context, and that constructor has exactly one field, which binds:
+-- an identifier (it becomes a 'Foil.NameBinder') or a nested binding type. A
+-- field that binds gives the constructor the result type @T ... o i@ with
+-- distinct scope variables, as a newtype requires; a field that binds nothing
+-- gives @T ... o o@, which only a GADT can express.
+isNewtypeBinding :: FreeFoilConfig -> [Con] -> Bool
+isNewtypeBinding config = \case
+  [con] | Just [rawFieldType] <- singleConFields con ->
+    isBindingFieldSort (bindingFieldSortOf config rawFieldType)
+  _ -> False
+  where
+    singleConFields = \case
+      NormalC _ types         -> Just (map snd types)
+      RecC _ types            -> Just (map (\(_, _, t) -> t) types)
+      InfixC{}                -> Nothing
+      GadtC [_] types _       -> Just (map snd types)
+      RecGadtC [_] types _    -> Just (map (\(_, _, t) -> t) types)
+      _                       -> Nothing
 
 -- | Is this raw field a binding (pattern) field?
 --
@@ -883,6 +917,12 @@ toFreeFoilClauseFromQuantified config rawRetType = go
 --  4. Signatures for terms, subterms, and scoped subterms.
 --  5. Pattern synonyms for terms, subterms, and scoped subterms.
 --
+-- A scope-safe pattern type is a @newtype@ when its raw type has exactly one
+-- constructor with exactly one field, and that field is an identifier or a
+-- nested pattern (e.g. @newtype Pattern = PatternVar VarIdent@). Such a
+-- pattern has the runtime representation of the field it wraps. Otherwise the
+-- pattern type is @data@.
+--
 -- @since 0.2.0
 mkFreeFoil :: FreeFoilConfig -> Q [Dec]
 mkFreeFoil config@FreeFoilConfig{..} = concat <$> sequence
@@ -928,11 +968,16 @@ mkFreeFoil config@FreeFoilConfig{..} = concat <$> sequence
       let bindingName = toFreeFoilName config rawBindingName
           rawRetType = PeelConT rawBindingName (map (VarT . tvarName) tvars)
           newParams = tvars ++ [PlainTV outerScope BndrReq, PlainTV innerScope BndrReq]
-          toCon = toFreeFoilBindingCon config rawRetType (VarT outerScope)
+          flavour
+            | isNewtypeBinding config cons = BindingNewtype
+            | otherwise                    = BindingData
+          toCon = toFreeFoilBindingCon config flavour rawRetType (VarT outerScope)
       newCons <- mapM toCon cons
       addModFinalizer $ putDoc (DeclDoc bindingName)
         ("/Generated/ with '" ++ show 'mkFreeFoil ++ "'. A binding type, scope-safe version of '" ++ show rawBindingName ++ "'.")
-      return (DataD [] bindingName newParams Nothing newCons [])
+      return $ case (flavour, newCons) of
+        (BindingNewtype, [newCon]) -> NewtypeD [] bindingName newParams Nothing newCon []
+        _                          -> DataD [] bindingName newParams Nothing newCons []
 
     -- A concrete 'Foil.CoSinkable' instance for the generated binding type,
     -- one clause per constructor, delegating to the fields' instances. The
