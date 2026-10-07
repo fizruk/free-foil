@@ -71,7 +71,6 @@ module Control.Monad.Foil (
   sink1,
   sink2,
   sinkabilityProof2,
-  sinkContainer,
   extendRenaming,
   extendNameBinderRenaming,
   composeNameBinderRenamings,
