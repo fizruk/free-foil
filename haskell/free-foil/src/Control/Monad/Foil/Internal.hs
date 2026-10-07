@@ -780,7 +780,7 @@ data UnifyNameBinders (pattern :: S -> S -> Type) n l r where
 --
 -- This convention is for a single pair of binders. For patterns of several
 -- binders, those of the right pattern are renamed to those of the left one
--- instead (see 'unifyPatternBinders'), since choosing the smaller name pair by
+-- instead (see 'unsafeUnifyPatternBinders'), since choosing the smaller name pair by
 -- pair can give two binders of one pattern the same name.
 --
 -- @since 0.0.3
@@ -1200,7 +1200,7 @@ class CoSinkable pattern => UnifiablePattern pattern where
 -- get the same name.
 instance UnifiablePattern NameBinderList where
   unifyPatterns l r
-    -- Reached through 'unifyPatternBinders' for patterns that bind different
+    -- Reached through 'unsafeUnifyPatternBinders' for patterns that bind different
     -- numbers of names.
     | Prelude.length ls /= Prelude.length rs = NotUnifiable
     | ls == rs  = unsafeCoerce (SameNameBinders (fromNameBindersList l))
@@ -1261,16 +1261,18 @@ unsafeEqPattern l r =
 -- bind different numbers of names do not unify. When the binders differ, those
 -- of the right pattern are renamed to those of the left one.
 --
--- This is a building block for 'unifyPatterns', with a precondition: use it
--- only once the two patterns are known to agree on everything else
--- (constructors, nesting and non-binding fields), as 'gunifyPatterns' does.
--- On its own it ignores all of these, so it unifies @(x, _)@ with @(_, y)@.
+-- This is a building block for a hand-written 'unifyPatterns', and it is
+-- unsafe: use it only once the two patterns are known to agree on everything
+-- else (constructors, nesting and non-binding fields), as 'gunifyPatterns'
+-- does. On its own it ignores all of these, so it unifies @(x, _)@ with
+-- @(_, y)@. See @Language.LambdaPi.Impl.Foil@ in the @lambda-pi@ example for
+-- an instance that checks the shape of two patterns first.
 --
 -- @since 0.5.0
-unifyPatternBinders
+unsafeUnifyPatternBinders
   :: (CoSinkable pattern, Distinct n)
   => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
-unifyPatternBinders l r = coerce (unifyPatterns (nameBinderListOf l) (nameBinderListOf r))
+unsafeUnifyPatternBinders l r = coerce (unifyPatterns (nameBinderListOf l) (nameBinderListOf r))
 
 -- | Do two patterns unify? The patterns may extend different scopes, as
 -- sub-patterns do once a binder before them has been renamed. This is safe
@@ -1309,7 +1311,7 @@ gunifyPatterns
 gunifyPatterns l r
   | gsamePatternShape (fromK @_ @pattern @(n :&&: l :&&: LoT0) l)
                       (fromK @_ @pattern @(n :&&: r :&&: LoT0) r)
-              = unifyPatternBinders l r
+              = unsafeUnifyPatternBinders l r
   | otherwise = NotUnifiable
 
 -- | The shape of a pattern on its "Generics.Kind" representation, which is

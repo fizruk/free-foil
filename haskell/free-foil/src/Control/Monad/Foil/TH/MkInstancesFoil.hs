@@ -240,7 +240,7 @@ deriveUnifiablePattern nameT patternT = do
         li i = VarE (mkName ("l" ++ show i))
         ri i = VarE (mkName ("r" ++ show i))
 
-        unifyBinders = AppE (AppE (VarE 'Foil.Internal.unifyPatternBinders) (VarE l)) (VarE r)
+        unifyBinders = AppE (AppE (VarE 'Foil.unsafeUnifyPatternBinders) (VarE l)) (VarE r)
         body = case checks of
           [] -> unifyBinders
           _  -> CondE

@@ -93,6 +93,7 @@ module Control.Monad.Foil (
   andThenUnifyPatterns,
   andThenUnifyNameBinders,
   gunifyPatterns,
+  unsafeUnifyPatternBinders,
   UnifiablePattern(..),
   UnifiableInPattern(..),
   AlphaEquiv(..),
