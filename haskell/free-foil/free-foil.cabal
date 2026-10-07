@@ -120,7 +120,11 @@ test-suite spec
       Control.Monad.Free.Foil.SupportSpec
       Control.Monad.Free.Foil.TH.MkFreeFoilSpec
       Control.Monad.Free.Foil.TH.MkFreeFoilSpec.Config
+      Control.Monad.Free.Foil.TH.MkFreeFoilSpec.Declaration
+      Control.Monad.Free.Foil.TH.MkFreeFoilSpec.PatternsConfig
+      Control.Monad.Free.Foil.TH.MkFreeFoilSpec.PatternsSyntax
       Control.Monad.Free.Foil.TH.MkFreeFoilSpec.Syntax
+      Control.Monad.Free.Foil.TH.PatternTypesSpec
       Data.ZipMatchK.THSpec
       SpecHook
       Control.Monad.Foil.Laws
