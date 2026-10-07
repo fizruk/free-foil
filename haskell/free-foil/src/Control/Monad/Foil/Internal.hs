@@ -1391,7 +1391,7 @@ instance Sinkable Name where
 
 -- | A container of sinkable expressions is sinkable, elementwise.
 --
--- The point of this instance is 'sinkContainer': since the proof typechecks,
+-- The point of this instance is 'sink1': since the proof typechecks,
 -- sinking the whole container is a coercion, and does not walk its spine.
 instance (Functor f, Sinkable e) => Sinkable (Compose f e) where
   sinkabilityProof rename (Compose xs) = Compose (fmap (sinkabilityProof rename) xs)
@@ -1479,13 +1479,6 @@ sink = unsafeCoerce
 -- @since 0.4.0
 sink1 :: (Functor f, Sinkable e, DExt n l) => f (e n) -> f (e l)
 sink1 = getCompose . sink . Compose
-
--- | The name 'sink1' had before the family existed.
---
--- @since 0.3.2
-sinkContainer :: (Functor f, Sinkable e, DExt n l) => f (e n) -> f (e l)
-sinkContainer = sink1
-{-# DEPRECATED sinkContainer "Use sink1, its name in the sink family" #-}
 
 -- | The sinkability proof lifted through a 'Bifunctor', with one renaming
 -- per slot. Once this typechecks, sinking both slots at once is a coercion;

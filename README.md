@@ -55,7 +55,7 @@ What is guaranteed is more modest:
 1. `Distinct n` is a statement about the scope `n`, and not about the binders occurring in a term of type `AST binder sig n`.
 2. `withFresh scope` produces a binder that is not in `scope`, at the moment of allocation.
 
-Together these do give no shadowing for a term built by threading the scope downwards, such as a term produced by `convertToAST` or by `refreshAST`. This is why α-normal forms print with increasing indices, as in `λ x0 . λ x1 . x1`.
+Together these do give no shadowing for a term built by threading the scope downwards, such as a term produced by `unsafeConvertToAST` or by `refreshAST`. This is why α-normal forms print with increasing indices, as in `λ x0 . λ x1 . x1`.
 
 The property fails as soon as terms are assembled from parts. `substitute` refreshes the binders that it rebuilds, which is the rapier, but the range of the substitution is placed by `sink` and keeps its own binders. For example, `(λs.λz.s(s z))(λs.λz.s(s z))` evaluates to a term with `λ x1` nested inside another `λ x1` (see the `whnf` examples in `Language.LambdaPi.Impl.FreeFoilTH`). Note that `refreshAST`, the sledgehammer, is provided precisely to restore the convention on demand. If terms satisfied it already, α-normalization would be the identity.
 
