@@ -16,6 +16,7 @@ import           Control.Exception                                        (evalu
 import qualified Control.Monad.Foil                                       as Foil
 import           Control.Monad.Foil.Laws
 import qualified Control.Monad.Free.Foil                                  as FreeFoil
+import           Data.Binary                                              (decode, encode)
 import           Data.Coerce                                              (coerce)
 import qualified Data.Map                                                 as Map
 import           Test.Hspec
@@ -46,6 +47,10 @@ spec = do
       Foil.withFresh Foil.emptyScope $ \binder ->
         namesOfNameBinderList (Foil.nameBindersList (Foil.getNameBinders (FFPatternVar binder)))
           `shouldBe` [Foil.nameId (Foil.nameOf binder)]
+    it "round-trips through Binary (deriveBinaryPattern)" $
+      Foil.withFresh Foil.emptyScope $ \binder ->
+        namesOfP (decode (encode (FFPatternVar binder)) :: FFPattern Foil.VoidS Foil.VoidS)
+          `shouldBe` namesOfP (FFPatternVar binder)
     describe "α-equivalence (needs SinkableK and UnifiablePattern)" $ do
       it "identifies λx. x and λy. y" $
         alphaEquivTerms (fun x (Var x)) (fun y (Var y)) `shouldBe` True
@@ -59,6 +64,10 @@ spec = do
       coSinkableSpec (namesOfM . unwrapN) genN extensionByCoercion
     describe "UnifiablePattern (GenericK default)" $
       unifyPatternsSpec (namesOfM . unwrapN) genNPair Holds
+    it "round-trips through Binary (deriveBinaryPattern)" $
+      withPair $ \pat ->
+        namesOfM (unwrapN (decode (encode (FFNPatternWrap pat)) :: FFNPattern Foil.VoidS Foil.VoidS))
+          `shouldBe` namesOfM pat
 
   describe "a pattern of several constructors (FFMPattern)" $ do
     it "is data" $
@@ -71,6 +80,10 @@ spec = do
       coSinkableSpec namesOfM genM extensionByCoercion
     describe "UnifiablePattern (GenericK default)" $
       unifyPatternsSpec namesOfM genMPair Holds
+    it "round-trips through Binary (deriveBinaryPattern)" $
+      withPair $ \pat ->
+        namesOfM (decode (encode pat) :: FFMPattern Foil.VoidS Foil.VoidS)
+          `shouldBe` namesOfM pat
     describe "α-equivalence (needs SinkableK and UnifiablePattern)" $ do
       let pair a b = MPatternPair (MPatternVar a) (MPatternVar b)
           funM p body = MFun p (MScopedTerm body)
@@ -91,6 +104,12 @@ spec = do
       coSinkableSpec namesOfA genA extensionByCoercion
     describe "UnifiablePattern (GenericK default)" $
       unifyPatternsSpec namesOfA genAPair Holds
+    it "round-trips through Binary (deriveBinaryPattern)" $
+      Foil.withFresh Foil.emptyScope $ \binder ->
+        case decode (encode (FFAPatternVar 7 binder)) :: FFAPattern Foil.VoidS Foil.VoidS of
+          FFAPatternVar annotation binder' -> do
+            annotation `shouldBe` 7
+            Foil.nameId (Foil.nameOf binder') `shouldBe` Foil.nameId (Foil.nameOf binder)
     it "round-trips through the conversions" $ do
       let term = AFun (APatternVar 7 ax) (AScopedTerm (AVar ax))
       case roundtripA term of
@@ -138,6 +157,11 @@ namesOfM = \case
   FFMPatternWild     -> []
   FFMPatternVar b    -> [Foil.nameId (Foil.nameOf b)]
   FFMPatternPair l r -> namesOfM l ++ namesOfM r
+
+-- | Run a test on @(x, _)@ with a fresh @x@.
+withPair :: (forall l. FFMPattern Foil.VoidS l -> r) -> r
+withPair k = Foil.withFresh Foil.emptyScope $ \binder ->
+  k (FFMPatternPair (FFMPatternVar binder) FFMPatternWild)
 
 -- | The shape of a pattern: where the wildcards, variables and pairs are. This
 -- follows the generators of @lambda-pi@'s @LawsSyntax@.

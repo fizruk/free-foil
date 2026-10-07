@@ -18,6 +18,8 @@
 module Control.Monad.Free.Foil.TH.MkFreeFoilSpec.PatternsSyntax where
 
 import qualified Control.Monad.Foil                                       as Foil
+import           Control.Monad.Free.Foil.Binary                          ()
+import           Control.Monad.Free.Foil.Binary.TH                       (deriveBinaryPattern)
 import           Control.Monad.Free.Foil.TH.MkFreeFoil
 import           Data.Bifunctor.TH
 import           Data.ZipMatchK
@@ -31,16 +33,19 @@ deriveGenericK ''FFMPattern
 instance Foil.SinkableK FFMPattern
 instance Foil.HasNameBinders FFMPattern
 instance Foil.UnifiablePattern FFMPattern
+deriveBinaryPattern ''FFMPattern
 
 deriveGenericK ''FFAPattern
 instance Foil.SinkableK FFAPattern
 instance Foil.HasNameBinders FFAPattern
 instance Foil.UnifiablePattern FFAPattern
+deriveBinaryPattern ''FFAPattern
 
 deriveGenericK ''FFNPattern
 instance Foil.SinkableK FFNPattern
 instance Foil.HasNameBinders FFNPattern
 instance Foil.UnifiablePattern FFNPattern
+deriveBinaryPattern ''FFNPattern
 
 deriveBifunctor ''MTermSig
 deriveBifoldable ''MTermSig
