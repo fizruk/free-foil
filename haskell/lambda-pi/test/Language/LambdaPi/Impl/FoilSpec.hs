@@ -196,9 +196,29 @@ instance Show ExprWithFresh where
     , "refreshExpr _ t = " <> show (refreshExpr emptyScope t)
     ]
 
+-- | In the scope @{x0}@: @λx0. x0@, built in the empty scope and sunk, so
+-- that its binder shadows the scope; @λx1. x0@, whose body refers to the free
+-- @x0@; and @λx1. x1@. The first and the third are α-equivalent, and the
+-- second is α-equivalent to neither.
+withShadowingLambdas :: (forall n. Distinct n => Scope n -> Expr n -> Expr n -> Expr n -> r) -> r
+withShadowingLambdas cont =
+  withFresh emptyScope $ \z ->
+    let scope = extendScope z emptyScope
+        shadowing = sink (lam emptyScope (\_ x -> VarE (nameOf x)))
+        constant = lam scope (\_ _ -> VarE (sink (nameOf z)))
+        identity' = lam scope (\_ x -> VarE (nameOf x))
+     in cont scope shadowing constant identity'
+
 spec :: Spec
 spec = do
   describe "α-equivalence" $ do
+    it "alphaEquiv tells a binder that shadows the scope from a free name" $
+      withShadowingLambdas (\scope shadowing constant identity' ->
+        [ alphaEquiv scope shadowing constant
+        , alphaEquiv scope constant shadowing
+        , alphaEquiv scope shadowing identity'
+        , alphaEquiv scope identity' shadowing ])
+        `shouldBe` [False, False, True, True]
     it "refreshExpr is correct" $ property $ \(ExprWithFresh t t') ->
       refreshExpr emptyScope t `unsafeEqExpr` t'
     it "alphaEquiv is correct" $ property $ \(AlphaEquivPair equiv t t') ->

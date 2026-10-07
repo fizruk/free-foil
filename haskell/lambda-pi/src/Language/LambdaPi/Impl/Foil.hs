@@ -34,6 +34,7 @@
 module Language.LambdaPi.Impl.Foil where
 
 import           Control.Monad.Foil
+import           Control.Monad.Foil.Internal     (unifyPatternBinders)
 import           Control.Monad.Foil.Relative
 import           Data.Coerce                     (coerce)
 import           Data.Map                        (Map)
@@ -117,12 +118,22 @@ instance CoSinkable Pattern where
         withPattern withNameBinder id' combine scope' r $ \fr r' scope'' ->
               cont (combine fl fr) (PatternPair l' r') scope''
 
+-- | Two patterns unify when they have the same shape. Their binders are then
+-- paired in order by 'unifyPatternBinders', whose precondition the shape
+-- check establishes. The shape matters: @(x, _)@ and @(_, y)@ bind one name
+-- each, but from different components of a pair.
 instance UnifiablePattern Pattern where
-  unifyPatterns PatternWildcard PatternWildcard = SameNameBinders emptyNameBinders
-  unifyPatterns (PatternVar x) (PatternVar x') = unifyNameBinders x x'
-  unifyPatterns (PatternPair l r) (PatternPair l' r') = case (assertDistinct l, assertDistinct l') of
-    (Distinct, Distinct) -> unifyPatterns l l' `andThenUnifyPatterns` (r, r')
-  unifyPatterns _ _ = NotUnifiable
+  unifyPatterns l r
+    | samePatternShape l r = unifyPatternBinders l r
+    | otherwise            = NotUnifiable
+
+-- | Do two patterns consist of the same constructors, nested in the same way?
+samePatternShape :: Pattern n l -> Pattern n' l' -> Bool
+samePatternShape PatternWildcard PatternWildcard = True
+samePatternShape (PatternVar _) (PatternVar _) = True
+samePatternShape (PatternPair l r) (PatternPair l' r') =
+  samePatternShape l l' && samePatternShape r r'
+samePatternShape _ _ = False
 
 instance InjectName Expr where
   injectName = VarE
@@ -503,11 +514,14 @@ unsafeEqExpr e1 e2 = case (e1, e2) of
 --
 -- Compared to 'alphaEquivRefreshed', this function might skip unnecessary
 -- changes of bound variables when both binders in two matching scoped terms coincide.
+-- It falls back to 'alphaEquivRefreshed' when a unified binder is already in
+-- the scope, as for a term built in a smaller scope and sunk.
 alphaEquiv :: Distinct n => Scope n -> Expr n -> Expr n -> Bool
 alphaEquiv scope e1 e2 = case (e1, e2) of
   (VarE x, VarE x') -> x == coerce x'
   (AppE t1 t2, AppE t1' t2') -> alphaEquiv scope t1 t1' && alphaEquiv scope t2 t2'
   (LamE x body, LamE x' body') -> case unifyPatterns x x' of
+    verdict | unifiedBindersShadow scope verdict -> alphaEquivRefreshed scope e1 e2
     SameNameBinders z    -> case assertDistinct z of
       Distinct -> alphaEquiv (extendScopePattern z scope) body body'
     RenameLeftNameBinder z renameL -> case assertDistinct z of
@@ -524,6 +538,7 @@ alphaEquiv scope e1 e2 = case (e1, e2) of
         in alphaEquiv scope' (liftRM scope' (fromNameBinderRenaming renameL) body) (liftRM scope' (fromNameBinderRenaming renameR) body')
     NotUnifiable -> False
   (PiE x a b, PiE x' a' b') -> alphaEquiv scope a a' && case unifyPatterns x x' of
+    verdict | unifiedBindersShadow scope verdict -> alphaEquivRefreshed scope e1 e2
     SameNameBinders z    -> case assertDistinct z of Distinct -> alphaEquiv (extendScopePattern z scope) b b'
     RenameLeftNameBinder z renameL -> case assertDistinct z of
       Distinct ->
@@ -544,6 +559,19 @@ alphaEquiv scope e1 e2 = case (e1, e2) of
   (ProductE l r, ProductE l' r') -> alphaEquiv scope l l' && alphaEquiv scope r r'
   (UniverseE, UniverseE) -> True
   _ -> False
+
+-- | Is a binder of the unified pattern already in the scope?
+unifiedBindersShadow :: Distinct n => Scope n -> UnifyNameBinders Pattern n l r -> Bool
+unifiedBindersShadow scope = \case
+  SameNameBinders z         -> bindersShadow scope z
+  RenameLeftNameBinder z _  -> bindersShadow scope z
+  RenameRightNameBinder z _ -> bindersShadow scope z
+  RenameBothBinders z _ _   -> bindersShadow scope z
+  NotUnifiable              -> False
+
+-- | Is one of the binders already in the scope?
+bindersShadow :: Distinct n => Scope n -> NameBinders n l -> Bool
+bindersShadow scope z = any (`member` scope) (namesOfPattern z)
 
 -- * Interpreter
 

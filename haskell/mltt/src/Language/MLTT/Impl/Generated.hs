@@ -92,12 +92,9 @@ instance (Binary a, Binary s, Binary t) => Binary (Term'Sig a s t)
 -- names lie in on the way in.
 deriveBinaryPattern ''Pattern'
 
--- | Two patterns are unified by their binders, in order.
---
--- Note that this is the /default/ instance, so it deliberately ignores the
--- pattern constructors: @(x, y)@ and a hypothetical single pattern binding two
--- names would unify. For MLTT that is the intended reading, since what the body
--- of a binder may refer to is exactly the names the pattern binds.
+-- | This instance takes the default ('Foil.gunifyPatterns'). Two patterns
+-- unify when they have the same shape, so conversion tells apart
+-- @λ (x, _) ⇒ x@ and @λ (_, y) ⇒ y@, although each pattern binds one name.
 instance Foil.UnifiablePattern (Pattern' a)
 
 -- | Ignore source positions when unifying patterns.

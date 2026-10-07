@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds  #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs      #-}
 {-# LANGUAGE LambdaCase      #-}
 {-# LANGUAGE PatternSynonyms #-}
@@ -16,6 +17,7 @@ import           Test.QuickCheck
 import           Control.Monad.Foil
 import           Control.Monad.Foil.Internal           (Name (..))
 import           Control.Monad.Foil.Laws
+import           Control.Monad.Foil.Relative           (RelMonad)
 import           Control.Monad.Foil.Telescope          (Telescope (..))
 import           Control.Monad.Free.Foil               (AST (..), substitute)
 import           Control.Monad.Free.Foil.Example       (Expr, ExprF, pattern AppE, pattern LamE)
@@ -87,7 +89,7 @@ decode f k t
 -- in a scope @n@ and sunk (through its encoding) into an extension @o@ of
 -- @n@ that binds the names of its binders, so that every binder clashes.
 transportLaw
-  :: Sinkable e
+  :: (Sinkable e, RelMonad Name e)
   => (forall x. e x -> Expr x) -> (forall x. Expr x -> Maybe (e x))
   -> (forall x. Ctx x -> Gen (Maybe (e x)))
   -> Property

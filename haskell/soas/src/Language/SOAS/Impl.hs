@@ -93,6 +93,15 @@ applySubsts scope substs term =
 -- True
 -- >>> isSolutionFor ["?m[x] ↦ Lam(f. App(f, x))"] ["∀ y x. ?m[?m[x]] = Lam(f. App(f, Lam(f. App(f, y))))"]
 -- False
+--
+-- The binders of an operator argument are paired by position, also when the
+-- two sides name them differently (here @x1 x2@ in the solution, which is
+-- parsed under the parameter @y@, and @x0 x1@ on the right-hand side):
+--
+-- >>> isSolutionFor ["?m[y] ↦ Lam2(a b. b)"] ["∀ . ?m[Z()] = Lam2(a b. b)"]
+-- True
+-- >>> isSolutionFor ["?m[y] ↦ Lam2(a b. b)"] ["∀ . ?m[Z()] = Lam2(a b. a)"]
+-- False
 isSolutionFor :: [Subst] -> [Constraint] -> Bool
 isSolutionFor substs = all isSatisfied
   where

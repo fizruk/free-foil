@@ -242,8 +242,7 @@ nameBinderListNames = \case
   NameBinderListCons b rest -> nameId (nameOf b) : nameBinderListNames rest
 
 -- | The raw names a pattern binds, in the order in which 'withPattern'
--- visits them (through 'nameBinderListOf'). The generic 'withPattern'
--- visits them in ascending order of raw names.
+-- visits them (through 'nameBinderListOf').
 patternRawNames :: CoSinkable p => p n l -> [Int]
 patternRawNames = nameBinderListNames . nameBinderListOf
 

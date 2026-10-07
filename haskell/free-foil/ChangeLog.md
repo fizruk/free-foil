@@ -2,6 +2,30 @@
 
 # Unreleased
 
+Breaking changes:
+
+- **`transportPayload` takes the ambient scope and requires `RelMonad Name e` instead of `Sinkable e`, and `CoSinkable (Telescope label e)` requires `RelMonad Name e` too.** A refreshed binder renames the payloads after it, and renaming a payload with binders needs the scope. For instance, if `x0` is refreshed to `x1`, a later payload `λx1. x0` becomes `λx2. x1`. A hand-written `withPattern` passes the scope it holds before the payload's binder (see the recipe in the documentation of `transportPayload`), and an instance carrying payloads of type `e` adds `RelMonad Name e` to its context.
+  - The new `instance RelMonad Name Name` keeps telescopes of names working.
+  - `RelMonad` is now defined in `Control.Monad.Foil.Internal`. `Control.Monad.Foil.Relative` re-exports it, so imports need no change.
+  - `telescopeParams` and `telescopePayloads` keep their constraints.
+
+- **The default `unifyPatterns` is structural, and it requires `GenericK`.** It is the new `gunifyPatterns`. Two patterns unify when they consist of the same constructors, nested in the same way, and their binders are then paired in order. The old default compared only the binders, so it unified `(x, _)` with `(_, y)`, and the conversion check of `mltt` accepted ill-typed programs. Non-binding fields are still ignored.
+  - This changes α-equivalence for every client that takes the default, and reverses the plan in the 0.3.3 entry below to make structural derivation opt-in.
+  - A pattern type that takes the default and has no `GenericK` instance no longer compiles. Derive `GenericK` for it or write `unifyPatterns` by hand.
+  - `mltt`, `soas` and `Impl.FreeFoilTH` of `lambda-pi` take the default. For `soas`, whose binders form a flat list, the result is the same as before.
+
+Fixes:
+
+- The generic `sinkabilityProof` no longer fails with `Non-exhaustive patterns in function sinkabilityProofK` on a term with a binder. This also fixes the default `coSinkabilityProof` of every pattern that derives `CoSinkable` generically, and `transportPayload` on such a payload.
+
+- `alphaEquiv` is correct for patterns of two or more binders. It used to pair the binders of the two sides wrongly, with both false negatives and false positives (`λ[x0 x1]. x0` and `λ[x1 x2]. x2` were α-equivalent). This affected the default `unifyPatterns` of every pattern type, the conversion check of `mltt` and `isSolutionFor` in `soas`.
+  - `NameBinderList`, `Telescope` and the default `unifyPatterns` pair the binders of two patterns by position, all at once, and rename the binders of the right pattern to those of the left one. A single pair of binders keeps the convention of `unifyNameBinders`.
+  - `andThenUnifyPatterns` and `andThenUnifyNameBinders` no longer compose renamings. A chain of verdicts that gives two binders the same name now answers `NotUnifiable` instead of a wrong verdict. With `andThenUnifyNameBinders`, a chain of two pairs always unifies.
+
+- The generic `withPattern`, the default for a pattern type that derives `HasNameBinders`, keeps the binders of a pattern in their order. It used to put them in ascending order of names, which permuted the binders of a pattern whose names do not ascend, such as one that `substitute`, `liftRM` or `refreshAST` produces, and changed the meaning of the term. `nameBinderListOf`, `addSubstPattern`, the default `unifyPatterns` and `alphaEquivRefreshed` were affected through it. The instances that `mkFreeFoil` generates were not.
+
+- In `lambda-pi`, `alphaEquiv` of `Impl.Foil` no longer captures a free name when a binder is already in the scope, as for a term built in a smaller scope and sunk. It falls back to `alphaEquivRefreshed` in that case.
+
 # 0.4.0 — 2026-08-29
 
 A release about *units*: checking a module independently of its neighbours, linking the results without renaming, and storing a checked one on disk. Scope restriction, a family of $O(1)$ sinks, and a linear α-equivalence rename path come with it.

@@ -25,7 +25,8 @@
 module Control.Monad.Foil.Telescope where
 
 import           Control.Monad.Foil.Internal
-import           Control.Monad.Foil.Relative (RelMonad, liftRM)
+import           Control.Monad.Foil.Relative (liftRM)
+import           Data.Coerce                 (coerce)
 
 -- | A labelled telescope: a chain of binders, each carrying a label and a
 -- payload in the scope before it.
@@ -58,9 +59,10 @@ data Telescope label e n l where
 -- would leave a payload that names a refreshed binder pointing at the name
 -- that binder used to have. This instance follows the recipe in
 -- 'transportPayload': a 'PatternTransport' threaded through the traversal,
--- with each payload moved by the transport accumulated /before/ its own
--- binder, that being the scope the payload lives in.
-instance Sinkable e => CoSinkable (Telescope label e) where
+-- with each payload moved by the transport and the scope reached /before/ its
+-- own binder. Moving a payload may refresh its own binders, which is why the
+-- instance needs @'RelMonad' 'Name' e@.
+instance (Sinkable e, RelMonad Name e) => CoSinkable (Telescope label e) where
   coSinkabilityProof rename TelescopeEmpty cont = cont rename TelescopeEmpty
   coSinkabilityProof rename (TelescopeCons label payload binder rest) cont =
     coSinkabilityProof rename binder $ \rename' binder' ->
@@ -98,7 +100,7 @@ instance Sinkable e => CoSinkable (Telescope label e) where
              (extendScope binder' scope)
              rest $ \frest rest' scope'' ->
             cont (comp fbinder frest)
-              (TelescopeCons label (transportPayload transport payload) binder' rest')
+              (TelescopeCons label (transportPayload scope transport payload) binder' rest')
               scope''
 
 -- | Two telescopes unify when their binders line up and their payloads agree.
@@ -107,19 +109,15 @@ instance Sinkable e => CoSinkable (Telescope label e) where
 -- parameter's spelling is no more relevant than a bound variable's. Payloads
 -- are not, since two telescopes agreeing on binders may well disagree on types.
 --
--- 'unifyPatterns' is the binder-only approximation, which is all a caller
--- without a scope can be given. 'unifyPatternsIn' is the real answer, and
+-- 'unifyPatterns' compares the binders only, which is all a caller without a
+-- scope can be given. 'unifyPatternsIn' is the real answer, and
 -- it is what the library's α-equivalence calls.
 instance (Sinkable e, AlphaEquiv e, RelMonad Name e)
     => UnifiablePattern (Telescope label e) where
-  unifyPatterns TelescopeEmpty TelescopeEmpty =
-    SameNameBinders emptyNameBinders
-  unifyPatterns (TelescopeCons _ _ x xs) (TelescopeCons _ _ y ys) =
-    case (assertDistinct x, assertDistinct y) of
-      (Distinct, Distinct) ->
-        unifyNameBinders x y `andThenUnifyPatterns` (xs, ys)
-  -- Telescopes of different lengths bind different numbers of names.
-  unifyPatterns _ _ = NotUnifiable
+  -- The shape of a telescope is its length, so pairing its binders in order is
+  -- enough here.
+  unifyPatterns tele1 tele2 =
+    coerce (unifyPatterns (telescopeBinders tele1) (telescopeBinders tele2))
 
   unifyPatternsIn scope tele1 tele2
     | payloadsAgree scope tele1 tele2 verdict = verdict
@@ -214,7 +212,9 @@ telescopeParams
   => Telescope label e n l -> [Param label e l]
 telescopeParams TelescopeEmpty = []
 telescopeParams (TelescopeCons label ty binder rest) =
-  case (assertExt binder, assertExt rest) of
+  -- 'assertExt' does not look at its argument. The binders of the rest are a
+  -- pattern without the 'RelMonad' constraint that the telescope itself needs.
+  case (assertExt binder, assertExt (telescopeBinders rest)) of
     (Ext, Ext) ->
       Param label (sink (nameOf binder)) (sink ty)
         : telescopeParams rest

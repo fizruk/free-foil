@@ -79,7 +79,7 @@ instance Foil.CoSinkable Chain where
              (Foil.extendScope binder' scope)
              rest $ \frest rest' scope'' ->
             cont (comp fbinder frest)
-              (ChainCons (Foil.transportPayload transport payload) binder' rest')
+              (ChainCons (Foil.transportPayload scope transport payload) binder' rest')
               scope''
 
 -- | The result of processing one binder, when there is nothing to carry.

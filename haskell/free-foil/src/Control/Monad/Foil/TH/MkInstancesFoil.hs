@@ -8,6 +8,7 @@ module Control.Monad.Foil.TH.MkInstancesFoil where
 import           Language.Haskell.TH
 
 import qualified Control.Monad.Foil         as Foil
+import qualified Control.Monad.Foil.Internal as Foil.Internal
 import           Control.Monad.Foil.TH.Util
 import           Data.List                  (nub)
 
@@ -172,9 +173,11 @@ deriveCoSinkable nameT patternT = do
             xi = mkName ("x" ++ show i)
 
 -- | Generate a structural 'Foil.UnifiablePattern' instance, comparing
--- constructors and non-binding fields rather than only the binders.
+-- constructors and non-binding fields as well as binders.
 --
--- This deriver does not work and has no call sites. See the deprecation note.
+-- This deriver does not support the pattern types that @mkFoilPattern@ and
+-- @mkFreeFoil@ generate. Derive @GenericK@ and take an empty
+-- 'Foil.UnifiablePattern' instance instead, or write the instance by hand.
 --
 -- @since 0.1.0
 deriveUnifiablePattern
@@ -182,16 +185,10 @@ deriveUnifiablePattern
   -> Name -- ^ Type name for raw patterns.
   -> Q [Dec]
 {-# DEPRECATED deriveUnifiablePattern
-  "This deriver does not work and has no call sites. It reifies the raw \
-  \(BNFC) pattern type and guesses the scope-safe type and constructor names \
-  \by prefixing \"Foil\", and it rejects GADT constructors -- so it cannot \
-  \handle the pattern types that mkFoilPattern and mkFreeFoil generate, nor a \
-  \hand-written pattern GADT. Instead, derive GenericK and take an empty \
-  \instance (see Control.Monad.Foil), or write the instance by hand as \
-  \Language.LambdaPi.Impl.Foil does. Note that the empty instance compares \
-  \only the binders; see UnifiablePattern. Structural derivation is tracked \
-  \in https://github.com/fizruk/free-foil/issues/23. To be removed in the \
-  \next major release." #-}
+  "Does not support the pattern types that mkFoilPattern and mkFreeFoil \
+  \generate, nor a hand-written pattern GADT. Derive GenericK and take an \
+  \empty UnifiablePattern instance instead, or write the instance by hand as \
+  \Language.LambdaPi.Impl.Foil does. To be removed in the next major release." #-}
 deriveUnifiablePattern nameT patternT = do
   TyConI (DataD _ctx _name patternTVars _kind patternCons _deriv) <- reify patternT
 
@@ -215,50 +212,38 @@ deriveUnifiablePattern nameT patternT = do
     clauseUnifyPatterns GadtC{} = error "GADT constructors (GadtC) are not supported yet!"
     clauseUnifyPatterns RecGadtC{} = error "Record GADT constructors (RecGadtC) are not supported yet!"
     clauseUnifyPatterns (NormalC conName params) =
-      case go 1 [] [] params of
-        (body, eqTypes) ->
-          (eqTypes, Clause
-            [ConP foilConName [] paramsL, ConP foilConName [] paramsR]
-            (NormalB body)
-            [])
+      (eqTypes, Clause
+        [AsP l (ConP foilConName [] paramsL), AsP r (ConP foilConName [] paramsR)]
+        (NormalB body)
+        [])
       where
         foilConName = mkName ("Foil" ++ nameBase conName)
+        l = mkName "l"
+        r = mkName "r"
         paramsL = zipWith (mkConParamPattern "l") params [1..]
         paramsR = zipWith (mkConParamPattern "r") params [1..]
         mkConParamPattern s _ i = VarP (mkName (s ++ show i))
 
-        mkUnifyAllPairsRev [] = AppE (ConE 'Foil.SameNameBinders) (VarE 'Foil.emptyNameBinders)
-        mkUnifyAllPairsRev [(isNameBinder, l, r)]
-          | isNameBinder = AppE (AppE (VarE 'Foil.unifyNameBinders) l) r
-          | otherwise    = AppE (AppE (VarE 'Foil.unifyPatterns) l) r
-        mkUnifyAllPairsRev ((isNameBinder, l, r) : pairs) =
-          InfixE
-            (Just (mkUnifyAllPairsRev pairs))
-            (VarE (if isNameBinder then 'Foil.andThenUnifyNameBinders else 'Foil.andThenUnifyPatterns))
-            (Just (TupE [Just l, Just r]))
+        -- Compare the fields (binders always agree, sub-patterns are compared
+        -- recursively, other fields with 'Foil.unifyInPattern'), then pair all
+        -- binders in order at once, since chaining per-field verdicts can give
+        -- two binders the same name.
+        (checks, eqTypes) = mconcat (zipWith check [1 :: Int ..] params)
 
+        check i (_bang, PeelConT tyName _tyParams)
+          | tyName == nameT    = ([], [])
+          | tyName == patternT =
+              ([AppE (AppE (VarE 'Foil.Internal.unsafeUnifiablePatterns) (li i)) (ri i)], [])
+        check i (_bang, type_) =
+          ([InfixE (Just (li i)) (VarE 'Foil.unifyInPattern) (Just (ri i))], [type_])
 
-        go _i eqTypes pairsRev [] = (mkUnifyAllPairsRev pairsRev, eqTypes)
-        go i eqTypes pairsRev ((_bang, PeelConT tyName _tyParams) : conParams)
-          | tyName == nameT || tyName == patternT =
-            case go (i + 1) eqTypes ((isNameBinder, l, r) : pairsRev) conParams of
-              (next, eqTypes') ->
-                (CaseE (TupE [Just (AppE (VarE 'Foil.assertDistinct) l), Just (AppE (VarE 'Foil.assertDistinct) r)])
-                  [Match
-                    (TupP [ConP 'Foil.Distinct [] [], ConP 'Foil.Distinct [] []])
-                    (NormalB next)
-                    []], eqTypes')
-          where
-            isNameBinder = tyName == nameT
-            l = VarE (mkName ("l" ++ show i))
-            r = VarE (mkName ("r" ++ show i))
-        go i eqTypes pairsRev ((_bang, type_) : conPatterns) =
-          case go (i + 1) eqTypes pairsRev conPatterns of
-            (next, eqTypes') ->
-              (CondE
-                (InfixE (Just l) (VarE 'Foil.unifyInPattern) (Just r))
-                next
-                (ConE 'Foil.NotUnifiable), type_ : eqTypes')
-          where
-            l = VarE (mkName ("l" ++ show i))
-            r = VarE (mkName ("r" ++ show i))
+        li i = VarE (mkName ("l" ++ show i))
+        ri i = VarE (mkName ("r" ++ show i))
+
+        unifyBinders = AppE (AppE (VarE 'Foil.Internal.unifyPatternBinders) (VarE l)) (VarE r)
+        body = case checks of
+          [] -> unifyBinders
+          _  -> CondE
+                  (foldr1 (\x y -> InfixE (Just x) (VarE '(&&)) (Just y)) checks)
+                  unifyBinders
+                  (ConE 'Foil.NotUnifiable)
