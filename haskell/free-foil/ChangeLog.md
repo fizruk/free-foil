@@ -1,38 +1,40 @@
 # CHANGELOG for `free-foil`
 
-# Unreleased
+# 0.5.0 — 2026-10-07
+
+A release about *binders*. The law tests added after 0.4.0 ([#100](https://github.com/fizruk/free-foil/pull/100)) found bugs in how binders are sunk, ordered, paired and transported, and this release fixes them. The fixes change α-equivalence for patterns of several binders, so the release is major. It also generates single-binder pattern types as newtypes and removes the functions deprecated in 0.3.3 and 0.4.0.
 
 Breaking changes:
 
-- **`mkFreeFoil` generates a pattern type as a `newtype` when its raw type has exactly one constructor with exactly one field, and that field is an identifier or a nested pattern**, as in `newtype Pattern = PatternVar VarIdent` ([#85](https://github.com/fizruk/free-foil/issues/85)). Such a pattern costs no heap object of its own. Code that matches on the constructor or derives instances needs no change, but Template Haskell that `reify`s the generated type now sees a `NewtypeD` and has to accept it.
-
-- **The deprecated functions are removed.** Use `sink1` instead of `sinkContainer`, and `unsafeConvertToAST` and `unsafeConvertToScopedAST` instead of `convertToAST` and `convertToScopedAST` (or `tryConvertToAST`, which reports unresolved identifiers instead of calling `error`). `deriveUnifiablePattern` is removed without a replacement: derive `GenericK` and take an empty `UnifiablePattern` instance, or write the instance by hand with `unsafeUnifyPatternBinders`, as `Language.LambdaPi.Impl.Foil` does.
-
-- **`transportPayload` takes the ambient scope and requires `RelMonad Name e` instead of `Sinkable e`, and `CoSinkable (Telescope label e)` requires `RelMonad Name e` too.** A refreshed binder renames the payloads after it, and renaming a payload with binders needs the scope. For instance, if `x0` is refreshed to `x1`, a later payload `λx1. x0` becomes `λx2. x1`. A hand-written `withPattern` passes the scope it holds before the payload's binder (see the recipe in the documentation of `transportPayload`), and an instance carrying payloads of type `e` adds `RelMonad Name e` to its context.
-  - The new `instance RelMonad Name Name` keeps telescopes of names working.
-  - `RelMonad` is now defined in `Control.Monad.Foil.Internal`. `Control.Monad.Foil.Relative` re-exports it, so imports need no change.
-  - `telescopeParams` and `telescopePayloads` keep their constraints.
-
-- **The default `unifyPatterns` is structural, and it requires `GenericK`.** It is the new `gunifyPatterns`. Two patterns unify when they consist of the same constructors, nested in the same way, and their binders are then paired in order. The old default compared only the binders, so it unified `(x, _)` with `(_, y)`, and the conversion check of `mltt` accepted ill-typed programs. Non-binding fields are still ignored.
+- **The default `unifyPatterns` is structural, and it requires `GenericK`** ([#101](https://github.com/fizruk/free-foil/pull/101), [#98](https://github.com/fizruk/free-foil/issues/98)). It is the new `gunifyPatterns`. Two patterns unify when they consist of the same constructors, nested in the same way, and their binders are then paired in order. The old default compared only the binders, so it unified `(x, _)` with `(_, y)`, and the conversion check of `mltt` accepted ill-typed programs. Non-binding fields are still ignored.
   - This changes α-equivalence for every client that takes the default, and reverses the plan in the 0.3.3 entry below to make structural derivation opt-in.
   - A pattern type that takes the default and has no `GenericK` instance no longer compiles. Derive `GenericK` for it or write `unifyPatterns` by hand.
   - `mltt`, `soas` and `Impl.FreeFoilTH` of `lambda-pi` take the default. For `soas`, whose binders form a flat list, the result is the same as before.
 
+- **`transportPayload` takes the ambient scope and requires `RelMonad Name e` instead of `Sinkable e`, and `CoSinkable (Telescope label e)` requires `RelMonad Name e` too** ([#101](https://github.com/fizruk/free-foil/pull/101), [#99](https://github.com/fizruk/free-foil/issues/99)). A refreshed binder renames the payloads after it, and renaming a payload with binders needs the scope. For instance, if `x0` is refreshed to `x1`, a later payload `λx1. x0` becomes `λx2. x1`. A hand-written `withPattern` passes the scope it holds before the payload's binder (see the recipe in the documentation of `transportPayload`), and an instance carrying payloads of type `e` adds `RelMonad Name e` to its context.
+  - The new `instance RelMonad Name Name` keeps telescopes of names working.
+  - `RelMonad` is now defined in `Control.Monad.Foil.Internal`. `Control.Monad.Foil.Relative` re-exports it, so imports need no change.
+  - `telescopeParams` and `telescopePayloads` keep their constraints.
+
+- **`mkFreeFoil` generates a pattern type as a `newtype` when its raw type has exactly one constructor with exactly one field, and that field is an identifier or a nested pattern**, as in `newtype Pattern = PatternVar VarIdent` ([#106](https://github.com/fizruk/free-foil/pull/106), [#85](https://github.com/fizruk/free-foil/issues/85)). Such a pattern costs no heap object of its own. Code that matches on the constructor or derives instances needs no change, but Template Haskell that `reify`s the generated type now sees a `NewtypeD` and has to accept it.
+
+- **The deprecated functions are removed** ([#104](https://github.com/fizruk/free-foil/pull/104)). Use `sink1` instead of `sinkContainer`, and `unsafeConvertToAST` and `unsafeConvertToScopedAST` instead of `convertToAST` and `convertToScopedAST` (or `tryConvertToAST`, which reports unresolved identifiers instead of calling `error`). `deriveUnifiablePattern` is removed without a replacement: derive `GenericK` and take an empty `UnifiablePattern` instance, or write the instance by hand with `unsafeUnifyPatternBinders`, as `Language.LambdaPi.Impl.Foil` does.
+
 New:
 
-- `unsafeUnifyPatternBinders` pairs the binders of two patterns in order, for a hand-written `unifyPatterns` of a pattern with several binders. It is unsafe: call it only once the two patterns are known to agree on everything except the names of their binders, as `gunifyPatterns` does after its shape check and as `Language.LambdaPi.Impl.Foil` does in `lambda-pi` ([#102](https://github.com/fizruk/free-foil/issues/102)).
+- `unsafeUnifyPatternBinders` pairs the binders of two patterns in order, for a hand-written `unifyPatterns` of a pattern with several binders. It is unsafe: call it only once the two patterns are known to agree on everything except the names of their binders, as `gunifyPatterns` does after its shape check and as `Language.LambdaPi.Impl.Foil` does in `lambda-pi` ([#103](https://github.com/fizruk/free-foil/pull/103), [#102](https://github.com/fizruk/free-foil/issues/102)).
 
 Fixes:
 
-- The generic `sinkabilityProof` no longer fails with `Non-exhaustive patterns in function sinkabilityProofK` on a term with a binder. This also fixes the default `coSinkabilityProof` of every pattern that derives `CoSinkable` generically, and `transportPayload` on such a payload.
+- The generic `sinkabilityProof` no longer fails with `Non-exhaustive patterns in function sinkabilityProofK` on a term with a binder ([#101](https://github.com/fizruk/free-foil/pull/101), [#94](https://github.com/fizruk/free-foil/issues/94)). This also fixes the default `coSinkabilityProof` of every pattern that derives `CoSinkable` generically, and `transportPayload` on such a payload.
 
-- `alphaEquiv` is correct for patterns of two or more binders. It used to pair the binders of the two sides wrongly, with both false negatives and false positives (`λ[x0 x1]. x0` and `λ[x1 x2]. x2` were α-equivalent). This affected the default `unifyPatterns` of every pattern type, the conversion check of `mltt` and `isSolutionFor` in `soas`.
+- `alphaEquiv` is correct for patterns of two or more binders ([#101](https://github.com/fizruk/free-foil/pull/101), [#95](https://github.com/fizruk/free-foil/issues/95)). It used to pair the binders of the two sides wrongly, with both false negatives and false positives (`λ[x0 x1]. x0` and `λ[x1 x2]. x2` were α-equivalent). This affected the default `unifyPatterns` of every pattern type, the conversion check of `mltt` and `isSolutionFor` in `soas`.
   - `NameBinderList`, `Telescope` and the default `unifyPatterns` pair the binders of two patterns by position, all at once, and rename the binders of the right pattern to those of the left one. A single pair of binders keeps the convention of `unifyNameBinders`.
   - `andThenUnifyPatterns` and `andThenUnifyNameBinders` no longer compose renamings. A chain of verdicts that gives two binders the same name now answers `NotUnifiable` instead of a wrong verdict. With `andThenUnifyNameBinders`, a chain of two pairs always unifies.
 
-- The generic `withPattern`, the default for a pattern type that derives `HasNameBinders`, keeps the binders of a pattern in their order. It used to put them in ascending order of names, which permuted the binders of a pattern whose names do not ascend, such as one that `substitute`, `liftRM` or `refreshAST` produces, and changed the meaning of the term. `nameBinderListOf`, `addSubstPattern`, the default `unifyPatterns` and `alphaEquivRefreshed` were affected through it. The instances that `mkFreeFoil` generates were not.
+- The generic `withPattern`, the default for a pattern type that derives `HasNameBinders`, keeps the binders of a pattern in their order ([#101](https://github.com/fizruk/free-foil/pull/101), [#97](https://github.com/fizruk/free-foil/issues/97)). It used to put them in ascending order of names, which permuted the binders of a pattern whose names do not ascend, such as one that `substitute`, `liftRM` or `refreshAST` produces, and changed the meaning of the term. `nameBinderListOf`, `addSubstPattern`, the default `unifyPatterns` and `alphaEquivRefreshed` were affected through it. The instances that `mkFreeFoil` generates were not.
 
-- In `lambda-pi`, `alphaEquiv` of `Impl.Foil` no longer captures a free name when a binder is already in the scope, as for a term built in a smaller scope and sunk. It falls back to `alphaEquivRefreshed` in that case.
+- In `lambda-pi`, `alphaEquiv` of `Impl.Foil` no longer captures a free name when a binder is already in the scope, as for a term built in a smaller scope and sunk ([#101](https://github.com/fizruk/free-foil/pull/101), [#96](https://github.com/fizruk/free-foil/issues/96)). It falls back to `alphaEquivRefreshed` in that case.
 
 # 0.4.0 — 2026-08-29
 
