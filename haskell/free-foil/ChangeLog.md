@@ -4,6 +4,8 @@
 
 Breaking changes:
 
+- **`mkFreeFoil` generates a pattern type as a `newtype` when its raw type has exactly one constructor with exactly one field, and that field is an identifier or a nested pattern**, as in `newtype Pattern = PatternVar VarIdent` ([#85](https://github.com/fizruk/free-foil/issues/85)). Such a pattern costs no heap object of its own. Code that matches on the constructor or derives instances needs no change, but Template Haskell that `reify`s the generated type now sees a `NewtypeD` and has to accept it.
+
 - **The deprecated functions are removed.** Use `sink1` instead of `sinkContainer`, and `unsafeConvertToAST` and `unsafeConvertToScopedAST` instead of `convertToAST` and `convertToScopedAST` (or `tryConvertToAST`, which reports unresolved identifiers instead of calling `error`). `deriveUnifiablePattern` is removed without a replacement: derive `GenericK` and take an empty `UnifiablePattern` instance, or write the instance by hand with `unsafeUnifyPatternBinders`, as `Language.LambdaPi.Impl.Foil` does.
 
 - **`transportPayload` takes the ambient scope and requires `RelMonad Name e` instead of `Sinkable e`, and `CoSinkable (Telescope label e)` requires `RelMonad Name e` too.** A refreshed binder renames the payloads after it, and renaming a payload with binders needs the scope. For instance, if `x0` is refreshed to `x1`, a later payload `λx1. x0` becomes `λx2. x1`. A hand-written `withPattern` passes the scope it holds before the payload's binder (see the recipe in the documentation of `transportPayload`), and an instance carrying payloads of type `e` adds `RelMonad Name e` to its context.
