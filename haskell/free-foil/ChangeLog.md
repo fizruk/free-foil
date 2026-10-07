@@ -14,6 +14,10 @@ Breaking changes:
   - A pattern type that takes the default and has no `GenericK` instance no longer compiles. Derive `GenericK` for it or write `unifyPatterns` by hand.
   - `mltt`, `soas` and `Impl.FreeFoilTH` of `lambda-pi` take the default. For `soas`, whose binders form a flat list, the result is the same as before.
 
+New:
+
+- `unsafeUnifyPatternBinders` pairs the binders of two patterns in order, for a hand-written `unifyPatterns` of a pattern with several binders. It is unsafe: call it only once the two patterns are known to agree on everything except the names of their binders, as `gunifyPatterns` does after its shape check and as `Language.LambdaPi.Impl.Foil` does in `lambda-pi` ([#102](https://github.com/fizruk/free-foil/issues/102)).
+
 Fixes:
 
 - The generic `sinkabilityProof` no longer fails with `Non-exhaustive patterns in function sinkabilityProofK` on a term with a binder. This also fixes the default `coSinkabilityProof` of every pattern that derives `CoSinkable` generically, and `transportPayload` on such a payload.
