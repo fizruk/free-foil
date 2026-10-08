@@ -1,5 +1,11 @@
 # CHANGELOG for `free-foil`
 
+# Unreleased
+
+Performance:
+
+- `nameBinderListOf` is the identity on a `NameBinderList` and `nameBindersList` on `NameBinders`, by rewrite rules, where the pattern type is known at the call. It used to rebuild the list through `withPattern`, at about 550 bytes per binder. `nameBinderListOf` and the functions that call it (`addSubstPattern`, `addNameBinders`, `nameSetOfPattern`, `unsinkNameSet`, `unsafeUnifyPatternBinders` and `substitutePattern`) are `INLINABLE`, so that a specialised caller reaches the rules. The new `binders` benchmark measures it: on a list of four binders, 120 ns and 2.2 KB before, 6 ns and 47 bytes after.
+
 # 0.5.0 — 2026-10-07
 
 A release about *binders*. The law tests added after 0.4.0 ([#100](https://github.com/fizruk/free-foil/pull/100)) found bugs in how binders are sunk, ordered, paired and transported, and this release fixes them. The fixes change α-equivalence for patterns of several binders, so the release is major. It also generates single-binder pattern types as newtypes and removes the functions deprecated in 0.3.3 and 0.4.0.
