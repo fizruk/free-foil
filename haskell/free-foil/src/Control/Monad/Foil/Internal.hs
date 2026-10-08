@@ -422,7 +422,7 @@ unsafeAssertFresh :: forall n l n' l' r. NameBinder n l
 unsafeAssertFresh binder cont =
   case unsafeDistinct @l' of
     Distinct -> case unsafeExt @n' @l' of
-      Ext -> cont (unsafeCoerce binder)
+      Ext -> cont (coerce binder)
 
 -- | Auxiliary structure to accumulate substitution extensions
 -- produced when refreshing a pattern.
@@ -1099,13 +1099,33 @@ instance CoSinkable NameBinderList where
       coSinkabilityProof rename' binders $ \rename'' binders' ->
         cont rename'' (NameBinderListCons binder' binders')
 
-  withPattern withBinder unit comp scope binders cont = case binders of
-    NameBinderListEmpty -> cont unit NameBinderListEmpty scope
-    NameBinderListCons x xs ->
-      withBinder scope x $ \f x' ->
-        let scope' = extendScope x' scope
-        in withPattern withBinder unit comp scope' xs $ \f' xs' scope'' ->
-            cont (comp f f') (NameBinderListCons x' xs') scope''
+  withPattern
+    :: forall o f n l r. Distinct o
+    => (forall x y z r'. Distinct z => Scope z -> NameBinder x y -> (forall z'. DExt z z' => f x y z z' -> NameBinder z z' -> r') -> r')
+    -> (forall x z z'. DExt z z' => f x x z z')
+    -> (forall x y y' z z' z''. (DExt z z', DExt z' z'') => f x y z z' -> f y y' z' z'' -> f x y' z z'')
+    -> Scope o
+    -> NameBinderList n l
+    -> (forall o'. DExt o o' => f n l o o' -> NameBinderList o o' -> Scope o' -> r)
+    -> r
+  withPattern withBinder unit comp = go
+    where
+      -- The loop takes the three functions from its context, so that a call
+      -- with known functions specialises it when 'withPattern' inlines.
+      go
+        :: forall p i. Distinct p
+        => Scope p
+        -> NameBinderList i l
+        -> (forall p'. DExt p p' => f i l p p' -> NameBinderList p p' -> Scope p' -> r)
+        -> r
+      go scope binders cont = case binders of
+        NameBinderListEmpty -> cont unit NameBinderListEmpty scope
+        NameBinderListCons x xs ->
+          withBinder scope x $ \f x' ->
+            let scope' = extendScope x' scope
+            in go scope' xs $ \f' xs' scope'' ->
+                cont (comp f f') (NameBinderListCons x' xs') scope''
+  {-# INLINE withPattern #-}
 
   nameBinderListOf = id
 
@@ -1679,14 +1699,20 @@ class CoSinkable (pattern :: S -> S -> Type) where
     -> (forall o'. DExt o o' => f n l o o' -> pattern o o' -> Scope o' -> r)
     -> r
   withPattern = gunsafeWithPatternViaHasNameBinders
+  -- Inlining the generic traversal lets a caller with known functions, such
+  -- as the default 'nameBinderListOf', specialise it.
+  {-# INLINE withPattern #-}
 
   -- | Collect name binders of a generalized pattern into a name binder list,
   -- in the order 'withPattern' visits them.
   --
   -- The default collects them with 'withPattern'
-  -- ('nameBinderListOfViaWithPattern'), which allocates several closures per
-  -- binder. An instance that can list its binders directly should do so, as
-  -- the instances that @deriveCoSinkable@ and @mkFreeFoil@ generate do.
+  -- ('nameBinderListOfViaWithPattern'). It is cheap when the instance's
+  -- 'withPattern' inlines into it, as the generic default does and as a
+  -- non-recursive one marked @INLINE@ does. Otherwise it costs a traversal
+  -- that allocates several closures per binder, and an instance should list
+  -- its binders directly, as the instances that @deriveCoSinkable@ and
+  -- @mkFreeFoil@ generate do.
   --
   -- This is a method of 'CoSinkable' since 0.5.1. Up to 0.5.0, it was a
   -- function outside the class, of the same type.
@@ -1694,6 +1720,7 @@ class CoSinkable (pattern :: S -> S -> Type) where
   -- @since 0.2.0
   nameBinderListOf :: pattern n l -> NameBinderList n l
   nameBinderListOf = nameBinderListOfViaWithPattern
+  {-# INLINE nameBinderListOf #-}
 
 -- ** Transporting a pattern's payloads
 
@@ -1821,16 +1848,19 @@ compWithNameBinderList (WithNameBinderList f) (WithNameBinderList g) =
   WithNameBinderList (f . g)
 
 -- | Collect the binders of a pattern with 'withPattern'. This is the default
--- of 'nameBinderListOf', and it allocates several closures per binder.
+-- of 'nameBinderListOf'.
 --
 -- @since 0.5.1
+{-# INLINE nameBinderListOfViaWithPattern #-}
 nameBinderListOfViaWithPattern :: (CoSinkable binder) => binder n l -> NameBinderList n l
 nameBinderListOfViaWithPattern pat = withPattern
   (\_scope' binder k ->
     unsafeAssertFresh binder $ \binder' ->
       k (WithNameBinderList (NameBinderListCons binder)) binder')
   idWithNameBinderList
-  compWithNameBinderList
+  -- Unlike 'compWithNameBinderList', this builds the rest of the list first,
+  -- so that no binder leaves a thunk behind.
+  (\(WithNameBinderList f) (WithNameBinderList g) -> WithNameBinderList (\rest -> f $! g rest))
   emptyScope
   pat
   (\(WithNameBinderList f) _ _ -> f NameBinderListEmpty)
@@ -2569,6 +2599,7 @@ gunsafeWithPatternViaHasNameBinders
   -> (forall o'. DExt o o' => f n l o o' -> pattern o o' -> Scope o' -> r)
   -- ^ Continuation, accepting the result for the entire pattern, a (possibly refreshed) pattern, and the scope extended by that pattern.
   -> r
+{-# INLINE gunsafeWithPatternViaHasNameBinders #-}
 gunsafeWithPatternViaHasNameBinders withBinder id_ comp_ scope pat cont =
   withPattern withBinder id_ comp_ scope (unsafeNameBinderListFromRaw raw) $ \result binders scope' ->
     cont result (gunsafeSetNameBinderList (unsafeCoerce pat) binders) scope' -- FIXME: safer version
