@@ -660,6 +660,7 @@ scopeToNameSet (UnsafeScope names) = UnsafeNameSet names
 -- | The names a pattern binds.
 --
 -- @since 0.4.0
+{-# INLINABLE nameSetOfPattern #-}
 nameSetOfPattern :: CoSinkable binder => binder n l -> NameSet l
 nameSetOfPattern binder = UnsafeNameSet bound
   where
@@ -686,6 +687,7 @@ nameSetSubsetOfScope (UnsafeNameSet names) (UnsafeScope scope) =
 -- an occurrence of the outer name.
 --
 -- @since 0.4.0
+{-# INLINABLE unsinkNameSet #-}
 unsinkNameSet :: CoSinkable binder => binder n l -> NameSet l -> NameSet n
 unsinkNameSet binder (UnsafeNameSet names) = UnsafeNameSet (names IntSet.\\ bound)
   where
@@ -1269,6 +1271,7 @@ unsafeEqPattern l r =
 -- an instance that checks the shape of two patterns first.
 --
 -- @since 0.5.0
+{-# INLINABLE unsafeUnifyPatternBinders #-}
 unsafeUnifyPatternBinders
   :: (CoSinkable pattern, Distinct n)
   => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
@@ -1874,6 +1877,7 @@ addSubst (UnsafeSubstitution env) (UnsafeNameBinder (UnsafeName name)) ex
 -- order the pattern binds them.
 --
 -- @since 0.2.0
+{-# INLINABLE addSubstPattern #-}
 addSubstPattern
   :: CoSinkable binder
   => Substitution e i o
@@ -1959,6 +1963,7 @@ nameMapToScope (NameMap m) = UnsafeScope (IntMap.keysSet m)
 -- as there are binders in the input pattern (generalized binder).
 --
 -- @since 0.2.0
+{-# INLINABLE addNameBinders #-}
 addNameBinders :: CoSinkable binder => binder n l -> [a] -> NameMap n a -> NameMap l a
 addNameBinders pat = addNameBinderList (nameBinderListOf pat)
 
