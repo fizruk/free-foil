@@ -116,6 +116,7 @@ module Control.Monad.Foil (
   withFreshNameBinderListIn,
   NameBinderList(..),
   nameBindersList,
+  gnameBinderListOf,
   fromNameBindersList,
   snocNameBinderList,
   concatNameBinderLists,

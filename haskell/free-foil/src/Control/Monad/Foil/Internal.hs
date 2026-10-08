@@ -1712,7 +1712,8 @@ class CoSinkable (pattern :: S -> S -> Type) where
   -- non-recursive one marked @INLINE@ does. Otherwise it costs a traversal
   -- that allocates several closures per binder, and an instance should list
   -- its binders directly, as the instances that @deriveCoSinkable@ and
-  -- @mkFreeFoil@ generate do.
+  -- @mkFreeFoil@ generate do. An instance with the generic 'withPattern' can
+  -- take 'gnameBinderListOf'.
   --
   -- This is a method of 'CoSinkable' since 0.5.1. Up to 0.5.0, it was a
   -- function outside the class, of the same type.
@@ -2607,6 +2608,22 @@ gunsafeWithPatternViaHasNameBinders withBinder id_ comp_ scope pat cont =
     -- The binders in the order of the pattern. 'NameBinders' is a set, so
     -- going through it would put them back in ascending order of names.
     raw = ggetNameBindersRaw (fromK @_ @pattern @(n :&&: l :&&: LoT0) pat)
+
+-- | 'nameBinderListOf' through the generic representation, without a
+-- traversal by 'withPattern'. It lists the binders in the order of the
+-- generic 'withPattern' ('gunsafeWithPatternViaHasNameBinders'), so an
+-- instance that takes the generic default of 'withPattern' can use it:
+--
+-- > instance CoSinkable MyPattern where
+-- >   nameBinderListOf = gnameBinderListOf
+--
+-- @since 0.5.1
+gnameBinderListOf
+  :: forall pattern n l. (GenericK pattern, GHasNameBinders (RepK pattern))
+  => pattern n l -> NameBinderList n l
+gnameBinderListOf pat =
+  unsafeNameBinderListFromRaw (ggetNameBindersRaw (fromK @_ @pattern @(n :&&: l :&&: LoT0) pat))
+{-# INLINE gnameBinderListOf #-}
 
 -- | The binders of a pattern, in the order of the pattern, from their raw names.
 --

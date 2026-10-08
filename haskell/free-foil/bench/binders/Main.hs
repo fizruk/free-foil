@@ -50,6 +50,16 @@ instance Foil.HasNameBinders PairPattern
 instance Foil.CoSinkable PairPattern
 instance Foil.UnifiablePattern PairPattern
 
+-- | 'PairPattern' with 'Foil.gnameBinderListOf' for 'Foil.nameBinderListOf'.
+data GPairPattern (n :: Foil.S) (l :: Foil.S) where
+  GPairPattern :: Foil.NameBinder n i -> Foil.NameBinder i l -> GPairPattern n l
+
+deriveGenericK ''GPairPattern
+instance Foil.SinkableK GPairPattern
+instance Foil.HasNameBinders GPairPattern
+instance Foil.CoSinkable GPairPattern where
+  nameBinderListOf = Foil.gnameBinderListOf
+
 -- | A pattern of variables and pairs with the instance that
 -- 'deriveCoSinkable' generates, as in a language generated from a BNFC grammar.
 newtype RawIdent = RawIdent String
@@ -193,6 +203,7 @@ main =
         ffPair = FFBPatternPair (FFBPatternVar b1) (FFBPatternVar b2)
         handPair = HandPair b1 b2
         lpPair = LPPair (LPVar b1) (LPVar b2)
+        gpair = GPairPattern b1 b2
         args = [Node (App t t), t]
         t = pairChain 1
         chain = pairChain 1000
@@ -233,6 +244,10 @@ main =
               , bgroup "generic pattern of 2"
                   [ bench "known type"   $ whnf (size . Foil.nameBinderListOf) pair
                   , bench "a dictionary" $ whnf listedSome (SomePattern pair)
+                  ]
+              , bgroup "generic pattern of 2 with gnameBinderListOf"
+                  [ bench "known type"   $ whnf (size . Foil.nameBinderListOf) gpair
+                  , bench "a dictionary" $ whnf listedSome (SomePattern gpair)
                   ]
               ]
           , bgroup "addSubstPattern, generic pattern of 2"
