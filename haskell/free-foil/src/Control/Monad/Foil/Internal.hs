@@ -660,6 +660,7 @@ scopeToNameSet (UnsafeScope names) = UnsafeNameSet names
 -- | The names a pattern binds.
 --
 -- @since 0.4.0
+{-# INLINABLE nameSetOfPattern #-}
 nameSetOfPattern :: CoSinkable binder => binder n l -> NameSet l
 nameSetOfPattern binder = UnsafeNameSet bound
   where
@@ -686,6 +687,7 @@ nameSetSubsetOfScope (UnsafeNameSet names) (UnsafeScope scope) =
 -- an occurrence of the outer name.
 --
 -- @since 0.4.0
+{-# INLINABLE unsinkNameSet #-}
 unsinkNameSet :: CoSinkable binder => binder n l -> NameSet l -> NameSet n
 unsinkNameSet binder (UnsafeNameSet names) = UnsafeNameSet (names IntSet.\\ bound)
   where
@@ -1269,6 +1271,7 @@ unsafeEqPattern l r =
 -- an instance that checks the shape of two patterns first.
 --
 -- @since 0.5.0
+{-# INLINABLE unsafeUnifyPatternBinders #-}
 unsafeUnifyPatternBinders
   :: (CoSinkable pattern, Distinct n)
   => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
@@ -1799,6 +1802,11 @@ compWithNameBinderList (WithNameBinderList f) (WithNameBinderList g) =
 -- | Collect name binders of a generalized pattern into a name binder list,
 -- which can be more easily traversed.
 --
+-- With optimisation on, a call at 'NameBinderList' is the identity and a call
+-- at 'NameBinders' is 'nameBindersList', by rewrite rules. Otherwise the
+-- binders are collected by 'withPattern', which allocates several closures per
+-- binder.
+--
 -- @since 0.2.0
 nameBinderListOf :: (CoSinkable binder) => binder n l -> NameBinderList n l
 nameBinderListOf pat = withPattern
@@ -1810,6 +1818,19 @@ nameBinderListOf pat = withPattern
   emptyScope
   pat
   (\(WithNameBinderList f) _ _ -> f NameBinderListEmpty)
+{-# INLINABLE [1] nameBinderListOf #-}
+
+-- The phase gate on 'nameBinderListOf' keeps it from inlining before these
+-- can match. 'withPattern' at 'NameBinders' goes through 'nameBindersList', so
+-- the second rule keeps the order of the binders.
+{-# RULES
+"nameBinderListOf/NameBinderList"
+  forall n l. forall (binders :: NameBinderList n l).
+    nameBinderListOf binders = binders
+"nameBinderListOf/NameBinders"
+  forall n l. forall (binders :: NameBinders n l).
+    nameBinderListOf binders = nameBindersList binders
+  #-}
 
 instance CoSinkable NameBinder where
   coSinkabilityProof _rename (UnsafeNameBinder name) cont =
@@ -1874,6 +1895,7 @@ addSubst (UnsafeSubstitution env) (UnsafeNameBinder (UnsafeName name)) ex
 -- order the pattern binds them.
 --
 -- @since 0.2.0
+{-# INLINABLE addSubstPattern #-}
 addSubstPattern
   :: CoSinkable binder
   => Substitution e i o
@@ -1959,6 +1981,7 @@ nameMapToScope (NameMap m) = UnsafeScope (IntMap.keysSet m)
 -- as there are binders in the input pattern (generalized binder).
 --
 -- @since 0.2.0
+{-# INLINABLE addNameBinders #-}
 addNameBinders :: CoSinkable binder => binder n l -> [a] -> NameMap n a -> NameMap l a
 addNameBinders pat = addNameBinderList (nameBinderListOf pat)
 

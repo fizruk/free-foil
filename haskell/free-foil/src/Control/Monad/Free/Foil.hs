@@ -167,6 +167,7 @@ instance (Bifunctor sig, Foil.CoSinkable binder, Foil.SinkableK binder)
 -- | Substitution for a single generalized pattern.
 --
 -- @since 0.2.0
+{-# INLINABLE substitutePattern #-}
 substitutePattern
   :: (Bifunctor sig, Foil.Distinct o, Foil.CoSinkable binder', Foil.CoSinkable binder, Foil.SinkableK binder)
   => Foil.Scope o                           -- ^ Resulting scope.
