@@ -566,6 +566,30 @@ mkWithPatternClause config (rawConName, rawFieldTypes) = do
     [VarP withBinder, VarP unit_, VarP comp_, VarP scope, ConP conName [] (map VarP xs), VarP cont]
     (NormalB body) [])
 
+-- | One 'Foil.nameBinderListOf' clause for a generated binding constructor:
+--
+-- > nameBinderListOf (Con x1 x2 _) =
+-- >   concatNameBinderLists (nameBinderListOf x1) (nameBinderListOf x2)
+--
+-- The binder and nested-pattern fields are listed left to right, in the order
+-- in which the 'Foil.withPattern' clause of 'mkWithPatternClause' visits them,
+-- and payload fields are skipped. A constructor that binds nothing lists no
+-- binders.
+mkNameBinderListOfClause :: FreeFoilConfig -> (Name, [Type]) -> Q Clause
+mkNameBinderListOfClause config (rawConName, rawFieldTypes) = do
+  let conName = toConName config rawConName
+      sorts = map (bindingFieldSortOf config) rawFieldTypes
+  xs <- mapM (\i -> newName ("x" <> show i)) [1 .. length sorts]
+  let fieldPattern sort x
+        | isBindingFieldSort sort = VarP x
+        | otherwise               = WildP
+      lists = [ VarE 'Foil.nameBinderListOf `AppE` VarE x
+              | (sort, x) <- zip sorts xs, isBindingFieldSort sort ]
+      body = case lists of
+        [] -> ConE 'Foil.NameBinderListEmpty
+        _  -> foldr1 (\l r -> VarE 'Foil.concatNameBinderLists `AppE` l `AppE` r) lists
+  return (Clause [ConP conName [] (zipWith fieldPattern sorts xs)] (NormalB body) [])
+
 termConToPat :: Name -> FreeFoilConfig -> FreeFoilTermConfig -> Con -> Q [([Name], Pat, Pat, [Exp])]
 termConToPat rawTypeName config@FreeFoilConfig{..} FreeFoilTermConfig{..} = go
   where
@@ -984,7 +1008,9 @@ mkFreeFoil config@FreeFoilConfig{..} = concat <$> sequence
     -- GenericK default routes every binder operation through a generic
     -- representation traversal, which costs a measurable constant per binder
     -- at runtime (see issue #82); the concrete instance removes it, and a
-    -- client no longer declares (or hand-writes) the instance itself.
+    -- client no longer declares (or hand-writes) the instance itself. The
+    -- instance lists its binders directly in 'Foil.nameBinderListOf', since
+    -- the default would go through the recursive 'Foil.withPattern'.
     mkPatternCoSinkable FreeFoilTermConfig{..} = do
       (tvars, cons) <- reifyDataOrNewtype rawBindingName
       let bindingName = toFreeFoilName config rawBindingName
@@ -1002,10 +1028,12 @@ mkFreeFoil config@FreeFoilConfig{..} = concat <$> sequence
             _ -> return ()
       coSinkClauses <- mapM (mkCoSinkabilityProofClause config) flatCons
       withPatClauses <- mapM (mkWithPatternClause config) flatCons
+      listClauses <- mapM (mkNameBinderListOfClause config) flatCons
       return
         [ InstanceD Nothing [] (AppT (ConT ''Foil.CoSinkable) bindingT)
             [ FunD 'Foil.coSinkabilityProof coSinkClauses
             , FunD 'Foil.withPattern withPatClauses
+            , FunD 'Foil.nameBinderListOf listClauses
             ]
         ]
 

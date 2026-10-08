@@ -1685,7 +1685,8 @@ class CoSinkable (pattern :: S -> S -> Type) where
   --
   -- The default collects them with 'withPattern'
   -- ('nameBinderListOfViaWithPattern'), which allocates several closures per
-  -- binder. An instance that can list its binders directly should do so.
+  -- binder. An instance that can list its binders directly should do so, as
+  -- the instances that @deriveCoSinkable@ and @mkFreeFoil@ generate do.
   --
   -- This is a method of 'CoSinkable' since 0.5.1. Up to 0.5.0, it was a
   -- function outside the class, of the same type.
