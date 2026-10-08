@@ -1090,6 +1090,8 @@ instance CoSinkable NameBinders where
     withPattern withBinder unit comp scope (nameBindersList binders) $ \f binders' scope' ->
       cont f (fromNameBindersList binders') scope'
 
+  nameBinderListOf = nameBindersList
+
 instance CoSinkable NameBinderList where
   coSinkabilityProof rename NameBinderListEmpty cont = cont rename NameBinderListEmpty
   coSinkabilityProof rename (NameBinderListCons binder binders) cont =
@@ -1104,6 +1106,8 @@ instance CoSinkable NameBinderList where
         let scope' = extendScope x' scope
         in withPattern withBinder unit comp scope' xs $ \f' xs' scope'' ->
             cont (comp f f') (NameBinderListCons x' xs') scope''
+
+  nameBinderListOf = id
 
 -- ** Pattern combinators
 
@@ -1123,6 +1127,7 @@ absurd2 v2 = case v2 of {}
 instance CoSinkable V2 where
   coSinkabilityProof _ v2 _ = absurd2 v2
   withPattern _ _ _ _ v2 _ = absurd2 v2
+  nameBinderListOf = absurd2
 instance UnifiablePattern V2 where
   unifyPatterns = absurd2
 
@@ -1135,6 +1140,7 @@ data U2 (n :: S) (l :: S) where
 instance CoSinkable U2 where
   coSinkabilityProof rename U2 cont = cont rename U2
   withPattern _withBinder unit _combine scope U2 cont = cont unit U2 scope
+  nameBinderListOf U2 = NameBinderListEmpty
 instance UnifiablePattern U2 where
   unifyPatterns U2 U2 = SameNameBinders emptyNameBinders
 
@@ -1674,6 +1680,20 @@ class CoSinkable (pattern :: S -> S -> Type) where
     -> r
   withPattern = gunsafeWithPatternViaHasNameBinders
 
+  -- | Collect name binders of a generalized pattern into a name binder list,
+  -- in the order 'withPattern' visits them.
+  --
+  -- The default collects them with 'withPattern'
+  -- ('nameBinderListOfViaWithPattern'), which allocates several closures per
+  -- binder. An instance that can list its binders directly should do so.
+  --
+  -- This is a method of 'CoSinkable' since 0.5.1. Up to 0.5.0, it was a
+  -- function outside the class, of the same type.
+  --
+  -- @since 0.2.0
+  nameBinderListOf :: pattern n l -> NameBinderList n l
+  nameBinderListOf = nameBinderListOfViaWithPattern
+
 -- ** Transporting a pattern's payloads
 
 -- | The renaming that carries a pattern's payloads into the ambient scope of
@@ -1799,12 +1819,12 @@ compWithNameBinderList
 compWithNameBinderList (WithNameBinderList f) (WithNameBinderList g) =
   WithNameBinderList (f . g)
 
--- | Collect name binders of a generalized pattern into a name binder list,
--- which can be more easily traversed.
+-- | Collect the binders of a pattern with 'withPattern'. This is the default
+-- of 'nameBinderListOf', and it allocates several closures per binder.
 --
--- @since 0.2.0
-nameBinderListOf :: (CoSinkable binder) => binder n l -> NameBinderList n l
-nameBinderListOf pat = withPattern
+-- @since 0.5.1
+nameBinderListOfViaWithPattern :: (CoSinkable binder) => binder n l -> NameBinderList n l
+nameBinderListOfViaWithPattern pat = withPattern
   (\_scope' binder k ->
     unsafeAssertFresh binder $ \binder' ->
       k (WithNameBinderList (NameBinderListCons binder)) binder')
@@ -1817,6 +1837,8 @@ nameBinderListOf pat = withPattern
 instance CoSinkable NameBinder where
   coSinkabilityProof _rename (UnsafeNameBinder name) cont =
     cont unsafeCoerce (UnsafeNameBinder name)
+
+  nameBinderListOf binder = NameBinderListCons binder NameBinderListEmpty
 
   withPattern withBinder _ _ scope binder cont =
     withBinder scope binder $ \f binder' ->
