@@ -86,8 +86,8 @@ instance Foil.CoSinkable HandPair where
             cont (comp fx fy) (HandPair x' y') (Foil.extendScope y' scope')
 
 -- | A copy of the pattern of "Language.LambdaPi.Impl.Foil" and its instance:
--- wildcards, variables and pairs, with a recursive 'Foil.withPattern' written
--- by hand.
+-- wildcards, variables and pairs, with a recursive 'Foil.withPattern' and
+-- 'Foil.nameBinderListOf' written by hand.
 data LPPattern (n :: Foil.S) (l :: Foil.S) where
   LPWildcard :: LPPattern n n
   LPVar      :: Foil.NameBinder n l -> LPPattern n l
@@ -113,6 +113,13 @@ instance Foil.CoSinkable LPPattern where
       LPPair l r -> Foil.withPattern withNameBinder id' combine scope l $ \fl l' scope' ->
         Foil.withPattern withNameBinder id' combine scope' r $ \fr r' scope'' ->
           cont (combine fl fr) (LPPair l' r') scope''
+
+  nameBinderListOf pattern = go pattern Foil.NameBinderListEmpty
+    where
+      go :: LPPattern x y -> Foil.NameBinderList y z -> Foil.NameBinderList x z
+      go LPWildcard   rest = rest
+      go (LPVar x)    rest = Foil.NameBinderListCons x rest
+      go (LPPair l r) rest = go l $! go r rest
 
 -- | A telescope of @k@ steps @(x1 : \\y. y) (x2 : x1) ... (xk : x(k-1))@,
 -- with the terms of "Control.Monad.Foil.Example" for payloads.

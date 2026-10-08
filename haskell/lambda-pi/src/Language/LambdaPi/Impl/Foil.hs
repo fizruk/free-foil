@@ -117,6 +117,15 @@ instance CoSinkable Pattern where
         withPattern withNameBinder id' combine scope' r $ \fr r' scope'' ->
               cont (combine fl fr) (PatternPair l' r') scope''
 
+  -- The binders from left to right, in the order of 'withPattern', each put in
+  -- front of the binders after it. The default would go through 'withPattern'.
+  nameBinderListOf pattern = go pattern NameBinderListEmpty
+    where
+      go :: Pattern x y -> NameBinderList y z -> NameBinderList x z
+      go PatternWildcard   rest = rest
+      go (PatternVar x)    rest = NameBinderListCons x rest
+      go (PatternPair l r) rest = go l $! go r rest
+
 -- | Two patterns unify when they have the same shape. Their binders are then
 -- paired in order by 'unsafeUnifyPatternBinders', whose precondition the shape
 -- check establishes. The shape matters: @(x, _)@ and @(_, y)@ bind one name
