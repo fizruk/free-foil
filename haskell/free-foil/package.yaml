@@ -115,3 +115,14 @@ benchmarks:
     dependencies:
       - free-foil
       - tasty-bench
+
+  binders:
+    main: Main.hs
+    source-dirs: bench/binders
+    ghc-options:
+      - -O2
+      - -rtsopts
+    dependencies:
+      - free-foil
+      - kind-generics-th
+      - tasty-bench
