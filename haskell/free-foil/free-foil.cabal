@@ -106,6 +106,7 @@ test-suite spec
       Control.Monad.Foil.BlocksSpec
       Control.Monad.Foil.ExampleLawsSpec
       Control.Monad.Foil.LawsSpec
+      Control.Monad.Foil.NameBinderListOfSpec
       Control.Monad.Foil.NameMapSpec
       Control.Monad.Foil.NameRangeSpec
       Control.Monad.Foil.PatternTransportSpec
