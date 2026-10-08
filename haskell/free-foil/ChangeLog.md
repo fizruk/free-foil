@@ -15,6 +15,7 @@ Performance:
 
 - `nameBinderListOf` costs no traversal for the library's instances and the generated ones, also through a dictionary: on four binders, 7 ns instead of 132 ns. Its callers are `INLINABLE`, so that they specialise at a known pattern type.
 - The default `nameBinderListOf` and the generic `withPattern` inline, so a pattern with the generic defaults lists its binders about four times faster, and `alphaEquiv` on such patterns is twice as fast. A hand-written `withPattern` gets the same from an `INLINE` pragma.
+- The `ZipMatchK` instances for `Sum` and `Product`, in `Data.ZipMatchK.Bifunctor` and `Data.ZipMatchK.Functor`, are written out instead of generic, in the form that `Data.ZipMatchK.TH` derives. On the `zipmatchk` benchmark, `alphaEquiv` over a sum of two signatures takes 220 µs instead of 362 µs and allocates 2.8 MB instead of 4.8 MB. The instances no longer require `Bitraversable` (or `Traversable`) of the two components.
 
 # 0.5.0 — 2026-10-07
 
