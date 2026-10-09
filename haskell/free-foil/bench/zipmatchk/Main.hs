@@ -26,14 +26,21 @@
 -- across the whole signature — as a real language's terms are — should cost the
 -- generic instance more the larger the signature is. The derived instance
 -- compiles to a single @case@, and should not care.
+--
+-- The last group measures the instances for 'Sum' and 'Product' of two
+-- signatures (the data types à la carte of Swierstra), each with a derived
+-- instance.
 module Main (main) where
 
+import           Data.Bifunctor.Product  (Product (..))
+import           Data.Bifunctor.Sum      (Sum (..))
 import           Data.Bifunctor.TH
 import           Test.Tasty.Bench
 
 import qualified Control.Monad.Foil      as Foil
 import           Control.Monad.Free.Foil
 import           Data.ZipMatchK
+import           Data.ZipMatchK.Bifunctor ()
 import           Data.ZipMatchK.TH       (deriveZipMatchK)
 import           Generics.Kind.TH        (deriveGenericK)
 
@@ -81,6 +88,35 @@ deriveBifoldable ''Sig44H
 deriveBitraversable ''Sig44H
 deriveZipMatchK ''Sig44H
 
+-- * Two signatures to combine
+
+-- | Application alone.
+data AppOnly scope term = AppOnly term term
+  deriving (Functor, Foldable, Traversable)
+
+-- | λ-abstraction alone.
+newtype LamOnly scope term = LamOnly scope
+  deriving (Functor, Foldable, Traversable)
+
+-- | A tag with no children, to pair with every node of a signature.
+data Tag scope term = Tag
+  deriving (Functor, Foldable, Traversable)
+
+deriveBifunctor ''AppOnly
+deriveBifoldable ''AppOnly
+deriveBitraversable ''AppOnly
+deriveZipMatchK ''AppOnly
+
+deriveBifunctor ''LamOnly
+deriveBifoldable ''LamOnly
+deriveBitraversable ''LamOnly
+deriveZipMatchK ''LamOnly
+
+deriveBifunctor ''Tag
+deriveBifoldable ''Tag
+deriveBitraversable ''Tag
+deriveZipMatchK ''Tag
+
 -- * A large closed term
 
 -- | A closed term of the given depth: an application tree with a λ every other
@@ -123,6 +159,10 @@ main = defaultMain
           [ bench "generic" $ whnf (alphaEquiv Foil.emptyScope t44) t44
           , bench "derived" $ whnf (alphaEquiv Foil.emptyScope u44) u44
           ]
+      , bgroup "two signatures"
+          [ bench "Sum"     $ whnf (alphaEquiv Foil.emptyScope s) s
+          , bench "Product" $ whnf (alphaEquiv Foil.emptyScope p) p
+          ]
       ]
   ]
   where
@@ -132,3 +172,5 @@ main = defaultMain
     u10 = mkTerm appSig10H lamSig10H depth
     t44 = mkTerm appSig44G lamSig44G depth
     u44 = mkTerm appSig44H lamSig44H depth
+    s = mkTerm (\_ l r -> L2 (AppOnly l r)) (R2 . LamOnly) depth
+    p = mkTerm (\d l r -> Pair (appSig2H d l r) Tag) (\scope -> Pair (lamSig2H scope) Tag) depth
