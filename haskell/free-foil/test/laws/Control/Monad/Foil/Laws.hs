@@ -75,6 +75,7 @@ module Control.Monad.Foil.Laws (
   -- * Laws of 'CoSinkable'
   PatternCase (..),
   genPatternCase,
+  showPatternCase,
   CoSinkableLaws (..),
   coSinkableLaws,
   CoSinkLaw (..),
@@ -242,9 +243,20 @@ nameBinderListNames = \case
   NameBinderListCons b rest -> nameId (nameOf b) : nameBinderListNames rest
 
 -- | The raw names a pattern binds, in the order in which 'withPattern'
--- visits them (through 'nameBinderListOf').
+-- visits them.
 patternRawNames :: CoSinkable p => p n l -> [Int]
-patternRawNames = nameBinderListNames . nameBinderListOf
+patternRawNames pat = withPattern
+  (\scope binder k -> withFresh scope $ \binder' ->
+      k (RawNames (nameId (nameOf binder) :)) binder')
+  (RawNames id)
+  (\(RawNames f) (RawNames g) -> RawNames (f . g))
+  emptyScope
+  pat
+  (\(RawNames f) _ _ -> f [])
+
+-- | A difference list of raw names, indexed like the results of
+-- 'withPattern'.
+newtype RawNames (n :: S) (l :: S) (o :: S) (o' :: S) = RawNames ([Int] -> [Int])
 
 -- | Show the names a pattern binds, in the library's order.
 showPattern :: CoSinkable p => p n l -> String
@@ -526,7 +538,7 @@ coSinkableLaws binders = CoSinkableLaws
 -- order of 'withPattern'.
 data CoSinkLaw
   = CoSinkIdentity | CoSinkComposition | CoSinkExtension | CoSinkBinders
-  | WithPatternOrder
+  | WithPatternOrder | NameBinderListOfOrder
   deriving (Eq, Show, Enum, Bounded)
 
 -- | 'withPattern' visits the binders of a pattern in the order of its
@@ -537,8 +549,16 @@ withPatternOrderLaw binders p =
   counterexample "the order of the pattern is on the left, the order of withPattern on the right" $
     binders p === patternRawNames p
 
+-- | 'nameBinderListOf' lists the binders of a pattern in the order in which
+-- 'withPattern' visits them, as its default does.
+nameBinderListOfLaw :: CoSinkable p => p n l -> Property
+nameBinderListOfLaw p =
+  counterexample "nameBinderListOf on the left, the order of withPattern on the right" $
+    nameBinderListNames (nameBinderListOf p) === patternRawNames p
+
 -- | All laws of 'coSinkabilityProof' for a pattern type, along each class
--- of renamings, and the law of the traversal order of 'withPattern'.
+-- of renamings, the law of the traversal order of 'withPattern', and the
+-- agreement of 'nameBinderListOf' with it.
 coSinkableSpec
   :: CoSinkable p
   => PatternNames p -> GenPattern p -> (RenamingClass -> CoSinkLaw -> Verdict) -> Spec
@@ -546,6 +566,9 @@ coSinkableSpec binders genPat verdict = do
   law (verdict Inclusions WithPatternOrder) "withPattern visits binders in the order of the pattern" $
     forAllShow (genPatternCase genPat Inclusions) (showPatternCase binders) $
       \(PatternCase _ p) -> withPatternOrderLaw binders p
+  law (verdict Inclusions NameBinderListOfOrder) "nameBinderListOf lists the binders in the order of withPattern" $
+    forAllShow (genPatternCase genPat Inclusions) (showPatternCase binders) $
+      \(PatternCase _ p) -> nameBinderListOfLaw p
   forM_ allRenamingClasses $ \cls -> describe ("along " <> show cls) $
     forM_ [CoSinkIdentity, CoSinkComposition, CoSinkExtension, CoSinkBinders] $ \name ->
       law (verdict cls name) (show name) $
@@ -557,6 +580,7 @@ coSinkableSpec binders genPat verdict = do
     lawOf CoSinkExtension   = coSinkExtension laws
     lawOf CoSinkBinders     = coSinkBinders laws
     lawOf WithPatternOrder  = \(PatternCase _ p) -> withPatternOrderLaw binders p
+    lawOf NameBinderListOfOrder = \(PatternCase _ p) -> nameBinderListOfLaw p
 
 -- * Laws of 'UnifiablePattern'
 

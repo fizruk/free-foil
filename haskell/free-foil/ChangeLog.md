@@ -1,5 +1,21 @@
 # CHANGELOG for `free-foil`
 
+# Unreleased
+
+Changed:
+
+- **`nameBinderListOf` is a method of `CoSinkable`**. Its default collects the binders with `withPattern`, as the function did. The library's instances list their binders directly (`NameBinderList` is the identity, `NameBinders` is `nameBindersList`, `Telescope` is `telescopeBinders`), and so do the instances that `deriveCoSinkable` and `mkFreeFoil` generate. An instance written by hand can define it as well.
+  - A module that imports `CoSinkable(..)` without `nameBinderListOf` and defines a function of that name now gets an ambiguous name. Hide one of the two.
+
+New:
+
+- `gnameBinderListOf` lists the binders of a pattern through its `Generics.Kind` representation, for an instance that takes the generic `withPattern`: `instance CoSinkable P where nameBinderListOf = gnameBinderListOf`.
+
+Performance:
+
+- `nameBinderListOf` costs no traversal for the library's instances and the generated ones, also through a dictionary: on four binders, 7 ns instead of 132 ns. Its callers are `INLINABLE`, so that they specialise at a known pattern type.
+- The default `nameBinderListOf` and the generic `withPattern` inline, so a pattern with the generic defaults lists its binders about four times faster, and `alphaEquiv` on such patterns is twice as fast. A hand-written `withPattern` gets the same from an `INLINE` pragma.
+
 # 0.5.0 — 2026-10-07
 
 A release about *binders*. The law tests added after 0.4.0 ([#100](https://github.com/fizruk/free-foil/pull/100)) found bugs in how binders are sunk, ordered, paired and transported, and this release fixes them. The fixes change α-equivalence for patterns of several binders, so the release is major. It also generates single-binder pattern types as newtypes and removes the functions deprecated in 0.3.3 and 0.4.0.

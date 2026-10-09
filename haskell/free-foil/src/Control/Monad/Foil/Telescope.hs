@@ -62,6 +62,9 @@ data Telescope label e n l where
 -- with each payload moved by the transport and the scope reached /before/ its
 -- own binder. Moving a payload may refresh its own binders, which is why the
 -- instance needs @'RelMonad' 'Name' e@.
+--
+-- 'nameBinderListOf' is 'telescopeBinders', which reads the binders off the
+-- telescope rather than rebuilding it with 'withPattern'.
 instance (Sinkable e, RelMonad Name e) => CoSinkable (Telescope label e) where
   coSinkabilityProof rename TelescopeEmpty cont = cont rename TelescopeEmpty
   coSinkabilityProof rename (TelescopeCons label payload binder rest) cont =
@@ -102,6 +105,8 @@ instance (Sinkable e, RelMonad Name e) => CoSinkable (Telescope label e) where
             cont (comp fbinder frest)
               (TelescopeCons label (transportPayload scope transport payload) binder' rest')
               scope''
+
+  nameBinderListOf = telescopeBinders
 
 -- | Two telescopes unify when their binders line up and their payloads agree.
 --
@@ -221,15 +226,14 @@ telescopeParams (TelescopeCons label ty binder rest) =
 
 -- | The chain of binders a telescope forms.
 --
--- This is 'nameBinderListOf' at a telescope, written out. The general one
--- goes through 'withPattern' and so rebuilds the telescope only to throw it
--- away, which is worth avoiding on the checking path.
+-- This is 'nameBinderListOf' at a telescope, as a function of its own, which
+-- needs no 'RelMonad' instance for the payloads.
 --
 -- @since 0.4.0
 telescopeBinders :: Telescope label e n l -> NameBinderList n l
 telescopeBinders TelescopeEmpty = NameBinderListEmpty
 telescopeBinders (TelescopeCons _ _ binder rest) =
-  NameBinderListCons binder (telescopeBinders rest)
+  NameBinderListCons binder $! telescopeBinders rest
 
 -- | Close a set of parameters under the parameters their payloads need.
 --

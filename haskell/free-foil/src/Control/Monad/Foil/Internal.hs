@@ -422,7 +422,7 @@ unsafeAssertFresh :: forall n l n' l' r. NameBinder n l
 unsafeAssertFresh binder cont =
   case unsafeDistinct @l' of
     Distinct -> case unsafeExt @n' @l' of
-      Ext -> cont (unsafeCoerce binder)
+      Ext -> cont (coerce binder)
 
 -- | Auxiliary structure to accumulate substitution extensions
 -- produced when refreshing a pattern.
@@ -660,6 +660,7 @@ scopeToNameSet (UnsafeScope names) = UnsafeNameSet names
 -- | The names a pattern binds.
 --
 -- @since 0.4.0
+{-# INLINABLE nameSetOfPattern #-}
 nameSetOfPattern :: CoSinkable binder => binder n l -> NameSet l
 nameSetOfPattern binder = UnsafeNameSet bound
   where
@@ -686,6 +687,7 @@ nameSetSubsetOfScope (UnsafeNameSet names) (UnsafeScope scope) =
 -- an occurrence of the outer name.
 --
 -- @since 0.4.0
+{-# INLINABLE unsinkNameSet #-}
 unsinkNameSet :: CoSinkable binder => binder n l -> NameSet l -> NameSet n
 unsinkNameSet binder (UnsafeNameSet names) = UnsafeNameSet (names IntSet.\\ bound)
   where
@@ -1088,6 +1090,8 @@ instance CoSinkable NameBinders where
     withPattern withBinder unit comp scope (nameBindersList binders) $ \f binders' scope' ->
       cont f (fromNameBindersList binders') scope'
 
+  nameBinderListOf = nameBindersList
+
 instance CoSinkable NameBinderList where
   coSinkabilityProof rename NameBinderListEmpty cont = cont rename NameBinderListEmpty
   coSinkabilityProof rename (NameBinderListCons binder binders) cont =
@@ -1095,13 +1099,35 @@ instance CoSinkable NameBinderList where
       coSinkabilityProof rename' binders $ \rename'' binders' ->
         cont rename'' (NameBinderListCons binder' binders')
 
-  withPattern withBinder unit comp scope binders cont = case binders of
-    NameBinderListEmpty -> cont unit NameBinderListEmpty scope
-    NameBinderListCons x xs ->
-      withBinder scope x $ \f x' ->
-        let scope' = extendScope x' scope
-        in withPattern withBinder unit comp scope' xs $ \f' xs' scope'' ->
-            cont (comp f f') (NameBinderListCons x' xs') scope''
+  withPattern
+    :: forall o f n l r. Distinct o
+    => (forall x y z r'. Distinct z => Scope z -> NameBinder x y -> (forall z'. DExt z z' => f x y z z' -> NameBinder z z' -> r') -> r')
+    -> (forall x z z'. DExt z z' => f x x z z')
+    -> (forall x y y' z z' z''. (DExt z z', DExt z' z'') => f x y z z' -> f y y' z' z'' -> f x y' z z'')
+    -> Scope o
+    -> NameBinderList n l
+    -> (forall o'. DExt o o' => f n l o o' -> NameBinderList o o' -> Scope o' -> r)
+    -> r
+  withPattern withBinder unit comp = go
+    where
+      -- The loop takes the three functions from its context, so that a call
+      -- with known functions specialises it when 'withPattern' inlines.
+      go
+        :: forall p i. Distinct p
+        => Scope p
+        -> NameBinderList i l
+        -> (forall p'. DExt p p' => f i l p p' -> NameBinderList p p' -> Scope p' -> r)
+        -> r
+      go scope binders cont = case binders of
+        NameBinderListEmpty -> cont unit NameBinderListEmpty scope
+        NameBinderListCons x xs ->
+          withBinder scope x $ \f x' ->
+            let scope' = extendScope x' scope
+            in go scope' xs $ \f' xs' scope'' ->
+                cont (comp f f') (NameBinderListCons x' xs') scope''
+  {-# INLINE withPattern #-}
+
+  nameBinderListOf = id
 
 -- ** Pattern combinators
 
@@ -1121,6 +1147,7 @@ absurd2 v2 = case v2 of {}
 instance CoSinkable V2 where
   coSinkabilityProof _ v2 _ = absurd2 v2
   withPattern _ _ _ _ v2 _ = absurd2 v2
+  nameBinderListOf = absurd2
 instance UnifiablePattern V2 where
   unifyPatterns = absurd2
 
@@ -1133,6 +1160,7 @@ data U2 (n :: S) (l :: S) where
 instance CoSinkable U2 where
   coSinkabilityProof rename U2 cont = cont rename U2
   withPattern _withBinder unit _combine scope U2 cont = cont unit U2 scope
+  nameBinderListOf U2 = NameBinderListEmpty
 instance UnifiablePattern U2 where
   unifyPatterns U2 U2 = SameNameBinders emptyNameBinders
 
@@ -1269,6 +1297,7 @@ unsafeEqPattern l r =
 -- an instance that checks the shape of two patterns first.
 --
 -- @since 0.5.0
+{-# INLINABLE unsafeUnifyPatternBinders #-}
 unsafeUnifyPatternBinders
   :: (CoSinkable pattern, Distinct n)
   => pattern n l -> pattern n r -> UnifyNameBinders pattern n l r
@@ -1670,6 +1699,29 @@ class CoSinkable (pattern :: S -> S -> Type) where
     -> (forall o'. DExt o o' => f n l o o' -> pattern o o' -> Scope o' -> r)
     -> r
   withPattern = gunsafeWithPatternViaHasNameBinders
+  -- Inlining the generic traversal lets a caller with known functions, such
+  -- as the default 'nameBinderListOf', specialise it.
+  {-# INLINE withPattern #-}
+
+  -- | Collect name binders of a generalized pattern into a name binder list,
+  -- in the order 'withPattern' visits them.
+  --
+  -- The default collects them with 'withPattern'
+  -- ('nameBinderListOfViaWithPattern'). It is cheap when the instance's
+  -- 'withPattern' inlines into it, as the generic default does and as a
+  -- non-recursive one marked @INLINE@ does. Otherwise it costs a traversal
+  -- that allocates several closures per binder, and an instance should list
+  -- its binders directly, as the instances that @deriveCoSinkable@ and
+  -- @mkFreeFoil@ generate do. An instance with the generic 'withPattern' can
+  -- take 'gnameBinderListOf'.
+  --
+  -- This is a method of 'CoSinkable' since 0.5.1. Up to 0.5.0, it was a
+  -- function outside the class, of the same type.
+  --
+  -- @since 0.2.0
+  nameBinderListOf :: pattern n l -> NameBinderList n l
+  nameBinderListOf = nameBinderListOfViaWithPattern
+  {-# INLINE nameBinderListOf #-}
 
 -- ** Transporting a pattern's payloads
 
@@ -1796,17 +1848,20 @@ compWithNameBinderList
 compWithNameBinderList (WithNameBinderList f) (WithNameBinderList g) =
   WithNameBinderList (f . g)
 
--- | Collect name binders of a generalized pattern into a name binder list,
--- which can be more easily traversed.
+-- | Collect the binders of a pattern with 'withPattern'. This is the default
+-- of 'nameBinderListOf'.
 --
--- @since 0.2.0
-nameBinderListOf :: (CoSinkable binder) => binder n l -> NameBinderList n l
-nameBinderListOf pat = withPattern
+-- @since 0.5.1
+{-# INLINE nameBinderListOfViaWithPattern #-}
+nameBinderListOfViaWithPattern :: (CoSinkable binder) => binder n l -> NameBinderList n l
+nameBinderListOfViaWithPattern pat = withPattern
   (\_scope' binder k ->
     unsafeAssertFresh binder $ \binder' ->
       k (WithNameBinderList (NameBinderListCons binder)) binder')
   idWithNameBinderList
-  compWithNameBinderList
+  -- Unlike 'compWithNameBinderList', this builds the rest of the list first,
+  -- so that no binder leaves a thunk behind.
+  (\(WithNameBinderList f) (WithNameBinderList g) -> WithNameBinderList (\rest -> f $! g rest))
   emptyScope
   pat
   (\(WithNameBinderList f) _ _ -> f NameBinderListEmpty)
@@ -1814,6 +1869,8 @@ nameBinderListOf pat = withPattern
 instance CoSinkable NameBinder where
   coSinkabilityProof _rename (UnsafeNameBinder name) cont =
     cont unsafeCoerce (UnsafeNameBinder name)
+
+  nameBinderListOf binder = NameBinderListCons binder NameBinderListEmpty
 
   withPattern withBinder _ _ scope binder cont =
     withBinder scope binder $ \f binder' ->
@@ -1874,6 +1931,7 @@ addSubst (UnsafeSubstitution env) (UnsafeNameBinder (UnsafeName name)) ex
 -- order the pattern binds them.
 --
 -- @since 0.2.0
+{-# INLINABLE addSubstPattern #-}
 addSubstPattern
   :: CoSinkable binder
   => Substitution e i o
@@ -1959,6 +2017,7 @@ nameMapToScope (NameMap m) = UnsafeScope (IntMap.keysSet m)
 -- as there are binders in the input pattern (generalized binder).
 --
 -- @since 0.2.0
+{-# INLINABLE addNameBinders #-}
 addNameBinders :: CoSinkable binder => binder n l -> [a] -> NameMap n a -> NameMap l a
 addNameBinders pat = addNameBinderList (nameBinderListOf pat)
 
@@ -2541,6 +2600,7 @@ gunsafeWithPatternViaHasNameBinders
   -> (forall o'. DExt o o' => f n l o o' -> pattern o o' -> Scope o' -> r)
   -- ^ Continuation, accepting the result for the entire pattern, a (possibly refreshed) pattern, and the scope extended by that pattern.
   -> r
+{-# INLINE gunsafeWithPatternViaHasNameBinders #-}
 gunsafeWithPatternViaHasNameBinders withBinder id_ comp_ scope pat cont =
   withPattern withBinder id_ comp_ scope (unsafeNameBinderListFromRaw raw) $ \result binders scope' ->
     cont result (gunsafeSetNameBinderList (unsafeCoerce pat) binders) scope' -- FIXME: safer version
@@ -2548,6 +2608,22 @@ gunsafeWithPatternViaHasNameBinders withBinder id_ comp_ scope pat cont =
     -- The binders in the order of the pattern. 'NameBinders' is a set, so
     -- going through it would put them back in ascending order of names.
     raw = ggetNameBindersRaw (fromK @_ @pattern @(n :&&: l :&&: LoT0) pat)
+
+-- | 'nameBinderListOf' through the generic representation, without a
+-- traversal by 'withPattern'. It lists the binders in the order of the
+-- generic 'withPattern' ('gunsafeWithPatternViaHasNameBinders'), so an
+-- instance that takes the generic default of 'withPattern' can use it:
+--
+-- > instance CoSinkable MyPattern where
+-- >   nameBinderListOf = gnameBinderListOf
+--
+-- @since 0.5.1
+gnameBinderListOf
+  :: forall pattern n l. (GenericK pattern, GHasNameBinders (RepK pattern))
+  => pattern n l -> NameBinderList n l
+gnameBinderListOf pat =
+  unsafeNameBinderListFromRaw (ggetNameBindersRaw (fromK @_ @pattern @(n :&&: l :&&: LoT0) pat))
+{-# INLINE gnameBinderListOf #-}
 
 -- | The binders of a pattern, in the order of the pattern, from their raw names.
 --

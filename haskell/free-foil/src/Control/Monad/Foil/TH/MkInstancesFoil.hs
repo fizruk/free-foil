@@ -92,7 +92,8 @@ deriveCoSinkable nameT patternT = do
   return
     [ InstanceD Nothing [] (AppT (ConT ''Foil.CoSinkable) (PeelConT foilPatternT (map (VarT . tvarName) patternTVars)))
         [ FunD 'Foil.coSinkabilityProof (map clausePattern patternCons)
-        , FunD 'Foil.withPattern (map clauseWithPattern patternCons) ]
+        , FunD 'Foil.withPattern (map clauseWithPattern patternCons)
+        , FunD 'Foil.nameBinderListOf (map clauseNameBinderListOf patternCons) ]
     ]
 
   where
@@ -131,6 +132,27 @@ deriveCoSinkable nameT patternT = do
           go (i + 1) rename' (AppE p (VarE xi)) conPatterns
           where
             xi = mkName ("x" ++ show i)
+
+    -- The binders of the binding fields, in order, without going through
+    -- 'Foil.withPattern'.
+    clauseNameBinderListOf :: Con -> Clause
+    clauseNameBinderListOf (NormalC conName params) =
+      Clause [ConP foilConName [] conParamPatterns] (NormalB body) []
+      where
+        foilConName = mkName ("Foil" ++ nameBase conName)
+        conParamPatterns = zipWith mkConParamPattern params [1 :: Int ..]
+        mkConParamPattern (_bang, PeelConT tyName _)
+          | tyName == nameT || tyName == patternT = VarP . xi
+        mkConParamPattern _ = const WildP
+        xi i = mkName ("x" ++ show i)
+        binding =
+          [ AppE (VarE 'Foil.nameBinderListOf) (VarE (xi i))
+          | ((_bang, PeelConT tyName _), i) <- zip params [1 :: Int ..]
+          , tyName == nameT || tyName == patternT ]
+        body = case binding of
+          [] -> ConE 'Foil.NameBinderListEmpty
+          _  -> foldr1 (\l r -> foldl AppE (VarE 'Foil.concatNameBinderLists) [l, r]) binding
+    clauseNameBinderListOf _ = error "Only normal constructors are supported here"
 
     clauseWithPattern :: Con -> Clause
     clauseWithPattern RecC{} = error "Record constructors (RecC) are not supported yet!"
