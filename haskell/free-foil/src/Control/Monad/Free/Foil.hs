@@ -32,7 +32,6 @@ import           Data.Bifunctor
 import Data.ZipMatchK
 import qualified Generics.Kind as Kind
 import Generics.Kind (GenericK(..), Field, Exists, Var0, Var1, (:$:), Atom((:@:), Kon), (:+:), (:*:))
-import           Data.Coerce                 (coerce)
 import           Data.IntMap.Strict          (IntMap)
 import qualified Data.IntMap.Strict          as IntMap
 import           Data.Map                    (Map)
@@ -250,7 +249,7 @@ alphaEquiv
   -> AST binder sig n
   -> AST binder sig n
   -> Bool
-alphaEquiv _scope (Var x) (Var y) = x == coerce y
+alphaEquiv _scope (Var x) (Var y) = x == y
 alphaEquiv scope (Node l) (Node r) =
   case zipMatchWith2 (unit . alphaEquivScoped scope) (unit . alphaEquiv scope) l r of
     Nothing -> False
@@ -484,7 +483,7 @@ unsafeEqAST
   => AST binder sig n
   -> AST binder sig l
   -> Bool
-unsafeEqAST (Var x) (Var y) = x == coerce y
+unsafeEqAST (Var x) (Var y) = Foil.nameId x == Foil.nameId y
 unsafeEqAST (Node t1) (Node t2) =
   case zipMatchWith2 (unit . unsafeEqScopedAST) (unit . unsafeEqAST) t1 t2 of
     Nothing -> False
