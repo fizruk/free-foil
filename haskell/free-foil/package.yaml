@@ -63,6 +63,7 @@ tests:
       - kind-generics-th
       - QuickCheck
       - containers
+      - should-not-typecheck >= 2.1.0 && < 2.2
 
   doctests:
     source-dirs:

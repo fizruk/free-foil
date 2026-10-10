@@ -5,21 +5,18 @@
 -- | The scope indices of the foil's types are nominal, so 'coerce' cannot
 -- change them, while 'sink' and coercions that keep the scope still work.
 --
--- A test that a coercion is rejected needs a program that does not
--- typecheck. This module is compiled with @-fdefer-type-errors@, so each
--- such coercion compiles to a runtime 'TypeError', which the test expects.
--- The same technique is behind the @should-not-typecheck@ package.
--- The module imports only the public modules, where the @Unsafe@
--- constructors are not in scope: with them, 'coerce' would still unwrap the
--- newtypes and succeed.
+-- The rejected coercions are checked with 'shouldNotTypecheck' from the
+-- @should-not-typecheck@ package, which needs this module to be compiled
+-- with @-fdefer-type-errors@. The module imports only the public modules,
+-- where the @Unsafe@ constructors are not in scope: with them, 'coerce'
+-- would still unwrap the newtypes and succeed.
 module Control.Monad.Foil.RolesSpec (spec) where
 
-import           Control.Exception         (TypeError (..), evaluate)
 import           Data.Coerce               (coerce)
 import           Data.Foldable             (toList)
-import           Data.List                 (isInfixOf)
 import           Data.Monoid               (Sum (..))
 import           Test.Hspec
+import           Test.ShouldNotTypecheck   (shouldNotTypecheck)
 
 import           Control.Monad.Foil
 import           Control.Monad.Foil.Blocks
@@ -79,13 +76,11 @@ scopeUnionRight = coerce
 scopeUnionWhole :: ScopeUnion n m k -> ScopeUnion n m k'
 scopeUnionWhole = coerce
 
--- | Evaluating the value raises the deferred type error of a 'coerce'.
+-- | The value does not typecheck. Weak head normal form is enough to raise
+-- the deferred type error of a 'coerce', and not every type here has an
+-- 'Control.DeepSeq.NFData' instance, so the value is forced with 'seq'.
 rejected :: a -> Expectation
-rejected x = evaluate x `shouldThrow` coercionRejected
-
-coercionRejected :: Selector TypeError
-coercionRejected (TypeError msg) =
-  "Couldn't match type" `isInfixOf` msg && "coerce" `isInfixOf` msg
+rejected x = shouldNotTypecheck (x `seq` ())
 
 -- * Coercions that keep the scope (these typecheck)
 
