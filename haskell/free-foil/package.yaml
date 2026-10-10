@@ -126,3 +126,13 @@ benchmarks:
       - free-foil
       - kind-generics-th
       - tasty-bench
+
+  nfdata:
+    main: Main.hs
+    source-dirs: bench/nfdata
+    ghc-options:
+      - -O2
+      - -rtsopts
+    dependencies:
+      - free-foil
+      - tasty-bench
