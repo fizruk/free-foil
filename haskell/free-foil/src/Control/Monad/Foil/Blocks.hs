@@ -2,6 +2,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RoleAnnotations     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
@@ -77,6 +78,7 @@ import           Control.Monad.Foil.Internal
 --
 -- @since 0.4.0
 data ExtWithin (n :: S) (l :: S) = UnsafeExtWithin [NameRange]
+type role ExtWithin nominal nominal
 
 -- | The reservations an 'ExtWithin' is evidence about: sorted, disjoint,
 -- adjacent ranges coalesced, empty ones dropped.
@@ -345,6 +347,7 @@ withDisjointUnion (UnsafeExtWithin rs1) (UnsafeExtWithin rs2) (UnsafeScope s1) (
 --
 -- @since 0.4.0
 data ScopeUnion (n :: S) (m :: S) (k :: S) = UnsafeScopeUnion
+type role ScopeUnion nominal nominal nominal
 
 -- | Test that a scope is precisely the union of two others, and produce the
 -- witness if so. \(O(n+m)\).

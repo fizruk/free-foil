@@ -110,6 +110,7 @@ test-suite spec
       Control.Monad.Foil.NameMapSpec
       Control.Monad.Foil.NameRangeSpec
       Control.Monad.Foil.PatternTransportSpec
+      Control.Monad.Foil.RolesSpec
       Control.Monad.Foil.SinkableSpec
       Control.Monad.Foil.TelescopeLawsSpec
       Control.Monad.Foil.UnifiablePatternSpec
@@ -151,6 +152,7 @@ test-suite spec
     , hspec-discover
     , kind-generics >=0.5.0 && <0.6
     , kind-generics-th
+    , should-not-typecheck >=2.1.0 && <2.2
     , template-haskell >=2.21.0.0 && <2.24
     , text >=1.2.3.1 && <2.2
   default-language: Haskell2010

@@ -2,6 +2,11 @@
 
 # Unreleased
 
+Breaking changes:
+
+- **The scope indices have the nominal role** ([#112](https://github.com/fizruk/free-foil/issues/112)), in `Name`, `NameBinder` (both indices), `Scope`, `NameSet`, `NameBinders`, `NameMap` and the first index of `Substitution`, and in `ExtWithin`, `Block` and `ScopeUnion` of `Control.Monad.Foil.Blocks`. `Data.Coerce.coerce` can no longer change a scope index, so `coerce :: Name n -> Name l` is rejected, as the foil requires. Types built from these, such as `AST` and the generated syntax, get nominal scope indices by role inference. `sink` and `sink1` are not affected, and `coerce` still works where the scope stays the same, as when it wraps a name in a newtype or changes the values of a `NameMap`.
+  - Code that `coerce`s between scopes no longer compiles. Compare names of different scopes by their `nameId`, as `Language.LambdaPi.Impl.Foil` in `lambda-pi` now does, and move a term to an extended scope with `sink`. A module that imports `Control.Monad.Foil.Internal` has the `Unsafe` constructors in scope, so `coerce` still unwraps the newtypes there.
+
 Changed:
 
 - **`nameBinderListOf` is a method of `CoSinkable`** ([#110](https://github.com/fizruk/free-foil/pull/110)). Its default collects the binders with `withPattern`, as the function did. The library's instances list their binders directly (`NameBinderList` is the identity, `NameBinders` is `nameBindersList`, `Telescope` is `telescopeBinders`), and so do the instances that `deriveCoSinkable` and `mkFreeFoil` generate. An instance written by hand can define it as well.

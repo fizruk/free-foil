@@ -35,7 +35,6 @@ module Language.LambdaPi.Impl.Foil where
 
 import           Control.Monad.Foil
 import           Control.Monad.Foil.Relative
-import           Data.Coerce                     (coerce)
 import           Data.Map                        (Map)
 import qualified Data.Map                        as Map
 import           Data.String
@@ -496,7 +495,7 @@ alphaEquivRefreshed scope e1 e2 =
 -- This __does not__ include \(\alpha\)-equivalence!
 unsafeEqPattern :: Pattern n l -> Pattern n' l' -> Bool
 unsafeEqPattern PatternWildcard PatternWildcard = True
-unsafeEqPattern (PatternVar x) (PatternVar x')   = x == coerce x'
+unsafeEqPattern (PatternVar x) (PatternVar x')   = nameId (nameOf x) == nameId (nameOf x')
 unsafeEqPattern (PatternPair l r) (PatternPair l' r') =
   unsafeEqPattern l l' && unsafeEqPattern r r'
 unsafeEqPattern _ _ = False
@@ -506,7 +505,7 @@ unsafeEqPattern _ _ = False
 -- This __does not__ include \(\alpha\)-equivalence!
 unsafeEqExpr :: Expr n -> Expr l -> Bool
 unsafeEqExpr e1 e2 = case (e1, e2) of
-  (VarE x, VarE x')            -> x == coerce x'
+  (VarE x, VarE x')            -> nameId x == nameId x'
   (AppE t1 t2, AppE t1' t2')   -> unsafeEqExpr t1 t1' && unsafeEqExpr t2 t2'
   (LamE x body, LamE x' body') -> unsafeEqPattern x x' && unsafeEqExpr body body'
   (PiE x a b, PiE x' a' b') -> unsafeEqPattern x x' && unsafeEqExpr a a' && unsafeEqExpr b b'
@@ -526,7 +525,7 @@ unsafeEqExpr e1 e2 = case (e1, e2) of
 -- the scope, as for a term built in a smaller scope and sunk.
 alphaEquiv :: Distinct n => Scope n -> Expr n -> Expr n -> Bool
 alphaEquiv scope e1 e2 = case (e1, e2) of
-  (VarE x, VarE x') -> x == coerce x'
+  (VarE x, VarE x') -> x == x'
   (AppE t1 t2, AppE t1' t2') -> alphaEquiv scope t1 t1' && alphaEquiv scope t2 t2'
   (LamE x body, LamE x' body') -> case unifyPatterns x x' of
     verdict | unifiedBindersShadow scope verdict -> alphaEquivRefreshed scope e1 e2
