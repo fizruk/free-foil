@@ -216,7 +216,7 @@ idNamesOf = NamesOf []
 -- @since 0.1.0
 compNamesOf :: NamesOf n i o o' -> NamesOf i l o' o'' -> NamesOf n l o o''
 compNamesOf (NamesOf xs) (NamesOf ys) =
-  NamesOf (coerce xs ++ ys)
+  NamesOf (unsafeCoerce xs ++ ys)
 
 -- ** Refreshing binders
 
@@ -429,7 +429,7 @@ unsafeAssertFresh :: forall n l n' l' r. NameBinder n l
 unsafeAssertFresh binder cont =
   case unsafeDistinct @l' of
     Distinct -> case unsafeExt @n' @l' of
-      Ext -> cont (coerce binder)
+      Ext -> cont (unsafeCoerce binder)
 
 -- | Auxiliary structure to accumulate substitution extensions
 -- produced when refreshing a pattern.
