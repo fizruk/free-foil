@@ -16,6 +16,7 @@
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE QuantifiedConstraints      #-}
 {-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE RoleAnnotations            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
@@ -85,12 +86,17 @@ data S
 -- @since 0.0.1
 newtype Scope (n :: S) = UnsafeScope RawScope
   deriving newtype NFData
+-- Scope indices are nominal here and in the other types below, so that
+-- 'Data.Coerce.coerce' cannot change them unless the @Unsafe@ constructors
+-- are in scope.
+type role Scope nominal
 
 -- | A name in a safe scope, indexed by a type-level scope index @n@.
 --
 -- @since 0.0.1
 newtype Name (n :: S) = UnsafeName RawName
   deriving newtype (NFData, Eq, Ord, Show)
+type role Name nominal
 
 -- | Convert 'Name' into an identifier.
 -- This may be useful for printing and debugging.
@@ -105,6 +111,7 @@ nameId (UnsafeName i) = i
 newtype NameBinder (n :: S) (l :: S) =
   UnsafeNameBinder (Name l)
     deriving newtype (NFData, Eq, Ord, Show)
+type role NameBinder nominal nominal
 
 -- | An empty scope (without any names).
 --
@@ -593,6 +600,7 @@ compUnsinkName (UnsinkName f) (UnsinkName g)
 -- @since 0.4.0
 newtype NameSet (n :: S) = UnsafeNameSet RawScope
   deriving newtype (NFData, Eq, Semigroup, Monoid)
+type role NameSet nominal
 
 -- | An empty set of names.
 --
@@ -942,6 +950,7 @@ unifyNameBindersTowardsLarger l@(UnsafeNameBinder (UnsafeName i1)) r@(UnsafeName
 --
 -- @since 0.1.0
 newtype NameBinders (n :: S) (l :: S) = UnsafeNameBinders IntSet
+type role NameBinders nominal nominal
 
 -- | /Unsafely/ merge sets of binders (via set union).
 --
@@ -1884,6 +1893,7 @@ instance CoSinkable NameBinder where
 -- @since 0.0.1
 newtype Substitution (e :: S -> Type) (i :: S) (o :: S) =
   UnsafeSubstitution (IntMap (e o))
+type role Substitution representational nominal nominal
 
 -- | Apply substitution to a given name.
 --
@@ -1981,6 +1991,7 @@ instance (Sinkable e) => Sinkable (Substitution e i) where
 --
 -- @since 0.0.1
 newtype NameMap (n :: S) a = NameMap { getNameMap :: IntMap a } deriving (Functor, Foldable, Traversable)
+type role NameMap nominal representational
 
 -- | An empty map belongs in the empty scope.
 --
