@@ -15,7 +15,6 @@
 {-# LANGUAGE TemplateHaskell   #-}
 module Language.SOAS.Impl.Generated where
 
-import Data.Bifunctor.TH
 import qualified Data.Map as Map
 import Data.String (IsString(..))
 import qualified Control.Monad.Foil as Foil
@@ -25,7 +24,6 @@ import qualified Language.SOAS.Syntax.Lex    as Raw
 import qualified Language.SOAS.Syntax.Par    as Raw
 import qualified Language.SOAS.Syntax.Print  as Raw
 import Data.ZipMatchK
-import Data.ZipMatchK.TH (deriveZipMatchK2)
 import Generics.Kind.TH (deriveGenericK)
 import Language.SOAS.FreeFoilConfig (soasConfig)
 
@@ -39,6 +37,16 @@ import Language.SOAS.FreeFoilConfig (soasConfig)
 
 -- * Generated code
 
+-- The instances of the payload types come first, since the generated
+-- 'ZipMatchK' instances of the signatures need them in the same declaration
+-- group.
+-- | Ignore 'Raw.BNFC'Position' when matching terms.
+instance ZipMatchK Raw.BNFC'Position where zipMatchWithK = zipMatchViaChooseLeft
+-- | Match 'Raw.OpIdent' via 'Eq'.
+instance ZipMatchK Raw.OpIdent where zipMatchWithK = zipMatchViaEq
+-- | Match 'Raw.MetaVarIdent' via 'Eq'.
+instance ZipMatchK Raw.MetaVarIdent where zipMatchWithK = zipMatchViaEq
+
 mkFreeFoil soasConfig
 
 deriveGenericK ''OpArg'Sig
@@ -50,24 +58,6 @@ deriveGenericK ''Constraint'
 deriveGenericK ''OpTyping'
 deriveGenericK ''Binders'
 deriveGenericK ''TypeBinders'
-
-deriveBifunctor ''OpArg'Sig
-deriveBifunctor ''Term'Sig
-deriveBifunctor ''OpArgTyping'Sig
-deriveBifunctor ''ScopedOpArgTyping'Sig
-deriveBifunctor ''Type'Sig
-
-deriveBifoldable ''OpArg'Sig
-deriveBifoldable ''Term'Sig
-deriveBifoldable ''OpArgTyping'Sig
-deriveBifoldable ''ScopedOpArgTyping'Sig
-deriveBifoldable ''Type'Sig
-
-deriveBitraversable ''OpArg'Sig
-deriveBitraversable ''Term'Sig
-deriveBitraversable ''OpArgTyping'Sig
-deriveBitraversable ''ScopedOpArgTyping'Sig
-deriveBitraversable ''Type'Sig
 
 instance Foil.Sinkable (Subst' a)
 instance Foil.Sinkable (Constraint' a)
@@ -82,22 +72,6 @@ instance Foil.HasNameBinders (TypeBinders' a)
 
 mkFreeFoilConversions soasConfig
 
--- | Ignore 'Raw.BNFC'Position' when matching terms.
-instance ZipMatchK Raw.BNFC'Position where zipMatchWithK = zipMatchViaChooseLeft
--- | Match 'Raw.OpIdent' via 'Eq'.
-instance ZipMatchK Raw.OpIdent where zipMatchWithK = zipMatchViaEq
--- | Match 'Raw.MetaVarIdent' via 'Eq'.
-instance ZipMatchK Raw.MetaVarIdent where zipMatchWithK = zipMatchViaEq
-
--- | Match the signatures with the derived (rather than the generic) instances:
--- the generic one reflects each node into a "Generics.Kind" representation on
--- every comparison, and matching terms is most of what a SOAS implementation
--- does.
---
--- The three signatures refer to one another, so they have to be derived in a
--- single splice: a top-level splice ends a declaration group, and an instance
--- from a later group is not visible to an earlier one.
-concat <$> traverse deriveZipMatchK2 [''Term'Sig, ''OpArg'Sig, ''Type'Sig]
 
 instance Foil.UnifiablePattern (Binders' a)
 
