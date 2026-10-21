@@ -193,6 +193,47 @@ substitutePattern scope env binders args body =
   where
     env' = Foil.addSubstPattern env binders args
 
+-- * Transformations between signatures
+
+-- | Fold a term bottom-up into a scope-indexed carrier @r@. A variable goes
+-- through the first function, a scoped subterm through the second, given its
+-- binder and the fold of its body, and a node through the third, once its
+-- subterms are folded. The scope indices stay as they are, so the carrier
+-- can be another kind of term, as in 'hoistAST', or anything indexed by the
+-- scope, such as @'Const' Int@ for a node count.
+--
+-- To change the binder type as well, map it in the second function:
+--
+-- > foldAST Var (\binder body -> ScopedAST (toBinder binder) body) Node
+--
+-- @since 0.5.1
+{-# INLINABLE foldAST #-}
+foldAST
+  :: forall binder sig r s n. Bifunctor sig
+  => (forall m. Foil.Name m -> r m)             -- ^ A variable.
+  -> (forall m l. binder m l -> r l -> s m)     -- ^ A scoped subterm, from its binder and the fold of its body.
+  -> (forall m. sig (s m) (r m) -> r m)         -- ^ A node, its subterms folded.
+  -> AST binder sig n
+  -> r n
+foldAST var scoped node = go
+  where
+    go :: forall m. AST binder sig m -> r m
+    go (Var x)  = var x
+    go (Node t) = node (bimap (\(ScopedAST binder body) -> scoped binder (go body)) go t)
+
+-- | Change the signature of a term by a natural transformation of
+-- signatures, keeping the binders, as @hoistFree@ of the free package does
+-- for a free monad. Each node is rebuilt, so this costs a traversal.
+--
+-- @since 0.5.1
+{-# INLINABLE hoistAST #-}
+hoistAST
+  :: Bifunctor sig
+  => (forall a b. sig a b -> sig' a b)
+  -> AST binder sig n
+  -> AST binder sig' n
+hoistAST f = foldAST Var ScopedAST (Node . f)
+
 -- * \(\alpha\)-equivalence
 
 -- | Refresh (force) all binders in a term, minimizing the used indices.
