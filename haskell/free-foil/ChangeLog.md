@@ -14,6 +14,7 @@ Changed:
 
 New:
 
+- `foldAST` folds a term bottom-up into a scope-indexed carrier, and `hoistAST` changes its signature by a natural transformation, the counterpart of `hoistFree` of the free package. Both are in `Control.Monad.Free.Foil`.
 - `gnameBinderListOf` lists the binders of a pattern through its `Generics.Kind` representation ([#110](https://github.com/fizruk/free-foil/pull/110)), for an instance that takes the generic `withPattern`: `instance CoSinkable P where nameBinderListOf = gnameBinderListOf`.
 
 Performance:
