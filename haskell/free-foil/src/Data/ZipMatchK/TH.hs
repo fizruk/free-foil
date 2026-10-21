@@ -35,6 +35,7 @@ module Data.ZipMatchK.TH (
   deriveZipMatchK1,
   deriveZipMatchK2,
   deriveZipMatchKWith,
+  zipMatchKInstance,
 ) where
 
 import           Data.List             (foldl')
@@ -113,32 +114,45 @@ deriveZipMatchKWith arity typeName = do
     then fail (show typeName ++ " has " ++ show (length params)
                 ++ " type parameter(s), cannot zip the last " ++ show n)
     else do
-      let (fixed, zipped) = splitAt (length params - n) params
-          zippedSet = Set.fromList zipped
-
-      -- One zipping function per zipped parameter, in order.
-      mappingVars <- mapM (const (newName "_f")) zipped
-      let mappings = zip zipped (map VarE mappingVars)
-          mappingsPat = foldr (\v p -> InfixP (VarP v) '(:^:) p) (ConP 'M0 [] []) mappingVars
-
+      let zippedSet = Set.fromList (drop (length params - n) params)
       fieldsOf <- concat <$> mapM (constructorFields params zippedSet) cons
-      clauses <- mapM (conClause zippedSet mappings) fieldsOf
-      let fallthrough
-            | length fieldsOf > 1 = [Match WildP (NormalB (ConE 'Nothing)) []]
-            | otherwise           = []
+      zipMatchKInstance typeName params n fieldsOf
 
-      x <- newName "x"
-      y <- newName "y"
-      let body = CaseE (TupE [Just (VarE x), Just (VarE y)]) (clauses ++ fallthrough)
-          impl = FunD 'zipMatchWithK
-            [Clause [mappingsPat, VarP x, VarP y] (NormalB body) []]
+-- | The 'ZipMatchK' instance of a data type, given its name, its type
+-- parameters in order, how many of the last ones are zipped, and the fields
+-- of each constructor in terms of those parameters. This is what
+-- 'deriveZipMatchKWith' generates after reifying the type. It is for code
+-- that declares the type in the same splice, such as
+-- 'Control.Monad.Free.Foil.TH.MkFreeFoil.mkFreeFoil', which cannot reify it.
+--
+-- @since 0.5.1
+zipMatchKInstance :: Name -> [Name] -> Int -> [(Name, [Type])] -> Q [Dec]
+zipMatchKInstance typeName params n fieldsOf = do
+  let (fixed, zipped) = splitAt (length params - n) params
+      zippedSet = Set.fromList zipped
 
-          headType = foldl' AppT (ConT typeName) (map VarT fixed)
-          usedVars = foldMap (foldMap freeVarsOfType . snd) fieldsOf
-          context = [ AppT (ConT ''ZipMatchK) (VarT v)
-                    | v <- fixed, v `Set.member` usedVars ]
+  -- One zipping function per zipped parameter, in order.
+  mappingVars <- mapM (const (newName "_f")) zipped
+  let mappings = zip zipped (map VarE mappingVars)
+      mappingsPat = foldr (\v p -> InfixP (VarP v) '(:^:) p) (ConP 'M0 [] []) mappingVars
 
-      return [InstanceD Nothing context (AppT (ConT ''ZipMatchK) headType) [impl]]
+  clauses <- mapM (conClause zippedSet mappings) fieldsOf
+  let fallthrough
+        | length fieldsOf > 1 = [Match WildP (NormalB (ConE 'Nothing)) []]
+        | otherwise           = []
+
+  x <- newName "x"
+  y <- newName "y"
+  let body = CaseE (TupE [Just (VarE x), Just (VarE y)]) (clauses ++ fallthrough)
+      impl = FunD 'zipMatchWithK
+        [Clause [mappingsPat, VarP x, VarP y] (NormalB body) []]
+
+      headType = foldl' AppT (ConT typeName) (map VarT fixed)
+      usedVars = foldMap (foldMap freeVarsOfType . snd) fieldsOf
+      context = [ AppT (ConT ''ZipMatchK) (VarT v)
+                | v <- fixed, v `Set.member` usedVars ]
+
+  return [InstanceD Nothing context (AppT (ConT ''ZipMatchK) headType) [impl]]
 
 -- | The type parameters and constructors of a @data@ or @newtype@ declaration.
 reifyDataType :: Name -> Q ([TyVarBndr BndrVis], [Con])
