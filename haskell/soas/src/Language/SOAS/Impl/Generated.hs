@@ -23,6 +23,7 @@ import qualified Language.SOAS.Syntax.Abs    as Raw
 import qualified Language.SOAS.Syntax.Lex    as Raw
 import qualified Language.SOAS.Syntax.Par    as Raw
 import qualified Language.SOAS.Syntax.Print  as Raw
+import Control.DeepSeq (NFData)
 import Data.ZipMatchK
 import Generics.Kind.TH (deriveGenericK)
 import Language.SOAS.FreeFoilConfig (soasConfig)
@@ -38,8 +39,11 @@ import Language.SOAS.FreeFoilConfig (soasConfig)
 -- * Generated code
 
 -- The instances of the payload types come first, since the generated
--- 'ZipMatchK' instances of the signatures need them in the same declaration
--- group.
+-- 'ZipMatchK' and 'NFData' instances of the signatures need them in the same
+-- declaration group.
+instance NFData Raw.VarIdent
+instance NFData Raw.OpIdent
+instance NFData Raw.MetaVarIdent
 -- | Ignore 'Raw.BNFC'Position' when matching terms.
 instance ZipMatchK Raw.BNFC'Position where zipMatchWithK = zipMatchViaChooseLeft
 -- | Match 'Raw.OpIdent' via 'Eq'.
