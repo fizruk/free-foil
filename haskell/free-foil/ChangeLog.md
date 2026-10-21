@@ -9,12 +9,14 @@ Breaking changes:
 
 Changed:
 
+- **`mkFreeFoil` generates the `Bifunctor`, `Bifoldable` and `Bitraversable` instances of every signature, with `INLINE` pragmas on the methods, and its `ZipMatchK` instance**, written out as `deriveZipMatchK` does. Delete your `deriveBifunctor`, `deriveBifoldable`, `deriveBitraversable` and `deriveZipMatchK2` for the generated signatures (and the `GenericK` you derived for the generic `ZipMatchK`). `mkFreeFoilWith` takes the list of classes to generate in `signatureInstances` (all four by default). Leave out the ones you write yourself, or pass `[]` for the old behaviour. The `ZipMatchK` instances of the payload types of the raw syntax (identifiers, positions) must be declared before the `mkFreeFoil` splice, since a later declaration group is not visible to it. The pragmas matter. GHC does not inline the derived methods of a signature with about ten constructors or more, and every generic traversal of the syntax goes through them. On such a signature a generic fold through `bifoldMap` ran seven times slower than a direct traversal, and readback through `bimap` 5% slower, until the instances were marked `INLINE`.
 - **`nameBinderListOf` is a method of `CoSinkable`** ([#110](https://github.com/fizruk/free-foil/pull/110)). Its default collects the binders with `withPattern`, as the function did. The library's instances list their binders directly (`NameBinderList` is the identity, `NameBinders` is `nameBindersList`, `Telescope` is `telescopeBinders`), and so do the instances that `deriveCoSinkable` and `mkFreeFoil` generate. An instance written by hand can define it as well.
   - A module that imports `CoSinkable(..)` without `nameBinderListOf` and defines a function of that name now gets an ambiguous name. Hide one of the two.
 
 New:
 
 - `foldAST` folds a term bottom-up into a scope-indexed carrier, and `hoistAST` changes its signature by a natural transformation, the counterpart of `hoistFree` of the free package. Both are in `Control.Monad.Free.Foil`.
+- `mkFreeFoilWith` takes `FreeFoilOptions` (`defaultFreeFoilOptions`) before the config. `zipMatchKInstance` in `Data.ZipMatchK.TH` is the `ZipMatchK` instance from the constructors' fields, for code that declares the type in the same splice.
 - `gnameBinderListOf` lists the binders of a pattern through its `Generics.Kind` representation ([#110](https://github.com/fizruk/free-foil/pull/110)), for an instance that takes the generic `withPattern`: `instance CoSinkable P where nameBinderListOf = gnameBinderListOf`.
 
 Performance:

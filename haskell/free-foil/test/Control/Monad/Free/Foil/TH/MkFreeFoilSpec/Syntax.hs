@@ -1,3 +1,5 @@
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE DeriveTraversable #-}
@@ -29,7 +31,6 @@ import qualified Control.Monad.Foil                              as Foil
 import           Control.Monad.Free.Foil.Binary          ()
 import           Control.Monad.Free.Foil.Binary.TH       (deriveBinaryPattern)
 import           Control.Monad.Free.Foil.TH.MkFreeFoil
-import           Data.Bifunctor.TH
 import           Data.ZipMatchK
 import           Generics.Kind.TH                                (deriveGenericK)
 
@@ -44,12 +45,10 @@ instance Foil.HasNameBinders FFPattern
 instance Foil.UnifiablePattern FFPattern
 deriveBinaryPattern ''FFPattern
 
-deriveBifunctor ''TermSig
-deriveBifoldable ''TermSig
-deriveBitraversable ''TermSig
-
-deriveGenericK ''TermSig
 instance ZipMatchK VarIdent where zipMatchWithK = zipMatchViaEq
-instance ZipMatchK TermSig
 
 mkFreeFoilConversions config
+
+-- For the tests of the generated instances.
+deriving instance (Eq scope, Eq term) => Eq (TermSig scope term)
+deriving instance (Show scope, Show term) => Show (TermSig scope term)

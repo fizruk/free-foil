@@ -12,6 +12,11 @@ module Control.Monad.Free.Foil.TH.MkFreeFoilSpec (spec) where
 
 import qualified Control.Monad.Foil                               as Foil
 import qualified Data.Map                                         as Map
+import           Data.Bifoldable                                  (bifoldMap)
+import           Data.Bifunctor                                   (bimap)
+import           Data.Bitraversable                               (bitraverse)
+import           Data.Monoid                                      (Sum (..))
+import           Data.ZipMatchK                                   (Mappings (..), ZipMatchK (..))
 import           Test.Hspec
 
 import           Control.Monad.Free.Foil.TH.MkFreeFoilSpec.Config
@@ -34,6 +39,17 @@ identity = Fun (PatternVar y) (ScopedTerm (Var y))
 
 spec :: Spec
 spec = do
+  describe "the generated instances of the signature" $ do
+    it "map the term and the scoped positions apart" $
+      bimap (+ 1) (* 2) (LetSig (10 :: Int) (3 :: Int)) `shouldBe` LetSig 20 4
+    it "fold over both positions" $
+      getSum (bifoldMap (const (Sum 1)) (const (Sum 10)) (LetSig () ())) `shouldBe` (11 :: Int)
+    it "traverse both positions" $
+      bitraverse Just Just (AppSig 'a' 'b' :: TermSig () Char) `shouldBe` Just (AppSig 'a' 'b')
+    it "match equal constructors and reject different ones" $ do
+      zipMatchWithK (zipAdd :^: zipAdd :^: M0) (AppSig 1 2 :: TermSig Int Int) (AppSig 10 20) `shouldBe` Just (AppSig 11 22)
+      zipMatchWithK (zipAdd :^: zipAdd :^: M0) (AppSig 1 2 :: TermSig Int Int) (FunSig 3) `shouldBe` Nothing
+
   describe "a pattern adjacent to its scope (Fun)" $
     it "round-trips, and the body still refers to the binder" $
       case roundtrip (Fun (PatternVar x) (ScopedTerm (Var x))) of
@@ -71,3 +87,6 @@ spec = do
   where
     isFun Fun{} = True
     isFun _     = False
+
+zipAdd :: Int -> Int -> Maybe Int
+zipAdd a b = Just (a + b)

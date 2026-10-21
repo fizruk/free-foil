@@ -21,8 +21,6 @@ import qualified Control.Monad.Foil                                       as Foi
 import           Control.Monad.Free.Foil.Binary                          ()
 import           Control.Monad.Free.Foil.Binary.TH                       (deriveBinaryPattern)
 import           Control.Monad.Free.Foil.TH.MkFreeFoil
-import           Data.Bifunctor.TH
-import           Data.ZipMatchK
 import           Generics.Kind.TH                                         (deriveGenericK)
 
 import           Control.Monad.Free.Foil.TH.MkFreeFoilSpec.PatternsConfig
@@ -46,19 +44,5 @@ instance Foil.SinkableK FFNPattern
 instance Foil.HasNameBinders FFNPattern
 instance Foil.UnifiablePattern FFNPattern
 deriveBinaryPattern ''FFNPattern
-
-deriveBifunctor ''MTermSig
-deriveBifoldable ''MTermSig
-deriveBitraversable ''MTermSig
-deriveGenericK ''MTermSig
-instance ZipMatchK MTermSig
-
-deriveBifunctor ''ATermSig
-deriveBifoldable ''ATermSig
-deriveBitraversable ''ATermSig
-
-deriveBifunctor ''NTermSig
-deriveBifoldable ''NTermSig
-deriveBitraversable ''NTermSig
 
 mkFreeFoilConversions conversionsConfig
