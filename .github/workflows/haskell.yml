@@ -23,8 +23,18 @@ jobs:
       # signal is still there when it matters, while an ordinary PR no longer
       # pays for the (slowest) Windows job or writes ~1 GB of platform caches
       # that then evict `main`'s caches from the repository's 10 GB budget.
+      #
+      # macOS is pinned to the macos-15 image. On the newer image the linker of
+      # the GHC 9.8.2 bindist cannot read the SDK's library stubs ("tapi error:
+      # malformed file"), so even Setup.hs fails to link.
+      #
+      # Fail-fast is off. Code is checked locally before it is pushed, so a
+      # platform's toolchain is now the likelier cause of a red run on main,
+      # and the other platforms' results are what tells the two apart. With
+      # fail-fast on, they would be cancelled.
+      fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "windows-latest", "macos-latest"]') }}
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "windows-latest", "macos-15"]') }}
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
