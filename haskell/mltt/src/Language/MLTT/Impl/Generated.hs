@@ -54,8 +54,8 @@ import qualified Language.MLTT.Syntax.Print            as Raw
 -- * Generated code
 
 -- The instances of the payload types come first, since the generated
--- 'ZipMatchK' instance of the signature needs them in the same declaration
--- group.
+-- 'ZipMatchK' and 'NFData' instances of the signature need them in the same
+-- declaration group.
 -- | Ignore 'Raw.BNFC'Position' when matching terms.
 instance ZipMatchK Raw.BNFC'Position where zipMatchWithK = zipMatchViaChooseLeft
 
