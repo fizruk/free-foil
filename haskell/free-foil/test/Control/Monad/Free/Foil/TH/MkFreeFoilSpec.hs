@@ -12,6 +12,7 @@ module Control.Monad.Free.Foil.TH.MkFreeFoilSpec (spec) where
 
 import qualified Control.Monad.Foil                               as Foil
 import qualified Data.Map                                         as Map
+import           Control.DeepSeq                                  (rnf)
 import           Data.Bifoldable                                  (bifoldMap)
 import           Data.Bifunctor                                   (bimap)
 import           Data.Bitraversable                               (bitraverse)
@@ -46,6 +47,8 @@ spec = do
       getSum (bifoldMap (const (Sum 1)) (const (Sum 10)) (LetSig () ())) `shouldBe` (11 :: Int)
     it "traverse both positions" $
       bitraverse Just Just (AppSig 'a' 'b' :: TermSig () Char) `shouldBe` Just (AppSig 'a' 'b')
+    it "force a term and its patterns" $
+      rnf (toTerm Foil.emptyScope Map.empty (Let (PatternVar x) identity (ScopedTerm (Var x)))) `shouldBe` ()
     it "match equal constructors and reject different ones" $ do
       zipMatchWithK (zipAdd :^: zipAdd :^: M0) (AppSig 1 2 :: TermSig Int Int) (AppSig 10 20) `shouldBe` Just (AppSig 11 22)
       zipMatchWithK (zipAdd :^: zipAdd :^: M0) (AppSig 1 2 :: TermSig Int Int) (FunSig 3) `shouldBe` Nothing
