@@ -15,10 +15,8 @@
 module Generated where
 
 import           Control.Monad.Free.Foil.TH.MkFreeFoil (mkFreeFoil)
-import           Data.Bifunctor.TH                     (deriveBifunctor)
 
 import           Config
 
 mkFreeFoil bConfig
 
-deriveBifunctor ''BTermSig
