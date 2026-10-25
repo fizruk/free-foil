@@ -9,10 +9,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE GADTs #-}
--- | This module provides 'GenericK' and 'ZipMatchK' instances for 'Sum' and 'Product',
+-- | This module provides 'GenericK', 'ZipMatchK' and 'ZipMatchFoldK' instances for 'Sum' and 'Product',
 -- to enable the use of 'ZipMatchK' with the data types à la carte approach.
 --
--- The 'ZipMatchK' instances are written out, in the form that
+-- The 'ZipMatchK' and 'ZipMatchFoldK' instances are written out, in the form that
 -- "Data.ZipMatchK.TH" derives, rather than taken from the generic default,
 -- which converts every node to its "Generics.Kind" representation and back.
 module Data.ZipMatchK.Functor where
@@ -44,3 +44,15 @@ instance (ZipMatchK f, ZipMatchK g) => ZipMatchK (Sum f (g :: Type -> Type)) whe
 instance (ZipMatchK f, ZipMatchK g) => ZipMatchK (Product f (g :: Type -> Type)) where
   zipMatchWithK mappings@(_ :^: M0) (Pair x1 x2) (Pair y1 y2) =
     Pair <$> zipMatchWithK @_ @f mappings x1 y1 <*> zipMatchWithK @_ @g mappings x2 y2
+
+-- | Note: instance is limited to 'Type'-kinded functors @f@ and @g@.
+instance (ZipMatchFoldK f, ZipMatchFoldK g) => ZipMatchFoldK (Sum f (g :: Type -> Type)) where
+  zipMatchFoldK folds@(_ :%: F0) l r = case (l, r) of
+    (InL x, InL y) -> zipMatchFoldK @_ @f folds x y
+    (InR x, InR y) -> zipMatchFoldK @_ @g folds x y
+    _              -> Nothing
+
+-- | Note: instance is limited to 'Type'-kinded functors @f@ and @g@.
+instance (ZipMatchFoldK f, ZipMatchFoldK g) => ZipMatchFoldK (Product f (g :: Type -> Type)) where
+  zipMatchFoldK folds@(_ :%: F0) (Pair x1 x2) (Pair y1 y2) =
+    (<>) <$> zipMatchFoldK @_ @f folds x1 y1 <*> zipMatchFoldK @_ @g folds x2 y2
