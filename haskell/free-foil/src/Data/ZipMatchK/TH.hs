@@ -171,7 +171,9 @@ zipMatchKInstance typeName params n fieldsOf = do
 -- folded by that type's 'ZipMatchFoldK', and any other field is compared by
 -- its 'ZipMatchK' and contributes nothing. The contributions are combined with
 -- '<>', nested to the right, so that a lazy monoid such as 'Data.Monoid.All'
--- stops at the first field that fails.
+-- stops at the first field that fails. The method is @INLINE@, so that at a
+-- call site with a known monoid and known folding functions the match
+-- compiles to a @case@ on the two values with the functions applied in place.
 --
 -- @since 0.5.1
 zipMatchFoldKInstance :: Name -> [Name] -> Int -> [(Name, [Type])] -> Q [Dec]
@@ -202,7 +204,8 @@ zipMatchFoldKInstance typeName params n fieldsOf = do
       context = [ AppT (ConT ''ZipMatchK) (VarT v) | v <- fixed, v `Set.member` needsZipMatchK ]
              ++ [ AppT (ConT ''ZipMatchFoldK) (VarT v) | v <- fixed, v `Set.member` needsZipMatchFoldK ]
 
-  return [InstanceD Nothing context (AppT (ConT ''ZipMatchFoldK) headType) [impl]]
+  return [InstanceD Nothing context (AppT (ConT ''ZipMatchFoldK) headType)
+            [PragmaD (InlineP 'zipMatchFoldK Inline FunLike AllPhases), impl]]
 
 -- | How a field takes part in a folding match.
 data FieldFolder
