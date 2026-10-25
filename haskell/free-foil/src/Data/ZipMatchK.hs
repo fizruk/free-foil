@@ -14,6 +14,7 @@ module Data.ZipMatchK (
   ZipMatchK(..),
   zipMatchK,
   ZipMatchFoldK(..),
+  zipMatchAllK,
   -- * Specializations
   -- ** Unification of plain 'Data.Kind.Type's
   zipMatchViaEq,
@@ -22,12 +23,16 @@ module Data.ZipMatchK (
   zipMatchWith1,
   zipMatch1,
   zipMatchFold1,
+  zipMatchAll1,
   -- ** Unification of 'Data.Bifunctor.Bifunctor's
   zipMatchWith2,
   zipMatch2,
   zipMatchFold2,
+  zipMatchAll2,
 ) where
 
+import           Data.Coerce (coerce)
+import           Data.Monoid (All (..))
 import           Generics.Kind
 import Data.Bitraversable
 
@@ -132,3 +137,45 @@ zipMatchFold2
   -> (b -> b' -> m)
   -> f a b -> f a' b' -> Maybe m
 zipMatchFold2 f g = zipMatchFoldK (f :%: g :%: F0)
+
+-- | Check a relation on all paired components: 'Nothing' when the shapes
+-- differ, as for 'zipMatchFoldK', and otherwise whether every component
+-- satisfies its relation. The components are checked left to right, and the
+-- check stops at the first that fails.
+--
+-- > zipMatchAllK = fmap getAll . zipMatchFoldK (coerce relations)
+--
+-- @since 0.5.1
+zipMatchAllK :: forall f as bs. ZipMatchFoldK f => Folds Bool as bs -> f :@@: as -> f :@@: bs -> Maybe Bool
+zipMatchAllK relations x y = getAll <$> zipMatchFoldK @_ @f @as @bs (coerce relations) x y
+{-# INLINE zipMatchAllK #-}
+
+-- | 'zipMatchAllK' specialised to functors.
+--
+-- >>> zipMatchAll1 (==) (Just 1) (Just (1 :: Int))
+-- Just True
+-- >>> zipMatchAll1 (==) [1, 2] [1, 3 :: Int]
+-- Just False
+-- >>> zipMatchAll1 (==) [1, 2] [1 :: Int]
+-- Nothing
+--
+-- @since 0.5.1
+zipMatchAll1 :: ZipMatchFoldK f => (a -> a' -> Bool) -> f a -> f a' -> Maybe Bool
+zipMatchAll1 f = zipMatchAllK (f :%: F0)
+{-# INLINE zipMatchAll1 #-}
+
+-- | 'zipMatchAllK' specialised to bifunctors.
+--
+-- >>> zipMatchAll2 (==) (==) (Left 1) (Left (1 :: Int) :: Either Int Int)
+-- Just True
+-- >>> zipMatchAll2 (==) (==) (Left 1) (Right (1 :: Int) :: Either Int Int)
+-- Nothing
+--
+-- @since 0.5.1
+zipMatchAll2
+  :: ZipMatchFoldK f
+  => (a -> a' -> Bool)
+  -> (b -> b' -> Bool)
+  -> f a b -> f a' b' -> Maybe Bool
+zipMatchAll2 f g = zipMatchAllK (f :%: g :%: F0)
+{-# INLINE zipMatchAll2 #-}
