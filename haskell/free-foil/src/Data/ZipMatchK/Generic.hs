@@ -82,9 +82,17 @@ class ZipMatchFoldK (f :: k) where
   default zipMatchFoldK :: forall as bs m.
     (GenericK f, GZipMatchFold (RepK f), Monoid m)
     => Folds m as bs -> f :@@: as -> f :@@: bs -> Maybe m
-  zipMatchFoldK folds x y = gzipMatchFold folds
-    (fromK @_ @f @as x)
-    (fromK @_ @f @bs y)
+  zipMatchFoldK = genericZipMatchFoldK @f @as @bs @m
+
+-- | Generic implementation of 'zipMatchFoldK'.
+--
+-- @since 0.5.1
+genericZipMatchFoldK :: forall f as bs m.
+    (GenericK f, GZipMatchFold (RepK f), Monoid m)
+    => Folds m as bs -> f :@@: as -> f :@@: bs -> Maybe m
+genericZipMatchFoldK folds x y = gzipMatchFold folds
+  (fromK @_ @f @as x)
+  (fromK @_ @f @bs y)
 
 -- | Generic implementation of 'Data.ZipMatch.zipMatchK'.
 --
