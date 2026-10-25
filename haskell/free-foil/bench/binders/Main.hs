@@ -17,7 +17,7 @@
 -- default 'Foil.unifyPatterns' (in 'alphaEquiv').
 --
 -- The pattern types cover each way to get a 'Foil.CoSinkable' instance: the
--- library's own instances (with 'Telescope'), 'deriveCoSinkable',
+-- library's own instances (with 'Telescope'), 'mkCoSinkableFoilPattern',
 -- 'mkFreeFoil', instances written by hand and the generic default.
 --
 -- Each pattern type is measured twice. At a known type, a call can be
@@ -32,7 +32,7 @@ import           Test.Tasty.Bench
 import qualified Control.Monad.Foil            as Foil
 import qualified Control.Monad.Foil.Example    as Example
 import           Control.Monad.Foil.Telescope  (Telescope (..))
-import           Control.Monad.Foil.TH         (deriveCoSinkable, mkFoilPattern)
+import           Control.Monad.Foil.TH         (mkCoSinkableFoilPattern, mkFoilPattern)
 import           Control.Monad.Free.Foil
 import           Data.ZipMatchK.TH       (deriveZipMatchK)
 import           Generics.Kind.TH        (deriveGenericK)
@@ -61,12 +61,12 @@ instance Foil.CoSinkable GPairPattern where
   nameBinderListOf = Foil.gnameBinderListOf
 
 -- | A pattern of variables and pairs with the instance that
--- 'deriveCoSinkable' generates, as in a language generated from a BNFC grammar.
+-- 'mkCoSinkableFoilPattern' generates, as in a language generated from a BNFC grammar.
 newtype RawIdent = RawIdent String
 data RawPattern = RawPatternVar RawIdent | RawPatternPair RawPattern RawPattern
 
 mkFoilPattern ''RawIdent ''RawPattern
-deriveCoSinkable ''RawIdent ''RawPattern
+mkCoSinkableFoilPattern ''RawIdent ''RawPattern
 
 -- | A pattern of two binders with 'Foil.withPattern' written by hand and no
 -- other method.
@@ -228,7 +228,7 @@ main =
                   [ bench "known type"   $ whnf (size . Foil.nameBinderListOf) list4
                   , bench "a dictionary" $ whnf listedSome (SomePattern list4)
                   ]
-              , bgroup "deriveCoSinkable pair of 2"
+              , bgroup "mkCoSinkableFoilPattern pair of 2"
                   [ bench "known type"   $ whnf (size . Foil.nameBinderListOf) thPair
                   , bench "a dictionary" $ whnf listedSome (SomePattern thPair)
                   ]

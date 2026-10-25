@@ -3,7 +3,11 @@
 {-# LANGUAGE QuasiQuotes           #-}
 {-# LANGUAGE TemplateHaskellQuotes #-}
 {-# OPTIONS_GHC -fno-warn-type-defaults #-}
-module Control.Monad.Foil.TH.MkInstancesFoil where
+module Control.Monad.Foil.TH.MkInstancesFoil (
+  mkInstancesFoil,
+  mkCoSinkableFoilPattern,
+  deriveCoSinkable,
+) where
 
 import           Language.Haskell.TH
 
@@ -23,7 +27,7 @@ mkInstancesFoil termT nameT scopeT patternT = do
   TyConI (DataD _ctx _name scopeTVars _kind scopeCons _deriv) <- reify scopeT
   TyConI (DataD _ctx _name termTVars _kind termCons _deriv) <- reify termT
 
-  coSinkablePatternD <- deriveCoSinkable nameT patternT
+  coSinkablePatternD <- mkCoSinkableFoilPattern nameT patternT
 
   return $
     [ InstanceD Nothing [] (AppT (ConT ''Foil.Sinkable) (PeelConT foilScopeT (map (VarT . tvarName) scopeTVars)))
@@ -79,14 +83,19 @@ mkInstancesFoil termT nameT scopeT patternT = do
           where
             xi = mkName ("x" ++ show i)
 
--- | Generate 'Foil.Sinkable' and 'Foil.CoSinkable' instances.
+-- | Generate the 'Foil.CoSinkable' instance of the pattern type that
+-- 'Control.Monad.Foil.TH.MkFoilData.mkFoilPattern' generates from a raw
+-- pattern type, given the raw types of identifiers and patterns.
+-- 'deriveCoSinkable' takes the scope-safe pattern type itself.
 --
--- @since 0.1.0
-deriveCoSinkable
+-- Up to 0.5.0, this was 'deriveCoSinkable'.
+--
+-- @since 0.5.1
+mkCoSinkableFoilPattern
   :: Name -- ^ Type name for raw variable identifiers.
   -> Name -- ^ Type name for raw patterns.
   -> Q [Dec]
-deriveCoSinkable nameT patternT = do
+mkCoSinkableFoilPattern nameT patternT = do
   TyConI (DataD _ctx _name patternTVars _kind patternCons _deriv) <- reify patternT
 
   return
@@ -191,3 +200,181 @@ deriveCoSinkable nameT patternT = do
           go (i + 1) scope' rename' (AppE p (VarE xi)) conPatterns
           where
             xi = mkName ("x" ++ show i)
+
+-- | Generate the 'Foil.CoSinkable' instance of a scope-safe pattern type.
+-- 'mkCoSinkableFoilPattern' takes the raw pattern type instead.
+--
+-- > data Pat (n :: S) (l :: S) where
+-- >   PatVar  :: NameBinder n l -> Pat n l
+-- >   PatPair :: NameBinder n i -> NameBinder i l -> Pat n l
+-- >
+-- > deriveCoSinkable ''Pat
+--
+-- A field is a 'Foil.NameBinder', a nested pattern, or a payload that
+-- mentions no scope. A payload indexed by a scope needs a hand-written
+-- instance (see 'Foil.transportPayload').
+--
+-- @since 0.5.1
+deriveCoSinkable :: Name -> Q [Dec]
+deriveCoSinkable patternT = do
+  (tvars, cons) <- reify patternT >>= \case
+    TyConI (DataD _ _ tvs _ cs _)    -> return (tvs, cs)
+    TyConI (NewtypeD _ _ tvs _ c _)  -> return (tvs, [c])
+    _ -> fail ("deriveCoSinkable: " ++ show patternT ++ " is not a data type")
+  let params = map tvarName tvars
+  if length params < 2
+    then fail ("deriveCoSinkable: " ++ show patternT ++ " has fewer than two type parameters")
+    else do
+      fields <- concat <$> mapM (patternConFields patternT) cons
+      coSinkClauses <- mapM patternCoSinkabilityProofClause fields
+      withPatClauses <- mapM patternWithPatternClause fields
+      listClauses <- mapM patternNameBinderListOfClause fields
+      -- A pattern that nests itself has a recursive 'Foil.withPattern', which
+      -- cannot inline.
+      let recursive = or [ h == ConT patternT | (_, sorts) <- fields, PatternNested h <- sorts ]
+          inline = [ PragmaD (InlineP 'Foil.withPattern Inline FunLike AllPhases) | not recursive ]
+      return
+        [ InstanceD Nothing [] (AppT (ConT ''Foil.CoSinkable) (foldl AppT (ConT patternT) (map VarT (take (length params - 2) params))))
+            ([ FunD 'Foil.coSinkabilityProof coSinkClauses
+             , FunD 'Foil.withPattern withPatClauses
+             , FunD 'Foil.nameBinderListOf listClauses
+             ] ++ inline)
+        ]
+
+-- | How a field of a pattern constructor takes part in its instance.
+data PatternField
+  = PatternBinder        -- ^ A 'Foil.NameBinder'.
+  | PatternNested Type   -- ^ A nested pattern, with its own 'Foil.CoSinkable'; its type's head.
+  | PatternPayload       -- ^ A field that mentions no scope.
+
+-- | The constructors of a pattern type, each with the sorts of its fields.
+-- The scopes of a constructor are the last two arguments of its return type
+-- and its existential variables, such as the intermediate scope of a pair.
+patternConFields :: Name -> Con -> Q [(Name, [PatternField])]
+patternConFields patternT = go []
+  where
+    go bound = \case
+      NormalC conName _ -> fail ("deriveCoSinkable: constructor " ++ show conName
+        ++ " of " ++ show patternT ++ " is not in GADT syntax, so its scopes are unknown")
+      RecC conName _ -> go bound (NormalC conName [])
+      InfixC _ conName _ -> go bound (NormalC conName [])
+      ForallC tvs _ con -> go (bound ++ map tvarName tvs) con
+      RecGadtC conNames types retType -> go bound (GadtC conNames (map removeName types) retType)
+      GadtC conNames types retType -> do
+        let (_, args) = unApplyType retType
+            scopes = [ v | VarT v <- drop (length args - 2) args ] ++ bound
+        sorts <- mapM (fieldSort scopes . snd) types
+        return [ (conName, sorts) | conName <- conNames ]
+
+    fieldSort scopes type_ =
+      let (headT, args) = unApplyType type_
+          mentions = any (`elem` scopes) (namesOfType type_)
+          lastTwoScopes = case reverse args of
+            VarT b : VarT a : _ -> a `elem` scopes && b `elem` scopes
+            _                   -> False
+      in case headT of
+           ConT n | n == ''Foil.NameBinder -> return PatternBinder
+           _ | lastTwoScopes -> return (PatternNested headT)
+             | not mentions  -> return PatternPayload
+             | otherwise -> fail ("deriveCoSinkable: a field of type " ++ pprint type_
+                 ++ " in " ++ show patternT ++ " mentions a scope; write the instance by hand"
+                 ++ " (transportPayload is the sanctioned way to rebuild such a field)")
+
+-- | A type split into its head and arguments, without parentheses and kind
+-- signatures.
+unApplyType :: Type -> (Type, [Type])
+unApplyType = go []
+  where
+    go acc (AppT f x)   = go (x : acc) f
+    go acc (ParensT t)  = go acc t
+    go acc (SigT t _)   = go acc t
+    go acc t            = (t, acc)
+
+-- | The type variables a type mentions.
+namesOfType :: Type -> [Name]
+namesOfType = \case
+  VarT v       -> [v]
+  AppT f x     -> namesOfType f ++ namesOfType x
+  SigT t _     -> namesOfType t
+  ParensT t    -> namesOfType t
+  AppKindT t _ -> namesOfType t
+  _            -> []
+
+isBindingField :: PatternField -> Bool
+isBindingField = \case
+  PatternPayload -> False
+  _              -> True
+
+-- | One 'Foil.coSinkabilityProof' clause: the binding fields are renamed in
+-- turn, each with the renaming the previous one extended.
+patternCoSinkabilityProofClause :: (Name, [PatternField]) -> Q Clause
+patternCoSinkabilityProofClause (conName, sorts) = do
+  rename <- newName (if any isBindingField sorts then "rename" else "_rename")
+  cont <- newName "cont"
+  xs <- mapM (\i -> newName ("x" ++ show i)) [1 .. length sorts]
+  let go renameCur [] fields = return (VarE cont `AppE` VarE renameCur `AppE` foldl AppE (ConE conName) (fields []))
+      go renameCur ((PatternPayload, x) : rest) fields = go renameCur rest (fields . (VarE x :))
+      go renameCur ((_, x) : rest) fields = do
+        renameNext <- newName "rename'"
+        x' <- newName (nameBase x ++ "'")
+        body <- go renameNext rest (fields . (VarE x' :))
+        return (VarE 'Foil.coSinkabilityProof `AppE` VarE renameCur `AppE` VarE x
+                  `AppE` LamE [VarP renameNext, VarP x'] body)
+  body <- go rename (zip sorts xs) id
+  return (Clause [VarP rename, ConP conName [] (map VarP xs), VarP cont] (NormalB body) [])
+
+-- | One 'Foil.withPattern' clause, in the form of
+-- 'Control.Monad.Free.Foil.TH.MkFreeFoil.mkFreeFoil': a binder field goes
+-- through @withBinder@ and extends the scope for the fields to its right, a
+-- nested pattern through its own 'Foil.withPattern', and the results compose
+-- left to right.
+patternWithPatternClause :: (Name, [PatternField]) -> Q Clause
+patternWithPatternClause (conName, sorts) = do
+  let nBinding = length (filter isBindingField sorts)
+      hasNested = any (\case PatternNested _ -> True; _ -> False) sorts
+      usedIf b n = if b then n else '_' : n
+  withBinder <- newName (usedIf (nBinding > 0) "withBinder")
+  unit_ <- newName (usedIf (nBinding == 0 || hasNested) "unit_")
+  comp_ <- newName (usedIf (nBinding >= 2 || hasNested) "comp_")
+  scope <- newName "scope"
+  cont <- newName "cont"
+  xs <- mapM (\i -> newName ("x" ++ show i)) [1 .. length sorts]
+  let go scopeCur acc [] fields =
+        return (VarE cont `AppE` maybe (VarE unit_) id acc
+                  `AppE` foldl AppE (ConE conName) (fields [])
+                  `AppE` VarE scopeCur)
+      go scopeCur acc ((PatternPayload, x) : rest) fields = go scopeCur acc rest (fields . (VarE x :))
+      go scopeCur acc ((sort_, x) : rest) fields = do
+        x' <- newName (nameBase x ++ "'")
+        f <- newName "f"
+        scopeNext <- newName "scope'"
+        let acc' = case acc of
+              Nothing -> VarE f
+              Just a  -> VarE comp_ `AppE` a `AppE` VarE f
+        body <- go scopeNext (Just acc') rest (fields . (VarE x' :))
+        return $ case sort_ of
+          PatternBinder ->
+            VarE withBinder `AppE` VarE scopeCur `AppE` VarE x
+              `AppE` LamE [VarP f, VarP x']
+                  (LetE [ValD (VarP scopeNext)
+                           (NormalB (VarE 'Foil.extendScope `AppE` VarE x' `AppE` VarE scopeCur)) []]
+                     body)
+          _ ->
+            VarE 'Foil.withPattern `AppE` VarE withBinder `AppE` VarE unit_
+              `AppE` VarE comp_ `AppE` VarE scopeCur `AppE` VarE x
+              `AppE` LamE [VarP f, VarP x', VarP scopeNext] body
+  body <- go scope Nothing (zip sorts xs) id
+  return (Clause
+    [VarP withBinder, VarP unit_, VarP comp_, VarP scope, ConP conName [] (map VarP xs), VarP cont]
+    (NormalB body) [])
+
+-- | One 'Foil.nameBinderListOf' clause: the binding fields, left to right.
+patternNameBinderListOfClause :: (Name, [PatternField]) -> Q Clause
+patternNameBinderListOfClause (conName, sorts) = do
+  xs <- mapM (\i -> newName ("x" ++ show i)) [1 .. length sorts]
+  let pats = [ if isBindingField s then VarP x else WildP | (s, x) <- zip sorts xs ]
+      lists = [ VarE 'Foil.nameBinderListOf `AppE` VarE x | (s, x) <- zip sorts xs, isBindingField s ]
+      body = case lists of
+        [] -> ConE 'Foil.NameBinderListEmpty
+        _  -> foldr1 (\l r -> VarE 'Foil.concatNameBinderLists `AppE` l `AppE` r) lists
+  return (Clause [ConP conName [] pats] (NormalB body) [])
