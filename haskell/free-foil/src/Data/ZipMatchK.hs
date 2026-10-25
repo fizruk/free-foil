@@ -13,6 +13,7 @@ module Data.ZipMatchK (
   module Data.ZipMatchK.Mappings,
   ZipMatchK(..),
   zipMatchK,
+  ZipMatchFoldK(..),
   -- * Specializations
   -- ** Unification of plain 'Data.Kind.Type's
   zipMatchViaEq,
@@ -20,9 +21,11 @@ module Data.ZipMatchK (
   -- ** Unification of 'Data.Functor.Functor's
   zipMatchWith1,
   zipMatch1,
+  zipMatchFold1,
   -- ** Unification of 'Data.Bifunctor.Bifunctor's
   zipMatchWith2,
   zipMatch2,
+  zipMatchFold2,
 ) where
 
 import           Generics.Kind
@@ -92,3 +95,40 @@ zipMatchWith2 f g = zipMatchWithK (f :^: g :^: M0)
 -- @since 0.3.0
 zipMatch2 :: (Bitraversable f, ZipMatchK f) => f a b -> f a' b' -> Maybe (f (a, a') (b, b'))
 zipMatch2 = zipMatchWith2 pairA pairA
+
+-- | 'zipMatchFoldK' specialised to functors.
+--
+-- >>> zipMatchFold1 (\x y -> [x + y]) (Just 1) (Just (2 :: Int))
+-- Just [3]
+-- >>> zipMatchFold1 (\x y -> [x + y]) [1, 2] [10, 20 :: Int]
+-- Just [11,22]
+-- >>> zipMatchFold1 (\x y -> [x + y]) [1, 2] [10 :: Int]
+-- Nothing
+--
+-- @since 0.5.1
+zipMatchFold1
+  :: (ZipMatchFoldK f, Monoid m)
+  => (a -> a' -> m)
+  -> f a -> f a' -> Maybe m
+zipMatchFold1 f = zipMatchFoldK (f :%: F0)
+
+-- | 'zipMatchFoldK' specialised to bifunctors. With 'Data.Monoid.All' it
+-- checks that two nodes have the same constructor and that their components
+-- satisfy a relation, without building anything for the components:
+--
+-- >>> import Data.Monoid (All (..))
+-- >>> let same = zipMatchFold2 (\x y -> All (x == y)) (\x y -> All (x == y))
+-- >>> getAll <$> same (Left 1) (Left (1 :: Int) :: Either Int Int)
+-- Just True
+-- >>> getAll <$> same (Left 1) (Left (2 :: Int) :: Either Int Int)
+-- Just False
+-- >>> getAll <$> same (Left 1) (Right (1 :: Int) :: Either Int Int)
+-- Nothing
+--
+-- @since 0.5.1
+zipMatchFold2
+  :: (ZipMatchFoldK f, Monoid m)
+  => (a -> a' -> m)
+  -> (b -> b' -> m)
+  -> f a b -> f a' b' -> Maybe m
+zipMatchFold2 f g = zipMatchFoldK (f :%: g :%: F0)
