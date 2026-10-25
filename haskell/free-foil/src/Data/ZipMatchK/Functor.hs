@@ -47,6 +47,7 @@ instance (ZipMatchK f, ZipMatchK g) => ZipMatchK (Product f (g :: Type -> Type))
 
 -- | Note: instance is limited to 'Type'-kinded functors @f@ and @g@.
 instance (ZipMatchFoldK f, ZipMatchFoldK g) => ZipMatchFoldK (Sum f (g :: Type -> Type)) where
+  {-# INLINE zipMatchFoldK #-}
   zipMatchFoldK folds@(_ :%: F0) l r = case (l, r) of
     (InL x, InL y) -> zipMatchFoldK @_ @f folds x y
     (InR x, InR y) -> zipMatchFoldK @_ @g folds x y
@@ -54,5 +55,6 @@ instance (ZipMatchFoldK f, ZipMatchFoldK g) => ZipMatchFoldK (Sum f (g :: Type -
 
 -- | Note: instance is limited to 'Type'-kinded functors @f@ and @g@.
 instance (ZipMatchFoldK f, ZipMatchFoldK g) => ZipMatchFoldK (Product f (g :: Type -> Type)) where
+  {-# INLINE zipMatchFoldK #-}
   zipMatchFoldK folds@(_ :%: F0) (Pair x1 x2) (Pair y1 y2) =
     (<>) <$> zipMatchFoldK @_ @f folds x1 y1 <*> zipMatchFoldK @_ @g folds x2 y2
