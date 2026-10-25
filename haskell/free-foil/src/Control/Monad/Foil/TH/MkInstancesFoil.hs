@@ -373,8 +373,14 @@ patternNameBinderListOfClause :: (Name, [PatternField]) -> Q Clause
 patternNameBinderListOfClause (conName, sorts) = do
   xs <- mapM (\i -> newName ("x" ++ show i)) [1 .. length sorts]
   let pats = [ if isBindingField s then VarP x else WildP | (s, x) <- zip sorts xs ]
-      lists = [ VarE 'Foil.nameBinderListOf `AppE` VarE x | (s, x) <- zip sorts xs, isBindingField s ]
-      body = case lists of
+      -- A binder is consed on directly. Only a nested pattern's list is
+      -- concatenated, since 'Foil.concatNameBinderLists' is recursive and
+      -- copies its first argument.
+      list = \case
         [] -> ConE 'Foil.NameBinderListEmpty
-        _  -> foldr1 (\l r -> VarE 'Foil.concatNameBinderLists `AppE` l `AppE` r) lists
+        [(PatternNested _, x)] -> VarE 'Foil.nameBinderListOf `AppE` VarE x
+        (PatternNested _, x) : rest ->
+          VarE 'Foil.concatNameBinderLists `AppE` (VarE 'Foil.nameBinderListOf `AppE` VarE x) `AppE` list rest
+        (_, x) : rest -> ConE 'Foil.NameBinderListCons `AppE` VarE x `AppE` list rest
+      body = list [ (s, x) | (s, x) <- zip sorts xs, isBindingField s ]
   return (Clause [ConP conName [] pats] (NormalB body) [])

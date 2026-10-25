@@ -591,11 +591,16 @@ mkNameBinderListOfClause config (rawConName, rawFieldTypes) = do
   let fieldPattern sort x
         | isBindingFieldSort sort = VarP x
         | otherwise               = WildP
-      lists = [ VarE 'Foil.nameBinderListOf `AppE` VarE x
-              | (sort, x) <- zip sorts xs, isBindingFieldSort sort ]
-      body = case lists of
+      -- A binder is consed on directly. Only a nested binding type's list is
+      -- concatenated, since 'Foil.concatNameBinderLists' is recursive and
+      -- copies its first argument.
+      list = \case
         [] -> ConE 'Foil.NameBinderListEmpty
-        _  -> foldr1 (\l r -> VarE 'Foil.concatNameBinderLists `AppE` l `AppE` r) lists
+        [(FieldPattern, x)] -> VarE 'Foil.nameBinderListOf `AppE` VarE x
+        (FieldPattern, x) : rest ->
+          VarE 'Foil.concatNameBinderLists `AppE` (VarE 'Foil.nameBinderListOf `AppE` VarE x) `AppE` list rest
+        (_, x) : rest -> ConE 'Foil.NameBinderListCons `AppE` VarE x `AppE` list rest
+      body = list [ (sort, x) | (sort, x) <- zip sorts xs, isBindingFieldSort sort ]
   return (Clause [ConP conName [] (zipWith fieldPattern sorts xs)] (NormalB body) [])
 
 termConToPat :: Name -> FreeFoilConfig -> FreeFoilTermConfig -> Con -> Q [([Name], Pat, Pat, [Exp])]
