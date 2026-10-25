@@ -374,7 +374,7 @@ withRefreshedIn range scope@(UnsafeScope rawScope) name@(UnsafeName rawName) con
 -- variable.
 --
 -- @since 0.0.1
-{-# INLINABLE withRefreshedPattern #-}
+{-# INLINE withRefreshedPattern #-}
 withRefreshedPattern
   :: (Distinct o, CoSinkable pattern, Sinkable e, InjectName e)
   => Scope o      -- ^ Ambient scope.
