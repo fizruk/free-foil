@@ -201,9 +201,8 @@ mkCoSinkableFoilPattern nameT patternT = do
           where
             xi = mkName ("x" ++ show i)
 
--- | Generate the 'Foil.CoSinkable' instance of a scope-safe pattern type,
--- given its name. 'mkCoSinkableFoilPattern' takes the raw pattern type instead.
--- Up to 0.5.0, 'deriveCoSinkable' was that function.
+-- | Generate the 'Foil.CoSinkable' instance of a scope-safe pattern type.
+-- 'mkCoSinkableFoilPattern' takes the raw pattern type instead.
 --
 -- > data Pat (n :: S) (l :: S) where
 -- >   PatVar  :: NameBinder n l -> Pat n l
@@ -211,24 +210,9 @@ mkCoSinkableFoilPattern nameT patternT = do
 -- >
 -- > deriveCoSinkable ''Pat
 --
--- The last two type parameters are the scopes the pattern extends from and
--- to. A field is a 'Foil.NameBinder', a nested pattern (a type whose last two
--- arguments are scopes, with its own 'Foil.CoSinkable' instance), or a payload
--- that mentions no scope. The binding fields extend the scope one after
--- another, in the order of the fields. A payload indexed by a scope (the type
--- in a telescope's step, say) needs a hand-written instance, see
--- 'Foil.transportPayload'.
---
--- The instance is the one 'Control.Monad.Free.Foil.TH.MkFreeFoil.mkFreeFoil'
--- generates for its binding types: one clause per constructor, with the
--- binders listed directly in 'Foil.nameBinderListOf', rather than the generic
--- defaults, which go through the kind-generic representation of the pattern
--- at every binder. Unless the pattern nests itself, 'Foil.withPattern' is
--- @INLINE@, so that a caller at a known pattern type, such as
--- 'Foil.withRefreshedPattern', compiles to the binder steps themselves.
---
--- Like any splice, it ends a declaration group: put it before the instances
--- that need 'Foil.CoSinkable', such as 'Foil.UnifiablePattern'.
+-- A field is a 'Foil.NameBinder', a nested pattern, or a payload that
+-- mentions no scope. A payload indexed by a scope needs a hand-written
+-- instance (see 'Foil.transportPayload').
 --
 -- @since 0.5.1
 deriveCoSinkable :: Name -> Q [Dec]
