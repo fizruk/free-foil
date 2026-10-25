@@ -20,6 +20,7 @@ module Data.ZipMatchK.Generic where
 
 import           Data.Kind              (Constraint, Type)
 import           Data.List.NonEmpty
+import           Data.Monoid            (Ap (..))
 import           Generics.Kind
 import           Generics.Kind.Examples ()
 import           GHC.TypeError
@@ -56,6 +57,43 @@ class ZipMatchK (f :: k) where
     => Mappings as bs cs -> f :@@: as -> f :@@: bs -> Maybe (f :@@: cs)
   zipMatchWithK = genericZipMatchWithK @f @as @bs @cs
 
+-- | Kind-polymorphic syntactic matching of two values that folds the paired
+-- components into a monoid instead of rebuilding the value.
+--
+-- 'zipMatchFoldK' answers 'Nothing' exactly when 'zipMatchWithK' with
+-- functions that always succeed would: when the constructors differ, or a
+-- component compared by its own 'ZipMatchK' differs. Otherwise it combines
+-- the folding functions applied to the paired components, left to right with
+-- '<>'. Nothing else is built, neither the matched value nor a pair per
+-- component, so a check of all components (with 'Data.Monoid.All', say)
+-- allocates nothing for the components and stops at the first one that
+-- fails.
+--
+-- The default implementation is generic, via 'Generics.Kind.RepK', with the
+-- costs described at 'ZipMatchK'. 'Data.ZipMatchK.TH.deriveZipMatchK' derives
+-- a written-out instance together with the one of 'ZipMatchK'.
+--
+-- @since 0.5.1
+class ZipMatchFoldK (f :: k) where
+  -- | Perform one level of equality testing and fold the paired components.
+  --
+  -- @since 0.5.1
+  zipMatchFoldK :: forall as bs m. Monoid m => Folds m as bs -> f :@@: as -> f :@@: bs -> Maybe m
+  default zipMatchFoldK :: forall as bs m.
+    (GenericK f, GZipMatchFold (RepK f), Monoid m)
+    => Folds m as bs -> f :@@: as -> f :@@: bs -> Maybe m
+  zipMatchFoldK = genericZipMatchFoldK @f @as @bs @m
+
+-- | Generic implementation of 'zipMatchFoldK'.
+--
+-- @since 0.5.1
+genericZipMatchFoldK :: forall f as bs m.
+    (GenericK f, GZipMatchFold (RepK f), Monoid m)
+    => Folds m as bs -> f :@@: as -> f :@@: bs -> Maybe m
+genericZipMatchFoldK folds x y = gzipMatchFold folds
+  (fromK @_ @f @as x)
+  (fromK @_ @f @bs y)
+
 -- | Generic implementation of 'Data.ZipMatch.zipMatchK'.
 --
 -- @since 0.2.0
@@ -88,6 +126,14 @@ instance ZipMatchK Maybe
 instance ZipMatchK Either
 instance ZipMatchK a => ZipMatchK (Either a)
 instance ZipMatchK NonEmpty
+
+instance ZipMatchFoldK (,)
+instance ZipMatchK a => ZipMatchFoldK ((,) a)
+instance ZipMatchFoldK []
+instance ZipMatchFoldK Maybe
+instance ZipMatchFoldK Either
+instance ZipMatchK a => ZipMatchFoldK (Either a)
+instance ZipMatchFoldK NonEmpty
 
 -- | What 'gzipMatchWith' requires when the components are paired up.
 --
@@ -235,3 +281,120 @@ instance TypeError
   :$$: 'ShowType (Eval a)) => ZipMatchFields (Eval a) where
   type ReqsZipMatchFieldsWith (Eval a) as bs cs = TypeError ('Text "Atom Eval is not supported by ZipMatchFields")
   zipMatchFieldsWith = undefined
+
+-- | Folding matches on the "Generics.Kind" representation of a type, which is
+-- what the default 'ZipMatchFoldK' instance goes through.
+--
+-- @since 0.5.1
+class GZipMatchFold (f :: LoT k -> Type) where
+  -- | Match two representations and fold their components with the given
+  -- functions.
+  --
+  -- @since 0.5.1
+  gzipMatchFold :: Monoid m => Folds m as bs -> f as -> f bs -> Maybe m
+
+instance GZipMatchFold V1 where
+  gzipMatchFold _ _ _ = error "impossible: Generics.Kind.V1 value!"
+
+instance GZipMatchFold U1 where
+  gzipMatchFold _ U1 U1 = Just mempty
+
+instance GZipMatchFold f => GZipMatchFold (M1 i c f) where
+  gzipMatchFold g (M1 x) (M1 y) = gzipMatchFold g x y
+
+instance (GZipMatchFold f, GZipMatchFold g) => GZipMatchFold (f :+: g) where
+  gzipMatchFold g (L1 x) (L1 y) = gzipMatchFold g x y
+  gzipMatchFold g (R1 x) (R1 y) = gzipMatchFold g x y
+  gzipMatchFold _ _ _           = Nothing
+
+instance (GZipMatchFold f, GZipMatchFold g) => GZipMatchFold (f :*: g) where
+  gzipMatchFold g (x :*: y) (x' :*: y') =
+    liftA2 (<>) (gzipMatchFold g x x') (gzipMatchFold g y y')
+
+instance ZipMatchFieldsFold t => GZipMatchFold (Field t) where
+  gzipMatchFold = zipMatchFieldsFold
+
+instance GZipMatchFold f => GZipMatchFold (c :=>: f) where
+  gzipMatchFold g (SuchThat x) (SuchThat y) = gzipMatchFold g x y
+
+instance TypeError ('Text "Existentials are not supported")
+         => GZipMatchFold (Exists k f) where
+  gzipMatchFold = undefined
+
+-- | Folding matches of a single field of a constructor, by the shape of its
+-- type. A field of a type that has no zipped parameter is compared by its
+-- 'ZipMatchK' and contributes 'mempty'. A field of a type applied to zipped
+-- parameters is folded by that type's 'ZipMatchFoldK'.
+--
+-- @since 0.5.1
+class ZipMatchFieldsFold (t :: Atom d Type) where
+  -- | Match two fields and fold their contents.
+  --
+  -- @since 0.5.1
+  zipMatchFieldsFold :: Monoid m => Folds m as bs -> Field t as -> Field t bs -> Maybe m
+
+instance ApplyMappings v => ZipMatchFieldsFold (Var v) where
+  zipMatchFieldsFold g (Field x) (Field y) = Just (applyFolds @_ @v g x y)
+
+instance ZipMatchK k => ZipMatchFieldsFold (Kon k) where
+  zipMatchFieldsFold _ (Field l) (Field r) = mempty <$ zipMatchWithK @_ @k M0 l r
+
+-- The components of a nested field can fail to match (two lists of different
+-- lengths, say), so they are folded in @'Ap' 'Maybe' m@.
+instance {-# OVERLAPPING #-} (ZipMatchFieldsFold t, ZipMatchFoldK k) => ZipMatchFieldsFold (Kon k :@: t) where
+  zipMatchFieldsFold :: forall as bs m. Monoid m =>
+    Folds m as bs -> Field (Kon k :@: t) as -> Field (Kon k :@: t) bs -> Maybe m
+  zipMatchFieldsFold g (Field l) (Field r) =
+    getAp =<< zipMatchFoldK @_ @k @(Interpret t as :&&: LoT0) @(Interpret t bs :&&: LoT0)
+      ((\ll rr -> Ap (zipMatchFieldsFold g (Field ll :: Field t as) (Field rr :: Field t bs))) :%: F0) l r
+
+instance {-# OVERLAPPING #-} (ZipMatchFieldsFold t1, ZipMatchFieldsFold t2, ZipMatchFoldK k) => ZipMatchFieldsFold ((Kon (k :: Type -> Type -> Type) :@: t1) :@: t2) where
+  zipMatchFieldsFold :: forall as bs m. Monoid m =>
+    Folds m as bs -> Field ((Kon k :@: t1) :@: t2) as -> Field ((Kon k :@: t1) :@: t2) bs -> Maybe m
+  zipMatchFieldsFold g (Field l) (Field r) =
+    getAp =<< zipMatchFoldK @_ @k @(Interpret t1 as :&&: Interpret t2 as :&&: LoT0) @(Interpret t1 bs :&&: Interpret t2 bs :&&: LoT0)
+      ((\ll rr -> Ap (zipMatchFieldsFold g (Field ll :: Field t1 as) (Field rr :: Field t1 bs)))
+        :%: ((\ll rr -> Ap (zipMatchFieldsFold g (Field ll :: Field t2 as) (Field rr :: Field t2 bs)))
+        :%: F0)) l r
+
+instance {-# OVERLAPPABLE #-} TypeError
+  ('Text "The type constructor is kind-polymorphic:"
+  :$$: 'Text "  " :<>: 'ShowType k :<>: 'Text " : " :<>: 'ShowType (kk -> Type)
+  :$$: 'Text "Possible fix:"
+  :$$: 'Text "  add an explicit kind signature"
+  :$$: 'Text "    " :<>: 'ShowType k :<>: 'Text " : " :<>: 'ShowType (Type -> Type))
+  => ZipMatchFieldsFold (Kon (k :: kk -> Type) :@: t) where
+  zipMatchFieldsFold = undefined
+
+instance {-# OVERLAPPABLE #-} TypeError
+  ('Text "The type constructor is kind-polymorphic:"
+  :$$: 'Text "  " :<>: 'ShowType k :<>: 'Text " : " :<>: 'ShowType (kk1 -> kk2 -> Type)
+  :$$: 'Text "Possible fix:"
+  :$$: 'Text "  add an explicit kind signature"
+  :$$: 'Text "    " :<>: 'ShowType k :<>: 'Text " : " :<>: 'ShowType (Type -> Type -> Type))
+  => ZipMatchFieldsFold ((Kon (k :: kk1 -> kk2 -> Type) :@: t1) :@: t2) where
+  zipMatchFieldsFold = undefined
+
+instance {-# OVERLAPPABLE #-} TypeError
+  ('Text "Atom :@: is not supported by ZipMatchFieldsFold is a general form:"
+  :$$: 'Text "  when attempting to use a generic instance for"
+  :$$: 'ShowType (f :@: t)
+  :$$: 'ShowType f :<>: 'Text " : " :<>: 'ShowType (Atom d (k1 -> Type)))
+  => ZipMatchFieldsFold ((f :: Atom d (k1 -> Type)) :@: t) where
+  zipMatchFieldsFold = undefined
+
+instance TypeError
+  ('Text "Atom ForAll is not supported by ZipMatchFieldsFold"
+  :$$: 'Text "  when attempting to use a generic instance for"
+  :$$: 'ShowType (ForAll a)) => ZipMatchFieldsFold (ForAll a) where
+  zipMatchFieldsFold = undefined
+instance TypeError
+  ('Text "Atom :=>>: is not supported by ZipMatchFieldsFold"
+  :$$: 'Text "  when attempting to use a generic instance for"
+  :$$: 'ShowType (c :=>>: a)) => ZipMatchFieldsFold (c :=>>: a) where
+  zipMatchFieldsFold = undefined
+instance TypeError
+  ('Text "Atom Eval is not supported by ZipMatchFieldsFold"
+  :$$: 'Text "  when attempting to use a generic instance for"
+  :$$: 'ShowType (Eval a)) => ZipMatchFieldsFold (Eval a) where
+  zipMatchFieldsFold = undefined

@@ -11,12 +11,15 @@
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
--- | The derived 'ZipMatchK' instance must agree with the generic one.
+-- | The derived 'ZipMatchK' and 'ZipMatchFoldK' instances must agree with the
+-- generic ones.
 --
 -- Both are available for the same type: 'deriveZipMatchK' provides the
--- instance, and 'genericZipMatchWithK' computes the generic answer without
--- needing one. So the test compares the two, on every pair of a set of sample
--- values, over the field shapes a signature actually uses.
+-- instances, and 'genericZipMatchWithK' and 'genericZipMatchFoldK' compute the
+-- generic answers without needing them. So the test compares the two, on every
+-- pair of a set of sample values, over the field shapes a signature actually
+-- uses. The folds collect the components they meet, so the comparison also
+-- checks the order in which they are combined.
 module Data.ZipMatchK.THSpec (spec) where
 
 import           Data.List.NonEmpty      (NonEmpty (..))
@@ -26,7 +29,8 @@ import           Generics.Kind.TH        (deriveGenericK)
 import           Test.Hspec
 
 import           Data.ZipMatchK
-import           Data.ZipMatchK.Generic  (genericZipMatchWithK)
+import           Data.Maybe              (isJust)
+import           Data.ZipMatchK.Generic  (genericZipMatchFoldK, genericZipMatchWithK)
 import           Data.ZipMatchK.TH
 
 -- | An annotation, standing for the extra parameter a generated signature has.
@@ -127,6 +131,43 @@ spec = do
         [ zipMatchWithK @_ @Boxed (zipEq :^: M0) x y
             `shouldBe` genericZipMatchWithK @Boxed (zipEq :^: M0) x y
         | x <- boxedSamples, y <- boxedSamples ]
+
+  describe "deriveZipMatchK2, ZipMatchFoldK" $ do
+    it "agrees with the generic instance on every pair of samples" $
+      sequence_
+        [ zipMatchFoldK @_ @(RichSig Ann) folds x y
+            `shouldBe` genericZipMatchFoldK @(RichSig Ann) folds x y
+        | x <- richSamples, y <- richSamples ]
+    it "fails exactly where zipMatchWithK fails" $
+      sequence_
+        [ isJust (zipMatchFoldK @_ @(RichSig Ann) folds x y)
+            `shouldBe` isJust (zipMatchWithK @_ @(RichSig Ann) keep x y)
+        | x <- richSamples, y <- richSamples ]
+
+  describe "deriveZipMatchK, ZipMatchFoldK" $
+    it "agrees with the generic instance on every pair of samples" $
+      sequence_
+        [ zipMatchFoldK @_ @LamSig folds x y
+            `shouldBe` genericZipMatchFoldK @LamSig folds x y
+        | x <- lamSamples, y <- lamSamples ]
+
+  describe "deriveZipMatchK1, ZipMatchFoldK" $
+    it "agrees with the generic instance on every pair of samples" $
+      sequence_
+        [ zipMatchFoldK @_ @Boxed (collect "t" :%: F0) x y
+            `shouldBe` genericZipMatchFoldK @Boxed (collect "t" :%: F0) x y
+        | x <- boxedSamples, y <- boxedSamples ]
   where
     mappings :: Mappings (String ':&&: String ':&&: 'LoT0) (String ':&&: String ':&&: 'LoT0) (String ':&&: String ':&&: 'LoT0)
     mappings = zipEq :^: zipEq :^: M0
+
+    -- Functions that always succeed, so that only the shapes can fail.
+    keep :: Mappings (String ':&&: String ':&&: 'LoT0) (String ':&&: String ':&&: 'LoT0) (String ':&&: String ':&&: 'LoT0)
+    keep = (\x _ -> Just x) :^: (\x _ -> Just x) :^: M0
+
+    folds :: Folds [String] (String ':&&: String ':&&: 'LoT0) (String ':&&: String ':&&: 'LoT0)
+    folds = collect "s" :%: collect "t" :%: F0
+
+    -- The two components, tagged with the position they come from.
+    collect :: String -> String -> String -> [String]
+    collect tag x y = [tag ++ ":" ++ x ++ "/" ++ y]

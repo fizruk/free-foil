@@ -35,6 +35,20 @@ data Mappings (as :: LoT k) (bs :: LoT k) (cs :: LoT k) where
         -> Mappings as bs cs      -- ^ Zipping for other type parameters.
         -> Mappings (a :&&: as) (b :&&: bs) (c :&&: cs)
 
+infixr 5 :%:
+type Folds :: Type -> LoT k -> LoT k -> Type
+-- | A collection of folding functions for 'Data.ZipMatchK.zipMatchFoldK',
+-- one per type parameter, each combining two components into a monoid.
+--
+-- @since 0.5.1
+data Folds m (as :: LoT k) (bs :: LoT k) where
+  -- | An empty collection (when there are no (more) type parameters).
+  F0 :: Folds m LoT0 LoT0
+  -- | A non-empty collection (when there is at least one type parameter).
+  (:%:) :: (a -> b -> m)          -- ^ Folding for the first type parameter.
+        -> Folds m as bs          -- ^ Folding for other type parameters.
+        -> Folds m (a :&&: as) (b :&&: bs)
+
 -- | Type parameter lists that can be paired up componentwise.
 --
 -- @since 0.2.0
@@ -63,11 +77,22 @@ class ApplyMappings (v :: TyVar d Type) where
     -> Interpret (Var v) bs   -- ^ Second collection of values (one per type parameter).
     -> Maybe (Interpret (Var v) cs)
 
+  -- | Apply a collection of folding functions to collections of values.
+  --
+  -- @since 0.5.1
+  applyFolds :: forall m (as :: LoT d) (bs :: LoT d).
+       Folds m as bs          -- ^ A collection of folding functions.
+    -> Interpret (Var v) as   -- ^ First collection of values (one per type parameter).
+    -> Interpret (Var v) bs   -- ^ Second collection of values (one per type parameter).
+    -> m
+
 instance ApplyMappings (VZ :: TyVar (Type -> tys) Type) where
   applyMappings (f :^: _) x y = f x y
+  applyFolds (f :%: _) x y = f x y
 
 instance ApplyMappings v => ApplyMappings (VS v :: TyVar (ty -> tys) Type) where
   applyMappings (_ :^: fs) x y = applyMappings @_ @v fs x y
+  applyFolds (_ :%: fs) x y = applyFolds @_ @v fs x y
 
 -- | Pair two values in a context.
 --

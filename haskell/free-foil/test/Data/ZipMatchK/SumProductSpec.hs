@@ -5,9 +5,10 @@
 {-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE TypeOperators     #-}
 
--- | The written-out 'ZipMatchK' instances for 'Sum' and 'Product' must agree
--- with the generic ones, which 'genericZipMatchWithK' still computes from the
--- 'Generics.Kind.GenericK' instances. As in "Data.ZipMatchK.THSpec", the test
+-- | The written-out 'ZipMatchK' and 'ZipMatchFoldK' instances for 'Sum' and
+-- 'Product' must agree with the generic ones, which 'genericZipMatchWithK' and
+-- 'genericZipMatchFoldK' still compute from the 'Generics.Kind.GenericK'
+-- instances. As in "Data.ZipMatchK.THSpec", the test
 -- compares the two on every pair of a set of sample values.
 module Data.ZipMatchK.SumProductSpec (spec) where
 
@@ -21,7 +22,7 @@ import           Test.Hspec
 import           Data.ZipMatchK
 import           Data.ZipMatchK.Bifunctor ()
 import           Data.ZipMatchK.Functor   ()
-import           Data.ZipMatchK.Generic   (genericZipMatchWithK)
+import           Data.ZipMatchK.Generic   (genericZipMatchFoldK, genericZipMatchWithK)
 import           Data.ZipMatchK.TH
 
 -- | A signature bifunctor.
@@ -82,6 +83,45 @@ spec = do
             `shouldBe` genericZipMatchWithK @(F.Product Boxed Boxed) (zipEq :^: M0) x y
         | let samples = [F.Pair a b | a <- boxedSamples, b <- boxedSamples]
         , x <- samples, y <- samples ]
+
+  describe "Data.Bifunctor.Sum, ZipMatchFoldK" $
+    it "agrees with the generic instance on every pair of samples" $
+      sequence_
+        [ zipMatchFoldK @_ @(Bi.Sum LamSig LamSig) folds2 x y
+            `shouldBe` genericZipMatchFoldK @(Bi.Sum LamSig LamSig) folds2 x y
+        | let samples = map Bi.L2 lamSamples ++ map Bi.R2 lamSamples
+        , x <- samples, y <- samples ]
+
+  describe "Data.Bifunctor.Product, ZipMatchFoldK" $
+    it "agrees with the generic instance on every pair of samples" $
+      sequence_
+        [ zipMatchFoldK @_ @(Bi.Product LamSig LamSig) folds2 x y
+            `shouldBe` genericZipMatchFoldK @(Bi.Product LamSig LamSig) folds2 x y
+        | let samples = [Bi.Pair a b | a <- lamSamples, b <- lamSamples]
+        , x <- samples, y <- samples ]
+
+  describe "Data.Functor.Sum, ZipMatchFoldK" $
+    it "agrees with the generic instance on every pair of samples" $
+      sequence_
+        [ zipMatchFoldK @_ @(F.Sum Boxed Boxed) (collect "t" :%: F0) x y
+            `shouldBe` genericZipMatchFoldK @(F.Sum Boxed Boxed) (collect "t" :%: F0) x y
+        | let samples = map F.InL boxedSamples ++ map F.InR boxedSamples
+        , x <- samples, y <- samples ]
+
+  describe "Data.Functor.Product, ZipMatchFoldK" $
+    it "agrees with the generic instance on every pair of samples" $
+      sequence_
+        [ zipMatchFoldK @_ @(F.Product Boxed Boxed) (collect "t" :%: F0) x y
+            `shouldBe` genericZipMatchFoldK @(F.Product Boxed Boxed) (collect "t" :%: F0) x y
+        | let samples = [F.Pair a b | a <- boxedSamples, b <- boxedSamples]
+        , x <- samples, y <- samples ]
   where
     mappings2 :: Mappings (String ':&&: String ':&&: 'LoT0) (String ':&&: String ':&&: 'LoT0) (String ':&&: String ':&&: 'LoT0)
     mappings2 = zipEq :^: zipEq :^: M0
+
+    folds2 :: Folds [String] (String ':&&: String ':&&: 'LoT0) (String ':&&: String ':&&: 'LoT0)
+    folds2 = collect "s" :%: collect "t" :%: F0
+
+    -- The two components, tagged with the position they come from.
+    collect :: String -> String -> String -> [String]
+    collect tag x y = [tag ++ ":" ++ x ++ "/" ++ y]
