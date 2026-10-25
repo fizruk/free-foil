@@ -23,7 +23,7 @@ mkInstancesFoil termT nameT scopeT patternT = do
   TyConI (DataD _ctx _name scopeTVars _kind scopeCons _deriv) <- reify scopeT
   TyConI (DataD _ctx _name termTVars _kind termCons _deriv) <- reify termT
 
-  coSinkablePatternD <- deriveCoSinkable nameT patternT
+  coSinkablePatternD <- mkCoSinkableFoilPattern nameT patternT
 
   return $
     [ InstanceD Nothing [] (AppT (ConT ''Foil.Sinkable) (PeelConT foilScopeT (map (VarT . tvarName) scopeTVars)))
@@ -79,14 +79,18 @@ mkInstancesFoil termT nameT scopeT patternT = do
           where
             xi = mkName ("x" ++ show i)
 
--- | Generate 'Foil.Sinkable' and 'Foil.CoSinkable' instances.
+-- | Generate the 'Foil.CoSinkable' instance of the pattern type that
+-- 'Control.Monad.Foil.TH.MkFoilData.mkFoilPattern' generates from a raw
+-- pattern type, given the raw types of identifiers and patterns.
 --
--- @since 0.1.0
-deriveCoSinkable
+-- Up to 0.5.0, this was 'deriveCoSinkable'.
+--
+-- @since 0.5.1
+mkCoSinkableFoilPattern
   :: Name -- ^ Type name for raw variable identifiers.
   -> Name -- ^ Type name for raw patterns.
   -> Q [Dec]
-deriveCoSinkable nameT patternT = do
+mkCoSinkableFoilPattern nameT patternT = do
   TyConI (DataD _ctx _name patternTVars _kind patternCons _deriv) <- reify patternT
 
   return

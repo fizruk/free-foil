@@ -1720,7 +1720,7 @@ class CoSinkable (pattern :: S -> S -> Type) where
   -- 'withPattern' inlines into it, as the generic default does and as a
   -- non-recursive one marked @INLINE@ does. Otherwise it costs a traversal
   -- that allocates several closures per binder, and an instance should list
-  -- its binders directly, as the instances that @deriveCoSinkable@ and
+  -- its binders directly, as the instances that @mkCoSinkableFoilPattern@ and
   -- @mkFreeFoil@ generate do. An instance with the generic 'withPattern' can
   -- take 'gnameBinderListOf'.
   --

@@ -10,7 +10,7 @@
 {-# OPTIONS_GHC -Wno-unused-top-binds #-}
 -- | The laws of 'Foil.CoSinkable', with the agreement of
 -- 'Foil.nameBinderListOf' and 'Foil.withPattern', for the two ways to get an
--- instance that no other suite covers: 'deriveCoSinkable' and the generic
+-- instance that no other suite covers: 'mkCoSinkableFoilPattern' and the generic
 -- defaults of this package. Both pattern types consist of wildcards,
 -- variables and pairs, so that the binders of a pattern come from fields at
 -- different depths.
@@ -20,12 +20,12 @@ import           Test.Hspec
 import           Test.QuickCheck
 
 import qualified Control.Monad.Foil      as Foil
--- 'deriveCoSinkable' binds a variable named @rename@.
+-- 'mkCoSinkableFoilPattern' binds a variable named @rename@.
 import           Control.Monad.Foil.Laws hiding (rename)
-import           Control.Monad.Foil.TH   (deriveCoSinkable, mkFoilPattern)
+import           Control.Monad.Foil.TH   (mkCoSinkableFoilPattern, mkFoilPattern)
 import           Generics.Kind.TH        (deriveGenericK)
 
--- | A raw pattern, from which 'mkFoilPattern' and 'deriveCoSinkable' generate
+-- | A raw pattern, from which 'mkFoilPattern' and 'mkCoSinkableFoilPattern' generate
 -- 'FoilRawPattern' and its instance, which lists its binders directly.
 newtype RawIdent = RawIdent String
 data RawPattern
@@ -34,7 +34,7 @@ data RawPattern
   | RawPatternPair RawPattern RawPattern
 
 mkFoilPattern ''RawIdent ''RawPattern
-deriveCoSinkable ''RawIdent ''RawPattern
+mkCoSinkableFoilPattern ''RawIdent ''RawPattern
 
 -- | A pattern whose instances are the generic defaults.
 data GenericPattern (n :: Foil.S) (l :: Foil.S) where
@@ -49,7 +49,7 @@ instance Foil.CoSinkable GenericPattern
 
 spec :: Spec
 spec = do
-  describe "a pattern from deriveCoSinkable" $
+  describe "a pattern from mkCoSinkableFoilPattern" $
     coSinkableSpec rawPatternNames genRawPattern extensionByCoercion
   describe "a pattern with the generic defaults" $ do
     coSinkableSpec genericPatternNames genGenericPattern extensionByCoercion
