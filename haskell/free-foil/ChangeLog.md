@@ -23,6 +23,7 @@ New:
 
 Performance:
 
+- `withRefreshedPattern` is `INLINE`, so that it specialises at a known pattern type ([#120](https://github.com/fizruk/free-foil/pull/120)). This cut the time of comparisons under many binders in the conversion check of [free-foil-NBE](https://github.com/p50000/free-foil-NBE) by about a third.
 - `nameBinderListOf` costs no traversal for the library's instances and the generated ones, also through a dictionary ([#110](https://github.com/fizruk/free-foil/pull/110)): on four binders, 7 ns instead of 132 ns. Its callers are `INLINABLE`, so that they specialise at a known pattern type.
 - The default `nameBinderListOf` and the generic `withPattern` inline ([#110](https://github.com/fizruk/free-foil/pull/110)), so a pattern with the generic defaults lists its binders about four times faster, and `alphaEquiv` on such patterns is twice as fast. A hand-written `withPattern` gets the same from an `INLINE` pragma.
 - The `ZipMatchK` instances for `Sum` and `Product`, in `Data.ZipMatchK.Bifunctor` and `Data.ZipMatchK.Functor`, are written out instead of generic, in the form that `Data.ZipMatchK.TH` derives ([#109](https://github.com/fizruk/free-foil/pull/109)). On the `zipmatchk` benchmark, `alphaEquiv` over a sum of two signatures takes 220 µs instead of 362 µs and allocates 2.8 MB instead of 4.8 MB. The instances no longer require `Bitraversable` (or `Traversable`) of the two components.
