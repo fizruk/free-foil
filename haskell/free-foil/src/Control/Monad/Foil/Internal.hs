@@ -1724,7 +1724,7 @@ class CoSinkable (pattern :: S -> S -> Type) where
   -- @mkFreeFoil@ generate do. An instance with the generic 'withPattern' can
   -- take 'gnameBinderListOf'.
   --
-  -- This is a method of 'CoSinkable' since 0.5.1. Up to 0.5.0, it was a
+  -- This is a method of 'CoSinkable' since 0.6.0. Up to 0.5.0, it was a
   -- function outside the class, of the same type.
   --
   -- @since 0.2.0
@@ -1860,7 +1860,7 @@ compWithNameBinderList (WithNameBinderList f) (WithNameBinderList g) =
 -- | Collect the binders of a pattern with 'withPattern'. This is the default
 -- of 'nameBinderListOf'.
 --
--- @since 0.5.1
+-- @since 0.6.0
 {-# INLINE nameBinderListOfViaWithPattern #-}
 nameBinderListOfViaWithPattern :: (CoSinkable binder) => binder n l -> NameBinderList n l
 nameBinderListOfViaWithPattern pat = withPattern
@@ -2628,7 +2628,7 @@ gunsafeWithPatternViaHasNameBinders withBinder id_ comp_ scope pat cont =
 -- > instance CoSinkable MyPattern where
 -- >   nameBinderListOf = gnameBinderListOf
 --
--- @since 0.5.1
+-- @since 0.6.0
 gnameBinderListOf
   :: forall pattern n l. (GenericK pattern, GHasNameBinders (RepK pattern))
   => pattern n l -> NameBinderList n l

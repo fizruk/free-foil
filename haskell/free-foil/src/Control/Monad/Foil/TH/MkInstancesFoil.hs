@@ -90,7 +90,7 @@ mkInstancesFoil termT nameT scopeT patternT = do
 --
 -- Up to 0.5.0, this was 'deriveCoSinkable'.
 --
--- @since 0.5.1
+-- @since 0.6.0
 mkCoSinkableFoilPattern
   :: Name -- ^ Type name for raw variable identifiers.
   -> Name -- ^ Type name for raw patterns.
@@ -214,7 +214,7 @@ mkCoSinkableFoilPattern nameT patternT = do
 -- mentions no scope. A payload indexed by a scope needs a hand-written
 -- instance (see 'Foil.transportPayload').
 --
--- @since 0.5.1
+-- @since 0.6.0
 deriveCoSinkable :: Name -> Q [Dec]
 deriveCoSinkable patternT = do
   (tvars, cons) <- reify patternT >>= \case

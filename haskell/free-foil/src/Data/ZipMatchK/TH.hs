@@ -136,7 +136,7 @@ deriveZipMatchKWith arity typeName = do
 -- that declares the type in the same splice, such as
 -- 'Control.Monad.Free.Foil.TH.MkFreeFoil.mkFreeFoil', which cannot reify it.
 --
--- @since 0.5.1
+-- @since 0.6.0
 zipMatchKInstance :: Name -> [Name] -> Int -> [(Name, [Type])] -> Q [Dec]
 zipMatchKInstance typeName params n fieldsOf = do
   let (fixed, zipped) = splitAt (length params - n) params
@@ -175,7 +175,7 @@ zipMatchKInstance typeName params n fieldsOf = do
 -- call site with a known monoid and known folding functions the match
 -- compiles to a @case@ on the two values with the functions applied in place.
 --
--- @since 0.5.1
+-- @since 0.6.0
 zipMatchFoldKInstance :: Name -> [Name] -> Int -> [(Name, [Type])] -> Q [Dec]
 zipMatchFoldKInstance typeName params n fieldsOf = do
   let (fixed, zipped) = splitAt (length params - n) params

@@ -206,7 +206,7 @@ substitutePattern scope env binders args body =
 --
 -- > foldAST Var (\binder body -> ScopedAST (toBinder binder) body) Node
 --
--- @since 0.5.1
+-- @since 0.6.0
 {-# INLINABLE foldAST #-}
 foldAST
   :: forall binder sig r s n. Bifunctor sig
@@ -225,7 +225,7 @@ foldAST var scoped node = go
 -- signatures, keeping the binders, as @hoistFree@ of the free package does
 -- for a free monad. Each node is rebuilt, so this costs a traversal.
 --
--- @since 0.5.1
+-- @since 0.6.0
 {-# INLINABLE hoistAST #-}
 hoistAST
   :: Bifunctor sig

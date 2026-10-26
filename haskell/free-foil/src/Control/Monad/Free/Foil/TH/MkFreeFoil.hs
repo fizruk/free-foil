@@ -948,7 +948,7 @@ toFreeFoilClauseFromQuantified config rawRetType = go
 
 -- | Options of 'mkFreeFoilWith'.
 --
--- @since 0.5.1
+-- @since 0.6.0
 data FreeFoilOptions = FreeFoilOptions
   { signatureInstances :: [Name]
     -- ^ The classes whose instances every generated signature gets.
@@ -972,7 +972,7 @@ data FreeFoilOptions = FreeFoilOptions
 
 -- | The default options. Every instance is generated.
 --
--- @since 0.5.1
+-- @since 0.6.0
 defaultFreeFoilOptions :: FreeFoilOptions
 defaultFreeFoilOptions = FreeFoilOptions
   { signatureInstances = [''Bifunctor, ''Bifoldable, ''Bitraversable, ''ZipMatchK, ''ZipMatchFoldK, ''NFData]
@@ -1002,7 +1002,7 @@ mkFreeFoil = mkFreeFoilWith defaultFreeFoilOptions
 
 -- | 'mkFreeFoil' with options.
 --
--- @since 0.5.1
+-- @since 0.6.0
 mkFreeFoilWith :: FreeFoilOptions -> FreeFoilConfig -> Q [Dec]
 mkFreeFoilWith FreeFoilOptions{..} config@FreeFoilConfig{..} = checkSignatureInstances >> concat <$> sequence
   [ mapM mkQuantifiedType rawQuantifiedNames

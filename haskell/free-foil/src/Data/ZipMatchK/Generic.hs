@@ -73,11 +73,11 @@ class ZipMatchK (f :: k) where
 -- costs described at 'ZipMatchK'. 'Data.ZipMatchK.TH.deriveZipMatchK' derives
 -- a written-out instance together with the one of 'ZipMatchK'.
 --
--- @since 0.5.1
+-- @since 0.6.0
 class ZipMatchFoldK (f :: k) where
   -- | Perform one level of equality testing and fold the paired components.
   --
-  -- @since 0.5.1
+  -- @since 0.6.0
   zipMatchFoldK :: forall as bs m. Monoid m => Folds m as bs -> f :@@: as -> f :@@: bs -> Maybe m
   default zipMatchFoldK :: forall as bs m.
     (GenericK f, GZipMatchFold (RepK f), Monoid m)
@@ -86,7 +86,7 @@ class ZipMatchFoldK (f :: k) where
 
 -- | Generic implementation of 'zipMatchFoldK'.
 --
--- @since 0.5.1
+-- @since 0.6.0
 genericZipMatchFoldK :: forall f as bs m.
     (GenericK f, GZipMatchFold (RepK f), Monoid m)
     => Folds m as bs -> f :@@: as -> f :@@: bs -> Maybe m
@@ -285,12 +285,12 @@ instance TypeError
 -- | Folding matches on the "Generics.Kind" representation of a type, which is
 -- what the default 'ZipMatchFoldK' instance goes through.
 --
--- @since 0.5.1
+-- @since 0.6.0
 class GZipMatchFold (f :: LoT k -> Type) where
   -- | Match two representations and fold their components with the given
   -- functions.
   --
-  -- @since 0.5.1
+  -- @since 0.6.0
   gzipMatchFold :: Monoid m => Folds m as bs -> f as -> f bs -> Maybe m
 
 instance GZipMatchFold V1 where
@@ -326,11 +326,11 @@ instance TypeError ('Text "Existentials are not supported")
 -- 'ZipMatchK' and contributes 'mempty'. A field of a type applied to zipped
 -- parameters is folded by that type's 'ZipMatchFoldK'.
 --
--- @since 0.5.1
+-- @since 0.6.0
 class ZipMatchFieldsFold (t :: Atom d Type) where
   -- | Match two fields and fold their contents.
   --
-  -- @since 0.5.1
+  -- @since 0.6.0
   zipMatchFieldsFold :: Monoid m => Folds m as bs -> Field t as -> Field t bs -> Maybe m
 
 instance ApplyMappings v => ZipMatchFieldsFold (Var v) where
