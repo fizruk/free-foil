@@ -40,7 +40,7 @@ type Folds :: Type -> LoT k -> LoT k -> Type
 -- | A collection of folding functions for 'Data.ZipMatchK.zipMatchFoldK',
 -- one per type parameter, each combining two components into a monoid.
 --
--- @since 0.5.1
+-- @since 0.6.0
 data Folds m (as :: LoT k) (bs :: LoT k) where
   -- | An empty collection (when there are no (more) type parameters).
   F0 :: Folds m LoT0 LoT0
@@ -79,7 +79,7 @@ class ApplyMappings (v :: TyVar d Type) where
 
   -- | Apply a collection of folding functions to collections of values.
   --
-  -- @since 0.5.1
+  -- @since 0.6.0
   applyFolds :: forall m (as :: LoT d) (bs :: LoT d).
        Folds m as bs          -- ^ A collection of folding functions.
     -> Interpret (Var v) as   -- ^ First collection of values (one per type parameter).

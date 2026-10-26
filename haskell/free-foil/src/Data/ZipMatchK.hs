@@ -113,7 +113,7 @@ zipMatch2 = zipMatchWith2 pairA pairA
 -- >>> zipMatchFold1 (\x y -> [x + y]) [1, 2] [10 :: Int]
 -- Nothing
 --
--- @since 0.5.1
+-- @since 0.6.0
 zipMatchFold1
   :: (ZipMatchFoldK f, Monoid m)
   => (a -> a' -> m)
@@ -133,7 +133,7 @@ zipMatchFold1 f = zipMatchFoldK (f :%: F0)
 -- >>> getAll <$> same (Left 1) (Right (1 :: Int) :: Either Int Int)
 -- Nothing
 --
--- @since 0.5.1
+-- @since 0.6.0
 zipMatchFold2
   :: (ZipMatchFoldK f, Monoid m)
   => (a -> a' -> m)
@@ -148,7 +148,7 @@ zipMatchFold2 f g = zipMatchFoldK (f :%: g :%: F0)
 --
 -- > zipMatchAllK = fmap getAll . zipMatchFoldK (coerce relations)
 --
--- @since 0.5.1
+-- @since 0.6.0
 zipMatchAllK :: forall f as bs. ZipMatchFoldK f => Folds Bool as bs -> f :@@: as -> f :@@: bs -> Maybe Bool
 zipMatchAllK relations x y = getAll <$> zipMatchFoldK @_ @f @as @bs (coerce relations) x y
 {-# INLINE zipMatchAllK #-}
@@ -162,7 +162,7 @@ zipMatchAllK relations x y = getAll <$> zipMatchFoldK @_ @f @as @bs (coerce rela
 -- >>> zipMatchAll1 (==) [1, 2] [1 :: Int]
 -- Nothing
 --
--- @since 0.5.1
+-- @since 0.6.0
 zipMatchAll1 :: ZipMatchFoldK f => (a -> a' -> Bool) -> f a -> f a' -> Maybe Bool
 zipMatchAll1 f = zipMatchAllK (f :%: F0)
 {-# INLINE zipMatchAll1 #-}
@@ -174,7 +174,7 @@ zipMatchAll1 f = zipMatchAllK (f :%: F0)
 -- >>> zipMatchAll2 (==) (==) (Left 1) (Right (1 :: Int) :: Either Int Int)
 -- Nothing
 --
--- @since 0.5.1
+-- @since 0.6.0
 zipMatchAll2
   :: ZipMatchFoldK f
   => (a -> a' -> Bool)
@@ -190,7 +190,7 @@ zipMatchAll2 f g = zipMatchAllK (f :%: g :%: F0)
 --
 -- > zipMatchAnyK = fmap getAny . zipMatchFoldK (coerce relations)
 --
--- @since 0.5.1
+-- @since 0.6.0
 zipMatchAnyK :: forall f as bs. ZipMatchFoldK f => Folds Bool as bs -> f :@@: as -> f :@@: bs -> Maybe Bool
 zipMatchAnyK relations x y = getAny <$> zipMatchFoldK @_ @f @as @bs (coerce relations) x y
 {-# INLINE zipMatchAnyK #-}
@@ -204,7 +204,7 @@ zipMatchAnyK relations x y = getAny <$> zipMatchFoldK @_ @f @as @bs (coerce rela
 -- >>> zipMatchAny1 (==) [] [1 :: Int]
 -- Nothing
 --
--- @since 0.5.1
+-- @since 0.6.0
 zipMatchAny1 :: ZipMatchFoldK f => (a -> a' -> Bool) -> f a -> f a' -> Maybe Bool
 zipMatchAny1 f = zipMatchAnyK (f :%: F0)
 {-# INLINE zipMatchAny1 #-}
@@ -214,7 +214,7 @@ zipMatchAny1 f = zipMatchAnyK (f :%: F0)
 -- >>> zipMatchAny2 (==) (==) (Right 1) (Right (2 :: Int) :: Either Int Int)
 -- Just False
 --
--- @since 0.5.1
+-- @since 0.6.0
 zipMatchAny2
   :: ZipMatchFoldK f
   => (a -> a' -> Bool)
