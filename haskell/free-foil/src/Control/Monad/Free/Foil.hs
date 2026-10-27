@@ -603,35 +603,60 @@ alphaEquivLoops = AlphaEquivLoops goAlpha goScoped goPairs goEnv goScopedEnv
 -- under a binder in absence of name conflicts).
 --
 -- @since 0.0.3
-{-# INLINABLE unsafeEqAST #-}
+{-# INLINE unsafeEqAST #-}
 unsafeEqAST
   :: (ZipMatchK sig, Foil.UnifiablePattern binder, Foil.Distinct n, Foil.Distinct l)
   => AST binder sig n
   -> AST binder sig l
   -> Bool
-unsafeEqAST (Var x) (Var y) = Foil.nameId x == Foil.nameId y
-unsafeEqAST (Node t1) (Node t2) =
-  case zipMatchWith2 (unit . unsafeEqScopedAST) (unit . unsafeEqAST) t1 t2 of
-    Nothing -> False
-    Just _  -> True
-  where
-    unit f x = if f x then Just () else Nothing
-unsafeEqAST _ _ = False
+unsafeEqAST = eqAST unsafeEqLoops
 
 -- | A version of 'unsafeEqAST' for scoped terms.
 --
 -- @since 0.0.3
-{-# INLINABLE unsafeEqScopedAST #-}
+{-# INLINE unsafeEqScopedAST #-}
 unsafeEqScopedAST
   :: (ZipMatchK sig, Foil.UnifiablePattern binder, Foil.Distinct n, Foil.Distinct l)
   => ScopedAST binder sig n
   -> ScopedAST binder sig l
   -> Bool
-unsafeEqScopedAST (ScopedAST binder1 body1) (ScopedAST binder2 body2) = and
-  [ Foil.unsafeEqPattern binder1 binder2
-  , case (Foil.assertDistinct binder1, Foil.assertDistinct binder2) of
-      (Foil.Distinct, Foil.Distinct) -> body1 `unsafeEqAST` body2
-  ]
+unsafeEqScopedAST = eqScopedAST unsafeEqLoops
+
+-- | The two mutually recursive loops behind 'unsafeEqAST' and
+-- 'unsafeEqScopedAST'.
+--
+-- @since 0.6.1
+data EqLoops binder sig = EqLoops
+  { eqAST       :: forall n l. (Foil.Distinct n, Foil.Distinct l) => AST binder sig n -> AST binder sig l -> Bool
+  , eqScopedAST :: forall n l. (Foil.Distinct n, Foil.Distinct l) => ScopedAST binder sig n -> ScopedAST binder sig l -> Bool
+  }
+
+-- | The loops behind 'unsafeEqAST' and 'unsafeEqScopedAST', local for the
+-- same reason as those of 'alphaEquivLoops'.
+--
+-- @since 0.6.1
+{-# INLINE unsafeEqLoops #-}
+unsafeEqLoops
+  :: forall sig binder. (ZipMatchK sig, Foil.UnifiablePattern binder)
+  => EqLoops binder sig
+unsafeEqLoops = EqLoops goAST goScoped
+  where
+    goAST :: forall n l. (Foil.Distinct n, Foil.Distinct l) => AST binder sig n -> AST binder sig l -> Bool
+    goAST (Var x) (Var y) = Foil.nameId x == Foil.nameId y
+    goAST (Node t1) (Node t2) =
+      case zipMatchWithK ((unit . goScoped) :^: (unit . goAST) :^: M0) t1 t2 of
+        Nothing -> False
+        Just _  -> True
+    goAST _ _ = False
+
+    goScoped :: forall n l. (Foil.Distinct n, Foil.Distinct l) => ScopedAST binder sig n -> ScopedAST binder sig l -> Bool
+    goScoped (ScopedAST binder1 body1) (ScopedAST binder2 body2) = and
+      [ Foil.unsafeEqPattern binder1 binder2
+      , case (Foil.assertDistinct binder1, Foil.assertDistinct binder2) of
+          (Foil.Distinct, Foil.Distinct) -> body1 `goAST` body2
+      ]
+
+    unit f x = if f x then Just () else Nothing
 
 -- * Converting to and from free foil
 
