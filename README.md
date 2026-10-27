@@ -32,7 +32,7 @@ Additionally, we implement:
 5. Scope restriction: the support of a term, the scope it really inhabits, and thinning of a chain of binders against a set of names.
 6. Reserved ranges of names, so that units checked independently can be linked afterwards without renaming, together with serialisation of a checked unit.
 
-In addition to this repository, we have benchmarks for the foil and the free foil against each other and other implementation of λ-calculus.
+In addition to this repository, we have benchmarks for the foil and the free foil against each other and other implementations of λ-calculus.
 See [KarinaTyulebaeva/lambda-n-ways](https://github.com/KarinaTyulebaeva/lambda-n-ways), a fork of Stephanie Weirich's benchmark suite ([sweirich/lambda-n-ways](https://github.com/sweirich/lambda-n-ways)).
 
 ## Names, shadowing, and what the foil guarantees
