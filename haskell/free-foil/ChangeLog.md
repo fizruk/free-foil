@@ -4,7 +4,7 @@
 
 Breaking changes:
 
-- `unsinkAST` and `nameSetSubsetOfScope` require `Ext n l`: the scope `l` of the term (or set) must extend the scope `n` it is restricted to. Both compare raw identifiers, which identify a name only within one chain of scope extensions, so with unrelated scopes the answer was meaningless.
+- `unsinkAST` requires `DExt n l` instead of `Distinct l`, and `nameSetSubsetOfScope` requires `Ext n l`: the scope `l` of the term (or set) must extend the scope `n` it is restricted to. Both compare raw identifiers, which identify a name only within one chain of scope extensions, so with unrelated scopes the answer was meaningless.
   - To migrate, bring `Ext n l` into scope where it is missing, e.g. with `assertExt` on the binder that leads from `n` to `l`, or from `withFresh` and `withThinnedNameBinderList`, which provide it.
 
 Changed:

@@ -1147,7 +1147,7 @@ withRelevantScope term cont =
 --
 -- @since 0.3.0
 unsinkAST
-  :: (Foil.Ext n l, Foil.Distinct l, Foil.CoSinkable binder, Bifoldable sig)
+  :: (Foil.DExt n l, Foil.CoSinkable binder, Bifoldable sig)
   => Foil.Scope n -> AST binder sig l -> Maybe (AST binder sig n)
 unsinkAST scope term
   | Foil.nameSetSubsetOfScope (supportOf term) scope = Just (unsafeCoerce term)
