@@ -44,8 +44,11 @@ The rapier of Peyton Jones and Marlow[^4] is an alternative to the variable conv
 The foil gives up global uniqueness of names deliberately. Fresh names are allocated per scope,
 
 ```haskell
-rawFreshName scope | IntSet.null scope = 0
-                   | otherwise         = IntSet.findMax scope + 1
+rawFreshName scope
+  | IntSet.null scope = 0
+  | otherwise = case IntSet.findMax scope of
+      m | m == maxBound -> error "rawFreshName: name space exhausted"
+        | otherwise     -> max 0 (m + 1)
 ```
 
 so raw names are reused across scopes, and every closed term starts at 0. Moreover, `sink` is a coercion and does not rename, since being free is the whole point of it. What replaces distinctness of names is the type index: names of different scopes are not comparable at all, and the soundness of `sink` rests on every name of `n` being a name of `l`, so that the identity is a valid injection (see Section 3.5 of the foil paper[^1]).
