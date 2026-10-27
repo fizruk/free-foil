@@ -17,7 +17,7 @@ import           Data.Bifoldable                                  (bifoldMap)
 import           Data.Bifunctor                                   (bimap)
 import           Data.Bitraversable                               (bitraverse)
 import           Data.Monoid                                      (Sum (..))
-import           Data.ZipMatchK                                   (Mappings (..), ZipMatchK (..))
+import           Data.ZipMatchK                                   (zipMatchWith2)
 import           Test.Hspec
 
 import           Control.Monad.Free.Foil.TH.MkFreeFoilSpec.Config
@@ -50,8 +50,8 @@ spec = do
     it "force a term and its patterns" $
       rnf (toTerm Foil.emptyScope Map.empty (Let (PatternVar x) identity (ScopedTerm (Var x)))) `shouldBe` ()
     it "match equal constructors and reject different ones" $ do
-      zipMatchWithK (zipAdd :^: zipAdd :^: M0) (AppSig 1 2 :: TermSig Int Int) (AppSig 10 20) `shouldBe` Just (AppSig 11 22)
-      zipMatchWithK (zipAdd :^: zipAdd :^: M0) (AppSig 1 2 :: TermSig Int Int) (FunSig 3) `shouldBe` Nothing
+      zipMatchWith2 zipAdd zipAdd (AppSig 1 2 :: TermSig Int Int) (AppSig 10 20) `shouldBe` Just (AppSig 11 22)
+      zipMatchWith2 zipAdd zipAdd (AppSig 1 2 :: TermSig Int Int) (FunSig 3) `shouldBe` Nothing
 
   describe "a pattern adjacent to its scope (Fun)" $
     it "round-trips, and the body still refers to the binder" $

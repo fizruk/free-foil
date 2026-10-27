@@ -31,11 +31,14 @@ module Control.Monad.Free.Foil (
   -- ** Unsafe equality checks
   unsafeEqAST,
   unsafeEqScopedAST,
+  unsafeEqASTIn,
+  unsafeEqScopedASTIn,
 
   -- * Converting to and from free foil
   -- ** Convert to free foil
   UnresolvedName(..),
   unresolvedNames,
+  unresolvedNamesWith,
   tryConvertToAST,
   tryConvertToASTWith,
   unsafeConvertToAST,

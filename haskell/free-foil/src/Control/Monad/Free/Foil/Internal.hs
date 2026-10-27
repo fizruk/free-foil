@@ -277,7 +277,9 @@ refreshScopedAST scope (ScopedAST binder body) =
 --
 -- Compared to 'alphaEquiv', this function renames every binder on both sides
 -- unconditionally, so it does strictly more work. It remains as an
--- independent implementation of the same test.
+-- independent implementation of the same test. Like 'alphaEquiv', it compares
+-- patterns with 'Control.Monad.Foil.unifyPatternsIn', so the payloads of a
+-- pattern are compared as well.
 --
 -- @since 0.0.3
 {-# INLINABLE alphaEquivRefreshed #-}
@@ -287,7 +289,8 @@ alphaEquivRefreshed
   -> AST binder sig n
   -> AST binder sig n
   -> Bool
-alphaEquivRefreshed scope t1 t2 = refreshAST scope t1 `unsafeEqAST` refreshAST scope t2
+alphaEquivRefreshed scope t1 t2 =
+  unsafeEqASTIn scope (refreshAST scope t1) (refreshAST scope t2)
 
 -- | A term is a scope-indexed value that can be compared up to α, which is what
 -- a pattern carrying terms as payloads needs of them.
@@ -654,7 +657,7 @@ unsafeEqLoops = EqLoops goAST goScoped
     goAST :: forall n l. (Foil.Distinct n, Foil.Distinct l) => AST binder sig n -> AST binder sig l -> Bool
     goAST (Var x) (Var y) = Foil.nameId x == Foil.nameId y
     goAST (Node t1) (Node t2) =
-      case zipMatchWithK ((unit . goScoped) :^: (unit . goAST) :^: M0) t1 t2 of
+      case zipMatchWith2 (unit . goScoped) (unit . goAST) t1 t2 of
         Nothing -> False
         Just _  -> True
     goAST _ _ = False
@@ -665,6 +668,73 @@ unsafeEqLoops = EqLoops goAST goScoped
       , case (Foil.assertDistinct binder1, Foil.assertDistinct binder2) of
           (Foil.Distinct, Foil.Distinct) -> body1 `goAST` body2
       ]
+
+    unit f x = if f x then Just () else Nothing
+
+-- | /Unsafe/ equality check for two terms in one scope. Names are compared
+-- directly, and patterns by 'Control.Monad.Foil.unifyPatternsIn', which must
+-- find their binders the same. Thus α-equivalent terms whose binders differ
+-- compare unequal, so normalize both sides with 'refreshAST' first, as
+-- 'alphaEquivRefreshed' does.
+--
+-- Unlike 'unsafeEqAST', this compares the payloads of patterns, which
+-- 'Control.Monad.Foil.unifyPatternsIn' needs the scope for.
+--
+-- @since 0.6.1
+{-# INLINE unsafeEqASTIn #-}
+unsafeEqASTIn
+  :: (ZipMatchK sig, Foil.UnifiablePattern binder, Foil.Distinct n)
+  => Foil.Scope n
+  -> AST binder sig n
+  -> AST binder sig n
+  -> Bool
+unsafeEqASTIn = eqASTIn unsafeEqInLoops
+
+-- | A version of 'unsafeEqASTIn' for scoped terms.
+--
+-- @since 0.6.1
+{-# INLINE unsafeEqScopedASTIn #-}
+unsafeEqScopedASTIn
+  :: (ZipMatchK sig, Foil.UnifiablePattern binder, Foil.Distinct n)
+  => Foil.Scope n
+  -> ScopedAST binder sig n
+  -> ScopedAST binder sig n
+  -> Bool
+unsafeEqScopedASTIn = eqScopedASTIn unsafeEqInLoops
+
+-- | The two mutually recursive loops behind 'unsafeEqASTIn' and
+-- 'unsafeEqScopedASTIn'.
+--
+-- @since 0.6.1
+data EqInLoops binder sig = EqInLoops
+  { eqASTIn       :: forall n. Foil.Distinct n => Foil.Scope n -> AST binder sig n -> AST binder sig n -> Bool
+  , eqScopedASTIn :: forall n. Foil.Distinct n => Foil.Scope n -> ScopedAST binder sig n -> ScopedAST binder sig n -> Bool
+  }
+
+-- | The loops behind 'unsafeEqASTIn' and 'unsafeEqScopedASTIn', local for
+-- the same reason as those of 'alphaEquivLoops'.
+--
+-- @since 0.6.1
+{-# INLINE unsafeEqInLoops #-}
+unsafeEqInLoops
+  :: forall sig binder. (ZipMatchK sig, Foil.UnifiablePattern binder)
+  => EqInLoops binder sig
+unsafeEqInLoops = EqInLoops goAST goScoped
+  where
+    goAST :: forall n. Foil.Distinct n => Foil.Scope n -> AST binder sig n -> AST binder sig n -> Bool
+    goAST _ (Var x) (Var y) = x == y
+    goAST scope (Node t1) (Node t2) =
+      case zipMatchWith2 (unit . goScoped scope) (unit . goAST scope) t1 t2 of
+        Nothing -> False
+        Just _  -> True
+    goAST _ _ _ = False
+
+    goScoped :: forall n. Foil.Distinct n => Foil.Scope n -> ScopedAST binder sig n -> ScopedAST binder sig n -> Bool
+    goScoped scope (ScopedAST binder1 body1) (ScopedAST binder2 body2) =
+      case Foil.unifyPatternsIn scope binder1 binder2 of
+        Foil.SameNameBinders{} -> case Foil.assertDistinct binder1 of
+          Foil.Distinct -> goAST (Foil.extendScopePattern binder1 scope) body1 body2
+        _ -> False
 
     unit f x = if f x then Just () else Nothing
 
@@ -694,7 +764,9 @@ data UnresolvedName rawIdent = UnresolvedName
 -- the order they occur.
 --
 -- This is 'unsafeConvertToAST' with the conversion left out, so it descends
--- under binders in the same way and accounts for what they bind.
+-- under binders in the same way and accounts for what they bind. A caller
+-- that converts with 'tryConvertToASTWith' should use 'unresolvedNamesWith'
+-- instead, so that its constants do not count as unresolved.
 --
 -- @since 0.4.0
 unresolvedNames
@@ -721,14 +793,54 @@ unresolvedNames
   -> rawTerm
   -- ^ Raw term.
   -> [UnresolvedName rawIdent]
-unresolvedNames toSig fromRawPattern getScopedTerm = go
+unresolvedNames toSig fromRawPattern getScopedTerm scope names =
+  unresolvedNamesWith toSig fromRawPattern getScopedTerm scope names Map.empty
+
+-- | The identifiers a raw term mentions that neither a set of names nor a
+-- table of constants can resolve, in the order they occur. This is
+-- 'unresolvedNames' for the arguments of 'tryConvertToASTWith': given the same
+-- names and constants, it reports every identifier that
+-- 'tryConvertToASTWith' would fail on, and the first of them is the one that
+-- 'tryConvertToASTWith' reports.
+--
+-- @since 0.6.1
+unresolvedNamesWith
+  :: forall sig binder rawIdent rawTerm rawPattern rawScopedTerm n.
+     (Foil.Distinct n, Bifoldable sig, Ord rawIdent, Foil.CoSinkable binder)
+  => (rawTerm -> Either rawIdent (sig (rawPattern, rawScopedTerm) rawTerm))
+  -- ^ Unpeel one syntax node (or a variable) from a raw term.
+  -> (forall x z. Foil.Distinct x
+      => Foil.Scope x
+      -> Map rawIdent (Foil.Name x)
+      -> rawPattern
+      -> (forall y. Foil.DExt x y
+          => binder x y
+          -> Map rawIdent (Foil.Name y)
+          -> z)
+      -> z)
+  -- ^ Convert raw pattern into a scope-safe pattern.
+  -> (rawScopedTerm -> rawTerm)
+  -- ^ Extract a term from a scoped term (or crash).
+  -> Foil.Scope n
+  -- ^ Resulting scope of the constructed term.
+  -> Map rawIdent (Foil.Name n)
+  -- ^ Known names of free variables in scope @n@.
+  -> Map rawIdent (AST binder sig n)
+  -- ^ Identifiers that denote a term rather than a variable.
+  -> rawTerm
+  -- ^ Raw term.
+  -> [UnresolvedName rawIdent]
+unresolvedNamesWith toSig fromRawPattern getScopedTerm scope0 names0 terms =
+  go scope0 names0
   where
+    constants = Map.keys terms
+
     go :: forall x. Foil.Distinct x
        => Foil.Scope x -> Map rawIdent (Foil.Name x) -> rawTerm -> [UnresolvedName rawIdent]
     go scope names t = case toSig t of
       Left x
-        | Map.member x names -> []
-        | otherwise          -> [UnresolvedName x (Map.keys names)]
+        | Map.member x names || Map.member x terms -> []
+        | otherwise -> [UnresolvedName x (Map.keys names <> constants)]
       Right node -> bifoldMap (goScoped scope names) (go scope names) node
 
     goScoped :: forall x. Foil.Distinct x
@@ -1074,16 +1186,17 @@ withRelevantScope term cont =
   Foil.withRestrictedScope (supportOf term) $ \scope ->
     cont scope (unsafeCoerce term)
 
--- | Unsink an AST from a larger scope to a smaller scope.
+-- | Restrict a term from scope @l@ to a smaller scope @n@, if every name that
+-- occurs free in it is in @n@.
 --
--- This is the a-posteriori form, and the one that has to be paid for: the
--- term's support is computed and compared against the scope. When it succeeds
--- the term itself is untouched, since restriction of a term that does inhabit
--- the smaller scope is a coercion.
+-- The scope @l@ must extend @n@, since names are compared by their raw
+-- identifiers, which identify a name only within one chain of scope
+-- extensions. On success the term is returned unchanged, since restricting a
+-- term that does inhabit @n@ is a coercion.
 --
 -- @since 0.3.0
 unsinkAST
-  :: (Foil.Distinct l, Foil.CoSinkable binder, Bifoldable sig)
+  :: (Foil.DExt n l, Foil.CoSinkable binder, Bifoldable sig)
   => Foil.Scope n -> AST binder sig l -> Maybe (AST binder sig n)
 unsinkAST scope term
   | Foil.nameSetSubsetOfScope (supportOf term) scope = Just (unsafeCoerce term)
