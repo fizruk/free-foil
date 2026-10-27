@@ -272,7 +272,7 @@ refreshScopedAST scope (ScopedAST binder body) =
 -- @since 0.0.3
 {-# INLINABLE alphaEquivRefreshed #-}
 alphaEquivRefreshed
-  :: (Bitraversable sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder)
+  :: (Bifunctor sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder)
   => Foil.Scope n
   -> AST binder sig n
   -> AST binder sig n
@@ -281,7 +281,7 @@ alphaEquivRefreshed scope t1 t2 = refreshAST scope t1 `unsafeEqAST` refreshAST s
 
 -- | A term is a scope-indexed value that can be compared up to α, which is what
 -- a pattern carrying terms as payloads needs of them.
-instance (Bitraversable sig, ZipMatchK sig, Foil.UnifiablePattern binder, Foil.SinkableK binder)
+instance (ZipMatchK sig, Foil.UnifiablePattern binder, Foil.SinkableK binder)
     => Foil.AlphaEquiv (AST binder sig) where
   alphaEquivIn = alphaEquiv
 
@@ -298,7 +298,7 @@ instance (Bitraversable sig, ZipMatchK sig, Foil.UnifiablePattern binder, Foil.S
 -- @since 0.0.3
 {-# INLINABLE alphaEquiv #-}
 alphaEquiv
-  :: (Bitraversable sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder)
+  :: (ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder)
   => Foil.Scope n
   -> AST binder sig n
   -> AST binder sig n
@@ -321,7 +321,7 @@ alphaEquiv _ _ _ = False
 -- @since 0.0.3
 {-# INLINABLE alphaEquivScoped #-}
 alphaEquivScoped
-  :: forall sig binder n. (Bitraversable sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder)
+  :: forall sig binder n. (ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder)
   => Foil.Scope n
   -> ScopedAST binder sig n
   -> ScopedAST binder sig n
@@ -388,7 +388,7 @@ renamedId rename = Foil.nameId . Foil.nameOf . rename . Foil.UnsafeNameBinder
 --
 -- @since 0.4.0
 bindPairs
-  :: forall sig binder m l1 l2. (Bitraversable sig, ZipMatchK sig, Foil.Distinct m, Foil.UnifiablePattern binder, Foil.SinkableK binder)
+  :: forall sig binder m l1 l2. (ZipMatchK sig, Foil.Distinct m, Foil.UnifiablePattern binder, Foil.SinkableK binder)
   => Int -> IntMap Int -> IntMap Int -> [(Int, Int)]
   -> Foil.Scope m
   -> AST binder sig l1 -> AST binder sig l2 -> Bool
@@ -425,7 +425,7 @@ bindPairs lvl envL envR pairs scope body1 body2 = case pairs of
 -- @since 0.4.0
 {-# INLINABLE alphaEquivEnv #-}
 alphaEquivEnv
-  :: forall sig binder n n1 n2. (Bitraversable sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder)
+  :: forall sig binder n n1 n2. (ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder)
   => Int          -- ^ Next fresh level.
   -> IntMap Int   -- ^ Left renaming: raw name to the level that bound it.
   -> IntMap Int   -- ^ Right renaming.
@@ -463,7 +463,7 @@ alphaEquivEnv lvl envL envR scope t1 t2
 -- @since 0.4.0
 {-# INLINABLE alphaEquivScopedEnv #-}
 alphaEquivScopedEnv
-  :: forall sig binder n n1 n2. (Bitraversable sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder)
+  :: forall sig binder n n1 n2. (ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder)
   => Int
   -> IntMap Int
   -> IntMap Int
@@ -533,7 +533,7 @@ alphaEquivScopedEnv lvl envL envR scope scoped1 scoped2 =
 -- @since 0.0.3
 {-# INLINABLE unsafeEqAST #-}
 unsafeEqAST
-  :: (Bitraversable sig, ZipMatchK sig, Foil.UnifiablePattern binder, Foil.Distinct n, Foil.Distinct l)
+  :: (ZipMatchK sig, Foil.UnifiablePattern binder, Foil.Distinct n, Foil.Distinct l)
   => AST binder sig n
   -> AST binder sig l
   -> Bool
@@ -551,7 +551,7 @@ unsafeEqAST _ _ = False
 -- @since 0.0.3
 {-# INLINABLE unsafeEqScopedAST #-}
 unsafeEqScopedAST
-  :: (Bitraversable sig, ZipMatchK sig, Foil.UnifiablePattern binder, Foil.Distinct n, Foil.Distinct l)
+  :: (ZipMatchK sig, Foil.UnifiablePattern binder, Foil.Distinct n, Foil.Distinct l)
   => ScopedAST binder sig n
   -> ScopedAST binder sig l
   -> Bool
