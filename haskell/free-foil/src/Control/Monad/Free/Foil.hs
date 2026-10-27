@@ -103,36 +103,47 @@ instance Foil.InjectName (AST binder sig) where
 -- | Substitution for free (scoped monads).
 --
 -- @since 0.0.1
-{-# INLINABLE substitute #-}
+{-# INLINE substitute #-}
 substitute
-  :: (Bifunctor sig, Foil.Distinct o, Foil.CoSinkable binder, Foil.SinkableK binder)
+  :: forall sig binder o i. (Bifunctor sig, Foil.Distinct o, Foil.CoSinkable binder, Foil.SinkableK binder)
   => Foil.Scope o
   -> Foil.Substitution (AST binder sig) i o
   -> AST binder sig i
   -> AST binder sig o
-substitute scope subst term
-  -- An empty substitution maps every name to itself ('addRename' deletes
-  -- identity renames), so the result is the very term, and the coercion is
-  -- the one 'Foil.sink' performs. Substitutions go empty often: opening a
-  -- scoped term with its own binder's name is an identity rename, and under
-  -- a deterministic allocation policy a refreshed binder usually keeps its
-  -- name, deleting its entry. Binders that shadow the ambient scope are
-  -- left as they stand, as on the no-clash path below. A caller that wants
-  -- them refreshed asks 'substituteRefreshed'.
-  | Foil.nullSubst subst = unsafeCoerce term
-  | otherwise = go term
+substitute = goSubst
   where
-    -- The substitution is known non-empty here, and it can only change
-    -- under a binder, so the walk between binders is unchecked and each
-    -- binder entry re-enters 'substitute', testing emptiness exactly once.
-    go = \case
-      Var name -> Foil.lookupSubst subst name
-      Node node -> Node (bimap f go node)
-    f (ScopedAST binder body) =
-      Foil.withRefreshedPattern scope binder $ \extendSubst binder' scope' ->
-        let subst' = extendSubst (Foil.sink subst)
-            body' = substitute scope' subst' body
-        in ScopedAST binder' body'
+    -- The loop is local and takes the instances from 'substitute', so once
+    -- 'substitute' is inlined at a known signature, the loop uses that
+    -- signature's instances directly.
+    goSubst
+      :: Foil.Distinct o'
+      => Foil.Scope o'
+      -> Foil.Substitution (AST binder sig) i' o'
+      -> AST binder sig i'
+      -> AST binder sig o'
+    goSubst scope subst term
+      -- An empty substitution maps every name to itself ('addRename' deletes
+      -- identity renames), so the result is the very term, and the coercion is
+      -- the one 'Foil.sink' performs. Substitutions go empty often: opening a
+      -- scoped term with its own binder's name is an identity rename, and under
+      -- a deterministic allocation policy a refreshed binder usually keeps its
+      -- name, deleting its entry. Binders that shadow the ambient scope are
+      -- left as they stand, as on the no-clash path below. A caller that wants
+      -- them refreshed asks 'substituteRefreshed'.
+      | Foil.nullSubst subst = unsafeCoerce term
+      | otherwise = go term
+      where
+        -- The substitution is known non-empty here, and it can only change
+        -- under a binder, so the walk between binders is unchecked and each
+        -- binder entry re-enters 'goSubst', testing emptiness exactly once.
+        go = \case
+          Var name -> Foil.lookupSubst subst name
+          Node node -> Node (bimap f go node)
+        f (ScopedAST binder body) =
+          Foil.withRefreshedPattern scope binder $ \extendSubst binder' scope' ->
+            let subst' = extendSubst (Foil.sink subst)
+                body' = goSubst scope' subst' body
+            in ScopedAST binder' body'
 
 -- | Substitution for free (scoped monads).
 --
