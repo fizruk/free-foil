@@ -1,10 +1,12 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveTraversable   #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 -- | Properties of 'alphaEquiv' with threaded renamings.
 --
@@ -28,6 +30,7 @@ import           Control.Monad.Foil.Internal (Name (..), NameBinder (..),
                                               unsafeAssertFresh)
 import           Control.Monad.Free.Foil
 import           Data.ZipMatchK.TH           (deriveZipMatchK)
+import           Generics.Kind.TH            (deriveGenericK)
 
 data LamSig scope term
   = App term term
@@ -40,6 +43,48 @@ deriveBitraversable ''LamSig
 deriveZipMatchK ''LamSig
 
 type Term = AST Foil.NameBinder LamSig
+
+-- | A binder annotated with a name of the outer scope, as a binder may be
+-- annotated with its type. Only 'Foil.unifyPatternsIn' compares the
+-- annotations, as it does the payloads of a telescope.
+data AnnBinder (n :: Foil.S) (l :: Foil.S) where
+  AnnBinder :: Foil.Name n -> Foil.NameBinder n l -> AnnBinder n l
+
+deriveGenericK ''AnnBinder
+instance Foil.SinkableK AnnBinder
+
+-- | The annotation is a payload, so it is moved by hand (see
+-- 'Foil.transportPayload').
+instance Foil.CoSinkable AnnBinder where
+  coSinkabilityProof rename (AnnBinder ann binder) cont =
+    Foil.coSinkabilityProof rename binder $ \rename' binder' ->
+      cont rename' (AnnBinder (rename ann) binder')
+  withPattern withBinder _unit _comp scope (AnnBinder ann binder) cont =
+    withBinder scope binder $ \fbinder binder' ->
+      cont fbinder
+        (AnnBinder (Foil.transportName Foil.verbatimTransport ann) binder')
+        (Foil.extendScope binder' scope)
+instance Foil.UnifiablePattern AnnBinder where
+  unifyPatternsIn _scope l@(AnnBinder x _) r@(AnnBinder y _)
+    | x == y    = Foil.unifyPatterns l r
+    | otherwise = Foil.NotUnifiable
+
+type AnnTerm = AST AnnBinder LamSig
+
+-- | λ(x : ann). x
+annId :: Foil.Distinct n => Foil.Scope n -> Foil.Name n -> AnnTerm n
+annId scope ann = Foil.withFresh scope $ \x ->
+  Node (Lam (ScopedAST (AnnBinder ann x) (Var (Foil.nameOf x))))
+
+-- | Run a continuation in a scope with two names.
+withTwoNames
+  :: (forall n. Foil.Distinct n => Foil.Scope n -> Foil.Name n -> Foil.Name n -> r)
+  -> r
+withTwoNames cont =
+  Foil.withFresh Foil.emptyScope $ \a ->
+    let scope1 = Foil.extendScope a Foil.emptyScope
+     in Foil.withFresh scope1 $ \b ->
+          cont (Foil.extendScope b scope1) (Foil.sink (Foil.nameOf a)) (Foil.nameOf b)
 
 -- * Hand-built terms with chosen binder names
 
@@ -159,6 +204,17 @@ spec = do
       let t1 = lam 7 (\_a -> lam 5 (\b -> Var b))
           t2 = lam 5 (\_a -> lam 5 (\b -> Var b))
       alphaEquiv Foil.emptyScope t1 t2 `shouldBe` True
+
+  describe "binders with annotations" $ do
+    it "rejects λ(x : a). x against λ(x : b). x" $
+      withTwoNames $ \scope a b ->
+        alphaEquiv scope (annId scope a) (annId scope b) `shouldBe` False
+    it "rejects λ(x : a). x against λ(x : b). x with alphaEquivRefreshed" $
+      withTwoNames $ \scope a b ->
+        alphaEquivRefreshed scope (annId scope a) (annId scope b) `shouldBe` False
+    it "accepts λ(x : a). x against λ(y : a). y with alphaEquivRefreshed" $
+      withTwoNames $ \scope a _ ->
+        alphaEquivRefreshed scope (annId scope a) (annId scope a) `shouldBe` True
 
   describe "agreement with alphaEquivRefreshed" $ do
     prop "on a term against its shifted rendering" $ \s (Positive k) ->
