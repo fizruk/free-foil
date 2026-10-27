@@ -281,7 +281,7 @@ alphaEquivRefreshed scope t1 t2 = refreshAST scope t1 `unsafeEqAST` refreshAST s
 
 -- | A term is a scope-indexed value that can be compared up to α, which is what
 -- a pattern carrying terms as payloads needs of them.
-instance (ZipMatchK sig, Foil.UnifiablePattern binder, Foil.SinkableK binder)
+instance (ZipMatchK sig, Foil.UnifiablePattern binder)
     => Foil.AlphaEquiv (AST binder sig) where
   alphaEquivIn = alphaEquiv
 
@@ -296,21 +296,14 @@ instance (ZipMatchK sig, Foil.UnifiablePattern binder, Foil.SinkableK binder)
 -- binder, which is quadratic on a chain of them.
 --
 -- @since 0.0.3
-{-# INLINABLE alphaEquiv #-}
+{-# INLINE alphaEquiv #-}
 alphaEquiv
-  :: (ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder)
+  :: (ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder)
   => Foil.Scope n
   -> AST binder sig n
   -> AST binder sig n
   -> Bool
-alphaEquiv _scope (Var x) (Var y) = x == y
-alphaEquiv scope (Node l) (Node r) =
-  case zipMatchWith2 (unit . alphaEquivScoped scope) (unit . alphaEquiv scope) l r of
-    Nothing -> False
-    Just _  -> True
-  where
-    unit f x = if f x then Just () else Nothing
-alphaEquiv _ _ _ = False
+alphaEquiv = aeAlphaEquiv alphaEquivLoops
 
 -- | Same as 'alphaEquiv' but for scoped terms.
 --
@@ -319,61 +312,14 @@ alphaEquiv _ _ _ = False
 -- which threads the renamings down and switches back when they empty out.
 --
 -- @since 0.0.3
-{-# INLINABLE alphaEquivScoped #-}
+{-# INLINE alphaEquivScoped #-}
 alphaEquivScoped
-  :: forall sig binder n. (ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder)
+  :: forall sig binder n. (ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder)
   => Foil.Scope n
   -> ScopedAST binder sig n
   -> ScopedAST binder sig n
   -> Bool
-alphaEquivScoped scope
-  (ScopedAST binder1 body1)
-  (ScopedAST binder2 body2) =
-    case Foil.unifyPatternsIn scope binder1 binder2 of
-      -- the binders coincide: compare the bodies as they stand
-      Foil.SameNameBinders{} ->  -- after seeing this we know that body scopes are the same
-        case Foil.assertDistinct binder1 of
-          Foil.Distinct ->
-            let scope1 = Foil.extendScopePattern binder1 scope
-            in alphaEquiv scope1 body1 body2
-      -- the left binder is renamed towards the right one
-      Foil.RenameLeftNameBinder _ rename1to2 ->
-        case Foil.assertDistinct binder2 of
-          Foil.Distinct ->
-            let scope2 = Foil.extendScopePattern binder2 scope
-                pairs = [ (Foil.nameId x, renamedId rename1to2 x)
-                        | x <- Foil.namesOfPattern binder1 ]
-            in enterEnv pairs scope2 body1 body2
-      -- the right binder is renamed towards the left one
-      Foil.RenameRightNameBinder _ rename2to1 ->
-        case Foil.assertDistinct binder1 of
-          Foil.Distinct ->
-            let scope1 = Foil.extendScopePattern binder1 scope
-                pairs = [ (renamedId rename2to1 y, Foil.nameId y)
-                        | y <- Foil.namesOfPattern binder2 ]
-            in enterEnv pairs scope1 body1 body2
-      -- both are renamed towards a unified pattern: pair the two sides'
-      -- names through the unified name each maps to
-      Foil.RenameBothBinders binder' rename1 rename2 ->
-        case Foil.assertDistinct binder' of
-          Foil.Distinct ->
-            let scope' = Foil.extendScopePattern binder' scope
-                leftU = IntMap.fromList
-                  [ (renamedId rename1 x, Foil.nameId x)
-                  | x <- Foil.namesOfPattern binder1 ]
-                rightU = IntMap.fromList
-                  [ (renamedId rename2 y, Foil.nameId y)
-                  | y <- Foil.namesOfPattern binder2 ]
-                pairs = IntMap.elems (IntMap.intersectionWith (,) leftU rightU)
-            in enterEnv pairs scope' body1 body2
-      -- if we cannot unify patterns then scopes are not alpha-equivalent
-      Foil.NotUnifiable -> False
-  where
-    enterEnv
-      :: forall m l1 l2. Foil.Distinct m
-      => [(Int, Int)] -> Foil.Scope m
-      -> AST binder sig l1 -> AST binder sig l2 -> Bool
-    enterEnv pairs scope' = bindPairs 0 IntMap.empty IntMap.empty pairs scope'
+alphaEquivScoped = aeAlphaEquivScoped alphaEquivLoops
 
 -- | The raw name a verdict's renaming assigns to a pattern's name.
 --
@@ -387,16 +333,13 @@ renamedId rename = Foil.nameId . Foil.nameOf . rename . Foil.UnsafeNameBinder
 -- 'alphaEquivEnv' on the bodies.
 --
 -- @since 0.4.0
+{-# INLINE bindPairs #-}
 bindPairs
-  :: forall sig binder m l1 l2. (ZipMatchK sig, Foil.Distinct m, Foil.UnifiablePattern binder, Foil.SinkableK binder)
+  :: forall sig binder m l1 l2. (ZipMatchK sig, Foil.Distinct m, Foil.UnifiablePattern binder)
   => Int -> IntMap Int -> IntMap Int -> [(Int, Int)]
   -> Foil.Scope m
   -> AST binder sig l1 -> AST binder sig l2 -> Bool
-bindPairs lvl envL envR pairs scope body1 body2 = case pairs of
-  [] -> alphaEquivEnv lvl envL envR scope body1 body2
-  ((x, y) : rest)
-    | x == y    -> bindPairs lvl (IntMap.delete x envL) (IntMap.delete y envR) rest scope body1 body2
-    | otherwise -> bindPairs (lvl + 1) (IntMap.insert x lvl envL) (IntMap.insert y lvl envR) rest scope body1 body2
+bindPairs = aeBindPairs alphaEquivLoops
 
 -- | The renaming-threading worker behind 'alphaEquiv': compare two terms
 -- under partial renamings of their names into shared /levels/.
@@ -423,9 +366,9 @@ bindPairs lvl envL envR pairs scope body1 body2 = case pairs of
 -- no common index exists to give them.
 --
 -- @since 0.4.0
-{-# INLINABLE alphaEquivEnv #-}
+{-# INLINE alphaEquivEnv #-}
 alphaEquivEnv
-  :: forall sig binder n n1 n2. (ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder)
+  :: forall sig binder n n1 n2. (ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder)
   => Int          -- ^ Next fresh level.
   -> IntMap Int   -- ^ Left renaming: raw name to the level that bound it.
   -> IntMap Int   -- ^ Right renaming.
@@ -433,37 +376,16 @@ alphaEquivEnv
   -> AST binder sig n1
   -> AST binder sig n2
   -> Bool
-alphaEquivEnv lvl envL envR scope t1 t2
-  | IntMap.null envL && IntMap.null envR =
-      -- The renamings have emptied out (or never held anything): the
-      -- terms coincide raw-for-raw from here on, so compare them where
-      -- they stand. The coercion brings both indices to the scope's,
-      -- which is the unified path the comparison speaks of.
-      alphaEquiv scope (unsafeCoerce t1 :: AST binder sig n) (unsafeCoerce t2 :: AST binder sig n)
-  | otherwise = case (t1, t2) of
-      (Var x, Var y) ->
-        case (IntMap.lookup (Foil.nameId x) envL, IntMap.lookup (Foil.nameId y) envR) of
-          (Just k1, Just k2) -> k1 == k2
-          (Nothing, Nothing) -> Foil.nameId x == Foil.nameId y
-          _                  -> False
-      (Node l, Node r) ->
-        case zipMatchWith2
-               (unit . alphaEquivScopedEnv lvl envL envR scope)
-               (unit . alphaEquivEnv lvl envL envR scope) l r of
-          Nothing -> False
-          Just _  -> True
-      _ -> False
-  where
-    unit f x = if f x then Just () else Nothing
+alphaEquivEnv = aeAlphaEquivEnv alphaEquivLoops
 
 -- | The scoped half of 'alphaEquivEnv': get the verdict from
 -- 'Foil.unifyPatternsIn', extend the environments as it prescribes, and
 -- recurse into the bodies as they stand.
 --
 -- @since 0.4.0
-{-# INLINABLE alphaEquivScopedEnv #-}
+{-# INLINE alphaEquivScopedEnv #-}
 alphaEquivScopedEnv
-  :: forall sig binder n n1 n2. (ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder)
+  :: forall sig binder n n1 n2. (ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder)
   => Int
   -> IntMap Int
   -> IntMap Int
@@ -471,57 +393,207 @@ alphaEquivScopedEnv
   -> ScopedAST binder sig n1
   -> ScopedAST binder sig n2
   -> Bool
-alphaEquivScopedEnv lvl envL envR scope scoped1 scoped2 =
-  -- The scoped terms are compared where they stand; the coercion only
-  -- brings their indices to the scope's, which is the unified path the
-  -- environments and the verdicts speak of.
-  case (unsafeCoerce scoped1 :: ScopedAST binder sig n, unsafeCoerce scoped2 :: ScopedAST binder sig n) of
-    (ScopedAST binder1 body1, ScopedAST binder2 body2) ->
-      case Foil.unifyPatternsIn scope binder1 binder2 of
-        -- the binders coincide: the pair shadows both sides identically
-        Foil.SameNameBinders{} ->
-          case Foil.assertDistinct binder1 of
-            Foil.Distinct ->
-              let scope' = Foil.extendScopePattern binder1 scope
-                  names = map Foil.nameId (Foil.namesOfPattern binder1)
-                  envL' = deleteAll names envL
-                  envR' = deleteAll names envR
-               in alphaEquivEnv lvl envL' envR' scope' body1 body2
-        -- the left binder is renamed towards the right one
-        Foil.RenameLeftNameBinder _ rename1to2 ->
-          case Foil.assertDistinct binder2 of
-            Foil.Distinct ->
-              let scope' = Foil.extendScopePattern binder2 scope
-                  pairs = [ (Foil.nameId x, renamedId rename1to2 x)
-                          | x <- Foil.namesOfPattern binder1 ]
-               in bindPairs lvl envL envR pairs scope' body1 body2
-        -- the right binder is renamed towards the left one
-        Foil.RenameRightNameBinder _ rename2to1 ->
-          case Foil.assertDistinct binder1 of
-            Foil.Distinct ->
-              let scope' = Foil.extendScopePattern binder1 scope
-                  pairs = [ (renamedId rename2to1 y, Foil.nameId y)
-                          | y <- Foil.namesOfPattern binder2 ]
-               in bindPairs lvl envL envR pairs scope' body1 body2
-        -- both are renamed towards a unified pattern: pair the two sides'
-        -- names through the unified name each maps to
-        Foil.RenameBothBinders binder' rename1 rename2 ->
-          case Foil.assertDistinct binder' of
-            Foil.Distinct ->
-              let scope' = Foil.extendScopePattern binder' scope
-                  leftU = IntMap.fromList
-                    [ (renamedId rename1 x, Foil.nameId x)
-                    | x <- Foil.namesOfPattern binder1 ]
-                  rightU = IntMap.fromList
-                    [ (renamedId rename2 y, Foil.nameId y)
-                    | y <- Foil.namesOfPattern binder2 ]
-                  pairs = IntMap.elems (IntMap.intersectionWith (,) leftU rightU)
-               in bindPairs lvl envL envR pairs scope' body1 body2
-        Foil.NotUnifiable -> False
+alphaEquivScopedEnv = aeAlphaEquivScopedEnv alphaEquivLoops
+
+-- | The mutually recursive loops behind α-equivalence, one field per
+-- function above.
+--
+-- @since 0.6.1
+data AlphaEquivLoops binder sig = AlphaEquivLoops
+  { aeAlphaEquiv :: forall n. Foil.Distinct n => Foil.Scope n -> AST binder sig n -> AST binder sig n -> Bool
+  , aeAlphaEquivScoped :: forall n. Foil.Distinct n => Foil.Scope n -> ScopedAST binder sig n -> ScopedAST binder sig n -> Bool
+  , aeBindPairs :: forall m l1 l2. Foil.Distinct m => Int -> IntMap Int -> IntMap Int -> [(Int, Int)] -> Foil.Scope m -> AST binder sig l1 -> AST binder sig l2 -> Bool
+  , aeAlphaEquivEnv :: forall n n1 n2. Foil.Distinct n => Int -> IntMap Int -> IntMap Int -> Foil.Scope n -> AST binder sig n1 -> AST binder sig n2 -> Bool
+  , aeAlphaEquivScopedEnv :: forall n n1 n2. Foil.Distinct n => Int -> IntMap Int -> IntMap Int -> Foil.Scope n -> ScopedAST binder sig n1 -> ScopedAST binder sig n2 -> Bool
+  }
+
+-- | The loops behind α-equivalence. They are local and take the instances
+-- from this function, so once it is inlined at a known signature, they use
+-- that signature's instances directly. A recursive function with class
+-- constraints would instead be split by GHC into a wrapper and a worker
+-- (some of its dictionaries, such as 'Foil.Distinct', are never used at
+-- runtime), and a client's @SPECIALIZE@ pragma would reach only the wrapper.
+--
+-- @since 0.6.1
+{-# INLINE alphaEquivLoops #-}
+alphaEquivLoops
+  :: forall sig binder. (ZipMatchK sig, Foil.UnifiablePattern binder)
+  => AlphaEquivLoops binder sig
+alphaEquivLoops = AlphaEquivLoops goAlpha goScoped goPairs goEnv goScopedEnv
   where
-    deleteAll names env = case names of
-      []       -> env
-      (i : is) -> deleteAll is (IntMap.delete i env)
+    goAlpha
+      :: Foil.Distinct n
+      => Foil.Scope n
+      -> AST binder sig n
+      -> AST binder sig n
+      -> Bool
+    goAlpha _scope (Var x) (Var y) = x == y
+    goAlpha scope (Node l) (Node r) =
+      case zipMatchWith2 (unit . goScoped scope) (unit . goAlpha scope) l r of
+        Nothing -> False
+        Just _  -> True
+      where
+        unit f x = if f x then Just () else Nothing
+    goAlpha _ _ _ = False
+
+    goScoped
+      :: forall n. Foil.Distinct n
+      => Foil.Scope n
+      -> ScopedAST binder sig n
+      -> ScopedAST binder sig n
+      -> Bool
+    goScoped scope
+      (ScopedAST binder1 body1)
+      (ScopedAST binder2 body2) =
+        case Foil.unifyPatternsIn scope binder1 binder2 of
+          -- the binders coincide: compare the bodies as they stand
+          Foil.SameNameBinders{} ->  -- after seeing this we know that body scopes are the same
+            case Foil.assertDistinct binder1 of
+              Foil.Distinct ->
+                let scope1 = Foil.extendScopePattern binder1 scope
+                in goAlpha scope1 body1 body2
+          -- the left binder is renamed towards the right one
+          Foil.RenameLeftNameBinder _ rename1to2 ->
+            case Foil.assertDistinct binder2 of
+              Foil.Distinct ->
+                let scope2 = Foil.extendScopePattern binder2 scope
+                    pairs = [ (Foil.nameId x, renamedId rename1to2 x)
+                            | x <- Foil.namesOfPattern binder1 ]
+                in enterEnv pairs scope2 body1 body2
+          -- the right binder is renamed towards the left one
+          Foil.RenameRightNameBinder _ rename2to1 ->
+            case Foil.assertDistinct binder1 of
+              Foil.Distinct ->
+                let scope1 = Foil.extendScopePattern binder1 scope
+                    pairs = [ (renamedId rename2to1 y, Foil.nameId y)
+                            | y <- Foil.namesOfPattern binder2 ]
+                in enterEnv pairs scope1 body1 body2
+          -- both are renamed towards a unified pattern: pair the two sides'
+          -- names through the unified name each maps to
+          Foil.RenameBothBinders binder' rename1 rename2 ->
+            case Foil.assertDistinct binder' of
+              Foil.Distinct ->
+                let scope' = Foil.extendScopePattern binder' scope
+                    leftU = IntMap.fromList
+                      [ (renamedId rename1 x, Foil.nameId x)
+                      | x <- Foil.namesOfPattern binder1 ]
+                    rightU = IntMap.fromList
+                      [ (renamedId rename2 y, Foil.nameId y)
+                      | y <- Foil.namesOfPattern binder2 ]
+                    pairs = IntMap.elems (IntMap.intersectionWith (,) leftU rightU)
+                in enterEnv pairs scope' body1 body2
+          -- if we cannot unify patterns then scopes are not alpha-equivalent
+          Foil.NotUnifiable -> False
+      where
+        enterEnv
+          :: forall m l1 l2. Foil.Distinct m
+          => [(Int, Int)] -> Foil.Scope m
+          -> AST binder sig l1 -> AST binder sig l2 -> Bool
+        enterEnv pairs scope' = goPairs 0 IntMap.empty IntMap.empty pairs scope'
+
+    goPairs
+      :: forall m l1 l2. Foil.Distinct m
+      => Int -> IntMap Int -> IntMap Int -> [(Int, Int)]
+      -> Foil.Scope m
+      -> AST binder sig l1 -> AST binder sig l2 -> Bool
+    goPairs lvl envL envR pairs scope body1 body2 = case pairs of
+      [] -> goEnv lvl envL envR scope body1 body2
+      ((x, y) : rest)
+        | x == y    -> goPairs lvl (IntMap.delete x envL) (IntMap.delete y envR) rest scope body1 body2
+        | otherwise -> goPairs (lvl + 1) (IntMap.insert x lvl envL) (IntMap.insert y lvl envR) rest scope body1 body2
+
+    goEnv
+      :: forall n n1 n2. Foil.Distinct n
+      => Int          -- ^ Next fresh level.
+      -> IntMap Int   -- ^ Left renaming: raw name to the level that bound it.
+      -> IntMap Int   -- ^ Right renaming.
+      -> Foil.Scope n -- ^ Scope along the unified path (consulted by 'Foil.unifyPatternsIn').
+      -> AST binder sig n1
+      -> AST binder sig n2
+      -> Bool
+    goEnv lvl envL envR scope t1 t2
+      | IntMap.null envL && IntMap.null envR =
+          -- The renamings have emptied out (or never held anything): the
+          -- terms coincide raw-for-raw from here on, so compare them where
+          -- they stand. The coercion brings both indices to the scope's,
+          -- which is the unified path the comparison speaks of.
+          goAlpha scope (unsafeCoerce t1 :: AST binder sig n) (unsafeCoerce t2 :: AST binder sig n)
+      | otherwise = case (t1, t2) of
+          (Var x, Var y) ->
+            case (IntMap.lookup (Foil.nameId x) envL, IntMap.lookup (Foil.nameId y) envR) of
+              (Just k1, Just k2) -> k1 == k2
+              (Nothing, Nothing) -> Foil.nameId x == Foil.nameId y
+              _                  -> False
+          (Node l, Node r) ->
+            case zipMatchWith2
+                   (unit . goScopedEnv lvl envL envR scope)
+                   (unit . goEnv lvl envL envR scope) l r of
+              Nothing -> False
+              Just _  -> True
+          _ -> False
+      where
+        unit f x = if f x then Just () else Nothing
+
+    goScopedEnv
+      :: forall n n1 n2. Foil.Distinct n
+      => Int
+      -> IntMap Int
+      -> IntMap Int
+      -> Foil.Scope n
+      -> ScopedAST binder sig n1
+      -> ScopedAST binder sig n2
+      -> Bool
+    goScopedEnv lvl envL envR scope scoped1 scoped2 =
+      -- The scoped terms are compared where they stand; the coercion only
+      -- brings their indices to the scope's, which is the unified path the
+      -- environments and the verdicts speak of.
+      case (unsafeCoerce scoped1 :: ScopedAST binder sig n, unsafeCoerce scoped2 :: ScopedAST binder sig n) of
+        (ScopedAST binder1 body1, ScopedAST binder2 body2) ->
+          case Foil.unifyPatternsIn scope binder1 binder2 of
+            -- the binders coincide: the pair shadows both sides identically
+            Foil.SameNameBinders{} ->
+              case Foil.assertDistinct binder1 of
+                Foil.Distinct ->
+                  let scope' = Foil.extendScopePattern binder1 scope
+                      names = map Foil.nameId (Foil.namesOfPattern binder1)
+                      envL' = deleteAll names envL
+                      envR' = deleteAll names envR
+                   in goEnv lvl envL' envR' scope' body1 body2
+            -- the left binder is renamed towards the right one
+            Foil.RenameLeftNameBinder _ rename1to2 ->
+              case Foil.assertDistinct binder2 of
+                Foil.Distinct ->
+                  let scope' = Foil.extendScopePattern binder2 scope
+                      pairs = [ (Foil.nameId x, renamedId rename1to2 x)
+                              | x <- Foil.namesOfPattern binder1 ]
+                   in goPairs lvl envL envR pairs scope' body1 body2
+            -- the right binder is renamed towards the left one
+            Foil.RenameRightNameBinder _ rename2to1 ->
+              case Foil.assertDistinct binder1 of
+                Foil.Distinct ->
+                  let scope' = Foil.extendScopePattern binder1 scope
+                      pairs = [ (renamedId rename2to1 y, Foil.nameId y)
+                              | y <- Foil.namesOfPattern binder2 ]
+                   in goPairs lvl envL envR pairs scope' body1 body2
+            -- both are renamed towards a unified pattern: pair the two sides'
+            -- names through the unified name each maps to
+            Foil.RenameBothBinders binder' rename1 rename2 ->
+              case Foil.assertDistinct binder' of
+                Foil.Distinct ->
+                  let scope' = Foil.extendScopePattern binder' scope
+                      leftU = IntMap.fromList
+                        [ (renamedId rename1 x, Foil.nameId x)
+                        | x <- Foil.namesOfPattern binder1 ]
+                      rightU = IntMap.fromList
+                        [ (renamedId rename2 y, Foil.nameId y)
+                        | y <- Foil.namesOfPattern binder2 ]
+                      pairs = IntMap.elems (IntMap.intersectionWith (,) leftU rightU)
+                   in goPairs lvl envL envR pairs scope' body1 body2
+            Foil.NotUnifiable -> False
+      where
+        deleteAll names env = case names of
+          []       -> env
+          (i : is) -> deleteAll is (IntMap.delete i env)
 
 -- ** Unsafe equality checks
 
