@@ -16,7 +16,7 @@
 -- and nothing else in the library does. (The dependency this costs is
 -- @binary@, a GHC boot library.)
 --
--- Note that decoding /mints/ scope evidence: a 'Foil.Name' comes back at
+-- Note that decoding /mints/ scope evidence: a t'Control.Monad.Foil.Name' comes back at
 -- whatever scope index the context asks for, and the existential scope
 -- under a binder is chosen arbitrarily. Thus the instances are a trust
 -- boundary, in the sense of 'Control.Monad.Foil.Blocks.checkExtScope'. The

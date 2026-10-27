@@ -2497,7 +2497,7 @@ instance (SinkableK f, ExtractRenamingK i) => GSinkableK (Field (Kon f :@: Var i
         cont (putBackRenamingK @_ @i rename' irename) (Field (unsafeCoerce x')) -- unsafeCoerce?
 
 -- | A field indexed by the innermost scope variable only, such as the body of
--- 'Control.Monad.Free.Foil.ScopedAST'. Under a binder the traversal holds one
+-- t'Control.Monad.Free.Foil.ScopedAST'. Under a binder the traversal holds one
 -- renaming per scope variable, so the field takes the innermost one, as
 -- @t'Field' ('Kon' f ':@:' 'Var' i)@ does.
 instance SinkableK (f a) => GSinkableK (Field (Kon f :@: Kon a :@: Var0)) where

@@ -14,7 +14,7 @@ import           Language.Haskell.TH
 import qualified Control.Monad.Foil         as Foil
 import           Control.Monad.Foil.TH.Util
 
--- | Generate 'Foil.Sinkable' and 'Foil.CoSinkable' instances.
+-- | Generate t'Control.Monad.Foil.Sinkable' and t'Control.Monad.Foil.CoSinkable' instances.
 --
 -- @since 0.0.1
 mkInstancesFoil
@@ -83,7 +83,7 @@ mkInstancesFoil termT nameT scopeT patternT = do
           where
             xi = mkName ("x" ++ show i)
 
--- | Generate the 'Foil.CoSinkable' instance of the pattern type that
+-- | Generate the t'Control.Monad.Foil.CoSinkable' instance of the pattern type that
 -- 'Control.Monad.Foil.TH.MkFoilData.mkFoilPattern' generates from a raw
 -- pattern type, given the raw types of identifiers and patterns.
 -- 'deriveCoSinkable' takes the scope-safe pattern type itself.
@@ -143,7 +143,7 @@ mkCoSinkableFoilPattern nameT patternT = do
             xi = mkName ("x" ++ show i)
 
     -- The binders of the binding fields, in order, without going through
-    -- 'Foil.withPattern'.
+    -- 'Control.Monad.Foil.withPattern'.
     clauseNameBinderListOf :: Con -> Clause
     clauseNameBinderListOf (NormalC conName params) =
       Clause [ConP foilConName [] conParamPatterns] (NormalB body) []
@@ -201,7 +201,7 @@ mkCoSinkableFoilPattern nameT patternT = do
           where
             xi = mkName ("x" ++ show i)
 
--- | Generate the 'Foil.CoSinkable' instance of a scope-safe pattern type.
+-- | Generate the t'Control.Monad.Foil.CoSinkable' instance of a scope-safe pattern type.
 -- 'mkCoSinkableFoilPattern' takes the raw pattern type instead.
 --
 -- > data Pat (n :: S) (l :: S) where
@@ -210,9 +210,9 @@ mkCoSinkableFoilPattern nameT patternT = do
 -- >
 -- > deriveCoSinkable ''Pat
 --
--- A field is a 'Foil.NameBinder', a nested pattern, or a payload that
+-- A field is a t'Control.Monad.Foil.NameBinder', a nested pattern, or a payload that
 -- mentions no scope. A payload indexed by a scope needs a hand-written
--- instance (see 'Foil.transportPayload').
+-- instance (see 'Control.Monad.Foil.transportPayload').
 --
 -- @since 0.6.0
 deriveCoSinkable :: Name -> Q [Dec]
@@ -229,7 +229,7 @@ deriveCoSinkable patternT = do
       coSinkClauses <- mapM patternCoSinkabilityProofClause fields
       withPatClauses <- mapM patternWithPatternClause fields
       listClauses <- mapM patternNameBinderListOfClause fields
-      -- A pattern that nests itself has a recursive 'Foil.withPattern', which
+      -- A pattern that nests itself has a recursive 'Control.Monad.Foil.withPattern', which
       -- cannot inline.
       let recursive = or [ h == ConT patternT | (_, sorts) <- fields, PatternNested h <- sorts ]
           inline = [ PragmaD (InlineP 'Foil.withPattern Inline FunLike AllPhases) | not recursive ]
@@ -243,8 +243,8 @@ deriveCoSinkable patternT = do
 
 -- | How a field of a pattern constructor takes part in its instance.
 data PatternField
-  = PatternBinder        -- ^ A 'Foil.NameBinder'.
-  | PatternNested Type   -- ^ A nested pattern, with its own 'Foil.CoSinkable'; its type's head.
+  = PatternBinder        -- ^ A t'Control.Monad.Foil.NameBinder'.
+  | PatternNested Type   -- ^ A nested pattern, with its own t'Control.Monad.Foil.CoSinkable'; its type's head.
   | PatternPayload       -- ^ A field that mentions no scope.
 
 -- | The constructors of a pattern type, each with the sorts of its fields.
@@ -305,7 +305,7 @@ isBindingField = \case
   PatternPayload -> False
   _              -> True
 
--- | One 'Foil.coSinkabilityProof' clause: the binding fields are renamed in
+-- | One 'Control.Monad.Foil.coSinkabilityProof' clause: the binding fields are renamed in
 -- turn, each with the renaming the previous one extended.
 patternCoSinkabilityProofClause :: (Name, [PatternField]) -> Q Clause
 patternCoSinkabilityProofClause (conName, sorts) = do
@@ -323,10 +323,10 @@ patternCoSinkabilityProofClause (conName, sorts) = do
   body <- go rename (zip sorts xs) id
   return (Clause [VarP rename, ConP conName [] (map VarP xs), VarP cont] (NormalB body) [])
 
--- | One 'Foil.withPattern' clause, in the form of
+-- | One 'Control.Monad.Foil.withPattern' clause, in the form of
 -- 'Control.Monad.Free.Foil.TH.MkFreeFoil.mkFreeFoil': a binder field goes
 -- through @withBinder@ and extends the scope for the fields to its right, a
--- nested pattern through its own 'Foil.withPattern', and the results compose
+-- nested pattern through its own 'Control.Monad.Foil.withPattern', and the results compose
 -- left to right.
 patternWithPatternClause :: (Name, [PatternField]) -> Q Clause
 patternWithPatternClause (conName, sorts) = do
@@ -368,13 +368,13 @@ patternWithPatternClause (conName, sorts) = do
     [VarP withBinder, VarP unit_, VarP comp_, VarP scope, ConP conName [] (map VarP xs), VarP cont]
     (NormalB body) [])
 
--- | One 'Foil.nameBinderListOf' clause: the binding fields, left to right.
+-- | One 'Control.Monad.Foil.nameBinderListOf' clause: the binding fields, left to right.
 patternNameBinderListOfClause :: (Name, [PatternField]) -> Q Clause
 patternNameBinderListOfClause (conName, sorts) = do
   xs <- mapM (\i -> newName ("x" ++ show i)) [1 .. length sorts]
   let pats = [ if isBindingField s then VarP x else WildP | (s, x) <- zip sorts xs ]
       -- A binder is consed on directly. Only a nested pattern's list is
-      -- concatenated, since 'Foil.concatNameBinderLists' is recursive and
+      -- concatenated, since 'Control.Monad.Foil.concatNameBinderLists' is recursive and
       -- copies its first argument.
       list = \case
         [] -> ConE 'Foil.NameBinderListEmpty

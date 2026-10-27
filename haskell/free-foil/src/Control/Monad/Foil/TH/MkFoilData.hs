@@ -116,7 +116,7 @@ mkFoilPattern nameT patternT = do
         toPatternConParams i p (param@(bang_, type_) : conParams) =
           case type_ of
             -- if the current component is a variable identifier
-            -- then treat it as a single name binder (see 'Foil.NameBinder')
+            -- then treat it as a single name binder (see t'Control.Monad.Foil.NameBinder')
             PeelConT tyName _tyParams | tyName == nameT -> do
               l <- newName ("n" <> show i)
               let type' = AppT (AppT (ConT ''Foil.NameBinder) (VarT p)) (VarT l)
