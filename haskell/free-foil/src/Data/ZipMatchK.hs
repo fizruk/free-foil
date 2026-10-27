@@ -37,7 +37,6 @@ module Data.ZipMatchK (
 import           Data.Coerce (coerce)
 import           Data.Monoid (All (..), Any (..))
 import           Generics.Kind
-import Data.Bitraversable
 
 import Data.ZipMatchK.Generic
 import Data.ZipMatchK.Mappings
@@ -68,29 +67,23 @@ zipMatchViaChooseLeft _ x _ = Just x
 
 -- | 'zipMatchWithK' specialised to functors.
 --
--- Note: 'Traversable' is a morally correct constraint here.
---
 -- @since 0.3.0
 zipMatchWith1
-  :: (Traversable f, ZipMatchK f)
+  :: ZipMatchK f
   => (a -> a' -> Maybe a'')
   -> f a -> f a' -> Maybe (f a'')
 zipMatchWith1 f = zipMatchWithK (f :^: M0)
 
 -- | 'zipMatchK' specialised to functors.
 --
--- Note: 'Traversable' is a morally correct constraint here.
---
 -- @since 0.3.0
-zipMatch1 :: (Traversable f, ZipMatchK f) => f a -> f a' -> Maybe (f (a, a'))
+zipMatch1 :: ZipMatchK f => f a -> f a' -> Maybe (f (a, a'))
 zipMatch1 = zipMatchWith1 pairA
 -- | 'zipMatchWithK' specialised to bifunctors.
 --
--- Note: 'Bitraversable' is a morally correct constraint here.
---
 -- @since 0.3.0
 zipMatchWith2
-  :: (Bitraversable f, ZipMatchK f)
+  :: ZipMatchK f
   => (a -> a' -> Maybe a'')
   -> (b -> b' -> Maybe b'')
   -> f a b -> f a' b' -> Maybe (f a'' b'')
@@ -98,10 +91,8 @@ zipMatchWith2 f g = zipMatchWithK (f :^: g :^: M0)
 
 -- | 'zipMatchK' specialised to bifunctors.
 --
--- Note: 'Bitraversable' is a morally correct constraint here.
---
 -- @since 0.3.0
-zipMatch2 :: (Bitraversable f, ZipMatchK f) => f a b -> f a' b' -> Maybe (f (a, a') (b, b'))
+zipMatch2 :: ZipMatchK f => f a b -> f a' b' -> Maybe (f (a, a') (b, b'))
 zipMatch2 = zipMatchWith2 pairA pairA
 
 -- | 'zipMatchFoldK' specialised to functors.
