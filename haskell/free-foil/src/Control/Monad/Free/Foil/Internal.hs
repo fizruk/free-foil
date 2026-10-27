@@ -39,7 +39,7 @@ import qualified Data.Map                    as Map
 import           GHC.Generics                (Generic)
 import           Unsafe.Coerce               (unsafeCoerce)
 
--- | Scoped term under a (single) name binder.
+-- | Scoped term under a binder, which may be a pattern binding several names.
 --
 -- @since 0.0.1
 data ScopedAST binder sig n where
@@ -124,7 +124,7 @@ substitute = goSubst
     goSubst scope subst term
       -- An empty substitution maps every name to itself ('addRename' deletes
       -- identity renames), so the result is the very term, and the coercion is
-      -- the one 'Foil.sink' performs. Substitutions go empty often: opening a
+      -- the one 'Control.Monad.Foil.sink' performs. Substitutions go empty often: opening a
       -- scoped term with its own binder's name is an identity rename, and under
       -- a deterministic allocation policy a refreshed binder usually keeps its
       -- name, deleting its entry. Binders that shadow the ambient scope are
@@ -145,12 +145,10 @@ substitute = goSubst
                 body' = goSubst scope' subst' body
             in ScopedAST binder' body'
 
--- | Substitution for free (scoped monads).
+-- | A version of 'substitute' that refreshes every binder of the input term.
 --
--- This is a version of 'substitute' that forces refreshing of all name binders,
--- resulting in a term with normalized binders:
---
--- > substituteRefreshed scope subst = refreshAST scope . subtitute scope subst
+-- The substituted terms are inserted as they are, so their binders are not
+-- refreshed. Apply 'refreshAST' to the result to normalize all of its binders.
 --
 -- In general, 'substitute' is more efficient since it does not always refresh binders.
 --
@@ -172,7 +170,7 @@ substituteRefreshed scope subst = \case
             body' = substituteRefreshed scope' subst' body
         in ScopedAST binder' body'
 
--- | @'AST' sig@ is a monad relative to 'Foil.Name'.
+-- | @'AST' binder sig@ is a monad relative to t'Control.Monad.Foil.Name'.
 instance (Bifunctor sig, Foil.CoSinkable binder, Foil.SinkableK binder)
   => Foil.RelMonad Foil.Name (AST binder sig) where
   rreturn = Var
@@ -187,7 +185,8 @@ instance (Bifunctor sig, Foil.CoSinkable binder, Foil.SinkableK binder)
           let subst' = extendSubst subst
            in ScopedAST binder' (Foil.rbind scope' body subst')
 
--- | Substitution for a single generalized pattern.
+-- | Substitute terms for the names a pattern binds in a body, and apply an
+-- environment to the body's other names.
 --
 -- @since 0.2.0
 {-# INLINABLE substitutePattern #-}
@@ -196,7 +195,7 @@ substitutePattern
   => Foil.Scope o                           -- ^ Resulting scope.
   -> Foil.Substitution (AST binder sig) n o -- ^ Environment mapping names in scope @n@.
   -> binder' n i                            -- ^ Binders that extend scope @n@ to scope @i@.
-  -> [AST binder sig o]                     -- ^ A list of terms intended to serve as
+  -> [AST binder sig o]                     -- ^ Terms for the bound names, in binding order ('error' if too few, extras ignored).
   -> AST binder sig i
   -> AST binder sig o
 substitutePattern scope env binders args body =
@@ -383,14 +382,14 @@ alphaEquivEnv
   => Int          -- ^ Next fresh level.
   -> IntMap Int   -- ^ Left renaming: raw name to the level that bound it.
   -> IntMap Int   -- ^ Right renaming.
-  -> Foil.Scope n -- ^ Scope along the unified path (consulted by 'Foil.unifyPatternsIn').
+  -> Foil.Scope n -- ^ Scope along the unified path (consulted by 'Control.Monad.Foil.unifyPatternsIn').
   -> AST binder sig n1
   -> AST binder sig n2
   -> Bool
 alphaEquivEnv = aeAlphaEquivEnv alphaEquivLoops
 
 -- | The scoped half of 'alphaEquivEnv': get the verdict from
--- 'Foil.unifyPatternsIn', extend the environments as it prescribes, and
+-- 'Control.Monad.Foil.unifyPatternsIn', extend the environments as it prescribes, and
 -- recurse into the bodies as they stand.
 --
 -- @since 0.4.0
@@ -422,7 +421,7 @@ data AlphaEquivLoops binder sig = AlphaEquivLoops
 -- from this function, so once it is inlined at a known signature, they use
 -- that signature's instances directly. A recursive function with class
 -- constraints would instead be split by GHC into a wrapper and a worker
--- (some of its dictionaries, such as 'Foil.Distinct', are never used at
+-- (some of its dictionaries, such as t'Control.Monad.Foil.Distinct', are never used at
 -- runtime), and a client's @SPECIALIZE@ pragma would reach only the wrapper.
 --
 -- @since 0.6.1
@@ -518,7 +517,7 @@ alphaEquivLoops = AlphaEquivLoops goAlpha goScoped goPairs goEnv goScopedEnv
       => Int          -- ^ Next fresh level.
       -> IntMap Int   -- ^ Left renaming: raw name to the level that bound it.
       -> IntMap Int   -- ^ Right renaming.
-      -> Foil.Scope n -- ^ Scope along the unified path (consulted by 'Foil.unifyPatternsIn').
+      -> Foil.Scope n -- ^ Scope along the unified path (consulted by 'Control.Monad.Foil.unifyPatternsIn').
       -> AST binder sig n1
       -> AST binder sig n2
       -> Bool
@@ -608,10 +607,10 @@ alphaEquivLoops = AlphaEquivLoops goAlpha goScoped goPairs goEnv goScopedEnv
 
 -- ** Unsafe equality checks
 
--- | /Unsafe/ equality check for two terms.
--- This check ignores the possibility that two terms might have different
--- scope extensions under binders (which might happen due to substitution
--- under a binder in absence of name conflicts).
+-- | /Unsafe/ equality check for two terms. Names are compared by their raw
+-- identifiers, and patterns by 'Control.Monad.Foil.Internal.unsafeEqPattern', which uses the
+-- binder-only 'Control.Monad.Foil.unifyPatterns'. Thus α-equivalent terms whose binders
+-- differ compare unequal, so normalize both sides with 'refreshAST' first.
 --
 -- @since 0.0.3
 {-# INLINE unsafeEqAST #-}
@@ -924,6 +923,7 @@ unsafeConvertToScopedAST toSig fromRawPattern getScopedTerm scope names (pat, sc
 -- ** Convert from free foil
 
 -- | Convert a scope-safe term back into a raw term.
+-- Use 'convertFromASTWith' to name free variables separately from bound ones.
 --
 -- @since 0.0.3
 convertFromAST
@@ -937,7 +937,7 @@ convertFromAST
   -> (rawTerm -> rawScopedTerm)
   -- ^ Wrap raw term into a scoped term.
   -> (Int -> rawIdent)
-  -- ^ Convert underlying integer identifier of a bound variable into a raw identifier.
+  -- ^ Name a variable, bound or free, from its underlying integer identifier.
   -> AST binder sig n
   -- ^ Scope-safe term.
   -> rawTerm
@@ -963,7 +963,7 @@ convertFromScopedAST
   -> (rawTerm -> rawScopedTerm)
   -- ^ Wrap raw term into a scoped term.
   -> (Int -> rawIdent)
-  -- ^ Convert underlying integer identifier of a bound variable into a raw identifier.
+  -- ^ Name a variable, bound or free, from its underlying integer identifier.
   -> ScopedAST binder sig n
   -- ^ Scope-safe scoped term.
   -> (rawPattern, rawScopedTerm)
@@ -981,9 +981,9 @@ convertFromScopedAST fromSig fromVar makePattern makeScoped f = \case
 -- share one with a name of the ambient scope, so naming by raw name alone can
 -- print a bound variable as whatever the ambient scope calls that name.
 --
--- Keeping the typed name is what distinguishes them, and 'Foil.unsinkNamePattern'
+-- Keeping the typed name is what distinguishes them, and 'Control.Monad.Foil.unsinkNamePattern'
 -- is the operation for it: composing one per binder on the way down builds a
--- @'Foil.Name' x -> 'Maybe' ('Foil.Name' n)@ that answers exactly the question.
+-- @t'Control.Monad.Foil.Name' x -> 'Maybe' ( t'Control.Monad.Foil.Name' n )@ that answers exactly the question.
 --
 -- @since 0.4.0
 convertFromASTWith
@@ -1030,8 +1030,9 @@ convertFromASTWith fromSig fromVar makePattern makeScoped freeName boundName =
 -- | The support of a term: exactly the names that occur free in it.
 --
 -- This is the annotation that co-de-Bruijn syntax carries intrinsically and
--- that the foil, having global names and therefore free weakening, does not.
--- Computing it is \(O(size)\); a client that restricts often should cache it.
+-- that the foil does not need for weakening, since 'Control.Monad.Foil.sink' is a coercion.
+-- Computing it traverses the whole term, so a client that restricts often
+-- should cache it.
 --
 -- @since 0.4.0
 supportOf
@@ -1053,10 +1054,10 @@ supportOfScopedAST (ScopedAST binder body) =
 
 -- | Cut a term down to the scope of exactly the names it uses.
 --
--- This is the a-priori form of restriction, and the cheap one: the term
--- inhabits the smaller scope /by construction/, so nothing is tested and
--- nothing can fail. @'Foil.Ext' m n@ comes back with it, so the term can be
--- 'Foil.sink'ed to where it came from for free.
+-- The term's support is computed with 'supportOf', as in 'unsinkAST', but
+-- nothing is tested and nothing can fail, since the term inhabits the
+-- restricted scope by construction. @t'Control.Monad.Foil.Ext' m n@ comes back with it, so
+-- the term can be 'Control.Monad.Foil.sink'ed to where it came from for free.
 --
 -- Verifying a declared dependency, such as a @uses@ clause or a module's
 -- parameters, is this plus a comparison: compute the scope a term really

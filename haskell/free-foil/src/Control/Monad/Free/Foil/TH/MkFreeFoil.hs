@@ -81,21 +81,21 @@ data FreeFoilConfig = FreeFoilConfig
 data FreeFoilTermConfig = FreeFoilTermConfig
   { rawIdentName          :: Name
     -- ^ The type name for the identifiers.
-    -- When identifiers occur in a term, they are converted to 'Foil.Name' (with an appropriate type-level scope parameter).
-    -- When identifiers occur in a pattern, they are converted to 'Foil.NameBinder' (with appropriate type-level scope parameters).
+    -- When identifiers occur in a term, they are converted to t'Control.Monad.Foil.Name' (with an appropriate type-level scope parameter).
+    -- When identifiers occur in a pattern, they are converted to t'Control.Monad.Foil.NameBinder' (with appropriate type-level scope parameters).
   , rawTermName           :: Name
     -- ^ The type name for the term.
-    -- This will be the main recursive type to be converted into an 'Foil.AST'.
+    -- This will be the main recursive type to be converted into an t'Control.Monad.Free.Foil.AST'.
   , rawBindingName        :: Name
     -- ^ The type name for the binders (patterns).
-    -- This will be the main binder type to used in 'Foil.AST'-representation of the terms.
+    -- This will be the main binder type to used in t'Control.Monad.Free.Foil.AST'-representation of the terms.
   , rawScopeName          :: Name
     -- ^ The type name for the scoped term.
-    -- This will be replaced with either 'Foil.ScopedAST' (with outer scope) or 'Foil.AST' (with inner scope)
+    -- This will be replaced with either t'Control.Monad.Free.Foil.ScopedAST' (with outer scope) or t'Control.Monad.Free.Foil.AST' (with inner scope)
     -- depending on its occurrence in a regular (sub)term or some quantified syntax.
   , rawVarConName         :: Name
     -- ^ The constructor name for the variables in a term.
-    -- This constructor will be replaced with the standard 'Foil.Var'.
+    -- This constructor will be replaced with the standard 'Control.Monad.Free.Foil.Var'.
     -- It is expected to have exactly one field of type 'rawIdentName'.
   , rawSubTermNames       :: [Name]
     -- ^ Type names for subterm syntax.
@@ -136,7 +136,7 @@ toFreeFoilNameTo :: FreeFoilConfig -> Name -> Name
 toFreeFoilNameTo FreeFoilConfig{..} name = mkName (freeFoilConvertToName (nameBase name))
 
 -- | The name of the range-parametric sibling of a generated definition
--- (see 'Foil.withFreshIn'): @toPatternIn@ beside @toPattern@.
+-- (see 'Control.Monad.Foil.withFreshIn'): @toPatternIn@ beside @toPattern@.
 toNameIn :: Name -> Name
 toNameIn name = mkName (nameBase name ++ "In")
 
@@ -378,7 +378,7 @@ toFreeFoilBindingCon config flavour rawRetType theOuterScope = go
 --
 -- It is when there is exactly one constructor, declared without an explicit
 -- @forall@ or context, and that constructor has exactly one field, which binds:
--- an identifier (it becomes a 'Foil.NameBinder') or a nested binding type. A
+-- an identifier (it becomes a t'Control.Monad.Foil.NameBinder') or a nested binding type. A
 -- field that binds gives the constructor the result type @T ... o i@ with
 -- distinct scope variables, as a newtype requires; a field that binds nothing
 -- gives @T ... o o@, which only a GADT can express.
@@ -399,7 +399,7 @@ isNewtypeBinding config = \case
 -- | Is this raw field a binding (pattern) field?
 --
 -- Such a field has no counterpart in the free foil node: the binder it stands for
--- lives inside the 'Foil.ScopedAST' of each scoped child.
+-- lives inside the t'Control.Monad.Free.Foil.ScopedAST' of each scoped child.
 isBindingField :: FreeFoilConfig -> Type -> Bool
 isBindingField FreeFoilConfig{..} = \case
   PeelConT typeName _ | Just _ <- lookupBindingName typeName freeFoilTermConfigs -> True
@@ -407,7 +407,7 @@ isBindingField FreeFoilConfig{..} = \case
 
 -- | Is this raw field a scoped-term field?
 --
--- Such a field becomes a 'Foil.ScopedAST', which carries a binder of its own.
+-- Such a field becomes a t'Control.Monad.Free.Foil.ScopedAST', which carries a binder of its own.
 isScopeField :: FreeFoilConfig -> Type -> Bool
 isScopeField FreeFoilConfig{..} = \case
   PeelConT typeName _ | Just _ <- lookupScopeName typeName freeFoilTermConfigs -> True
@@ -415,7 +415,7 @@ isScopeField FreeFoilConfig{..} = \case
 
 -- | What a raw binding constructor's field becomes in the scope-safe binding
 -- type. Mirrors the classification in 'toFreeFoilBindingCon': an identifier
--- becomes a 'Foil.NameBinder' and threads the scope; a binding type becomes a
+-- becomes a t'Control.Monad.Foil.NameBinder' and threads the scope; a binding type becomes a
 -- nested binding type and threads the scope; anything else is a payload that
 -- binds nothing.
 data BindingFieldSort = FieldBinder | FieldPattern | FieldPayload
@@ -437,8 +437,8 @@ isBindingFieldSort = \case
 -- | Does this raw payload type mention anything that converts to a
 -- scope-indexed type in the binding type (a term, a scoped term, an
 -- identifier, or a nested binding under a type constructor)? Such a payload
--- cannot be rebuilt by the generated 'Foil.CoSinkable' instance, rebuilding it
--- at another scope being what 'Foil.transportPayload' exists for. Generation
+-- cannot be rebuilt by the generated t'Control.Monad.Foil.CoSinkable' instance, rebuilding it
+-- at another scope being what 'Control.Monad.Foil.transportPayload' exists for. Generation
 -- refuses such a payload, matching the GenericK-side refusal for derived
 -- patterns.
 mentionsScopeIndexed :: FreeFoilConfig -> Type -> Bool
@@ -473,7 +473,7 @@ flattenCons = concatMap go
       RecGadtC names types _retType -> [ (name, map (\(_, _, t) -> t) types) | name <- names ]
       ForallC _ _ con -> go con
 
--- | One 'Foil.coSinkabilityProof' clause for a generated binding constructor:
+-- | One 'Control.Monad.Foil.coSinkabilityProof' clause for a generated binding constructor:
 --
 -- > coSinkabilityProof rename (Con x1 x2 x3) cont =
 -- >   coSinkabilityProof rename x1 $ \rename' x1' ->
@@ -481,7 +481,7 @@ flattenCons = concatMap go
 -- >       cont rename'' (Con x1' x2' x3)
 --
 -- Binder and nested-pattern fields thread the renaming left to right (each via
--- its own 'Foil.CoSinkable' instance); payload fields pass through untouched.
+-- its own t'Control.Monad.Foil.CoSinkable' instance); payload fields pass through untouched.
 mkCoSinkabilityProofClause :: FreeFoilConfig -> (Name, [Type]) -> Q Clause
 mkCoSinkabilityProofClause config (rawConName, rawFieldTypes) = do
   let conName = toConName config rawConName
@@ -508,7 +508,7 @@ mkCoSinkabilityProofClause config (rawConName, rawFieldTypes) = do
   body <- go rename (zip sorts xs) id
   return (Clause [VarP rename, ConP conName [] (map VarP xs), VarP cont] (NormalB body) [])
 
--- | One 'Foil.withPattern' clause for a generated binding constructor:
+-- | One 'Control.Monad.Foil.withPattern' clause for a generated binding constructor:
 --
 -- > withPattern withBinder unit_ comp_ scope (Con x1 x2 x3) cont =
 -- >   withBinder scope x1 $ \f1 x1' ->
@@ -516,9 +516,9 @@ mkCoSinkabilityProofClause config (rawConName, rawFieldTypes) = do
 -- >     in withPattern withBinder unit_ comp_ scope' x2 $ \f2 x2' scope'' ->
 -- >          cont (comp_ f1 f2) (Con x1' x2' x3) scope''
 --
--- A 'Foil.NameBinder' field is processed with @withBinder@ directly and
+-- A t'Control.Monad.Foil.NameBinder' field is processed with @withBinder@ directly and
 -- extends the ambient scope for the fields to its right; a nested binding
--- field recurses through its own 'Foil.withPattern', which hands the extended
+-- field recurses through its own 'Control.Monad.Foil.withPattern', which hands the extended
 -- scope to its continuation. Results compose left to right with @comp_@; the
 -- final continuation receives the scope after the whole constructor, and a
 -- constructor that binds nothing hands @unit_@ and the ambient scope over.
@@ -574,13 +574,13 @@ mkWithPatternClause config (rawConName, rawFieldTypes) = do
     [VarP withBinder, VarP unit_, VarP comp_, VarP scope, ConP conName [] (map VarP xs), VarP cont]
     (NormalB body) [])
 
--- | One 'Foil.nameBinderListOf' clause for a generated binding constructor:
+-- | One 'Control.Monad.Foil.nameBinderListOf' clause for a generated binding constructor:
 --
 -- > nameBinderListOf (Con x1 x2 _) =
 -- >   concatNameBinderLists (nameBinderListOf x1) (nameBinderListOf x2)
 --
 -- The binder and nested-pattern fields are listed left to right, in the order
--- in which the 'Foil.withPattern' clause of 'mkWithPatternClause' visits them,
+-- in which the 'Control.Monad.Foil.withPattern' clause of 'mkWithPatternClause' visits them,
 -- and payload fields are skipped. A constructor that binds nothing lists no
 -- binders.
 mkNameBinderListOfClause :: FreeFoilConfig -> (Name, [Type]) -> Q Clause
@@ -592,7 +592,7 @@ mkNameBinderListOfClause config (rawConName, rawFieldTypes) = do
         | isBindingFieldSort sort = VarP x
         | otherwise               = WildP
       -- A binder is consed on directly. Only a nested binding type's list is
-      -- concatenated, since 'Foil.concatNameBinderLists' is recursive and
+      -- concatenated, since 'Control.Monad.Foil.concatNameBinderLists' is recursive and
       -- copies its first argument.
       list = \case
         [] -> ConE 'Foil.NameBinderListEmpty
@@ -829,7 +829,7 @@ termConToPatQuantified config@FreeFoilConfig{..} = go
 -- /arguments/ are, and the two used to disagree:
 --
 -- * a raw binding (pattern) field contributes __no__ argument, since a binder
---   in the free foil lives inside the 'Foil.ScopedAST' it binds, not beside it;
+--   in the free foil lives inside the t'Control.Monad.Free.Foil.ScopedAST' it binds, not beside it;
 -- * a raw scoped-term field contributes __two__ arguments, a binder and a body;
 -- * every other field contributes one argument, as before.
 --
@@ -1067,14 +1067,14 @@ mkFreeFoilWith FreeFoilOptions{..} config@FreeFoilConfig{..} = checkSignatureIns
         (BindingNewtype, [newCon]) -> NewtypeD [] bindingName newParams Nothing newCon []
         _                          -> DataD [] bindingName newParams Nothing newCons []
 
-    -- A concrete 'Foil.CoSinkable' instance for the generated binding type,
+    -- A concrete t'Control.Monad.Foil.CoSinkable' instance for the generated binding type,
     -- one clause per constructor, delegating to the fields' instances. The
     -- GenericK default routes every binder operation through a generic
     -- representation traversal, which costs a measurable constant per binder
     -- at runtime (see issue #82); the concrete instance removes it, and a
     -- client no longer declares (or hand-writes) the instance itself. The
-    -- instance lists its binders directly in 'Foil.nameBinderListOf', since
-    -- the default would go through the recursive 'Foil.withPattern'.
+    -- instance lists its binders directly in 'Control.Monad.Foil.nameBinderListOf', since
+    -- the default would go through the recursive 'Control.Monad.Foil.withPattern'.
     mkPatternCoSinkable FreeFoilTermConfig{..} = do
       (tvars, cons) <- reifyDataOrNewtype rawBindingName
       let bindingName = toFreeFoilName config rawBindingName

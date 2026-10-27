@@ -41,9 +41,10 @@ import           Generics.Kind
 import Data.ZipMatchK.Generic
 import Data.ZipMatchK.Mappings
 
--- | Perform one level of equality testing for two values and pair up components using @(,)@:
+-- | Perform one level of equality testing for two values and pair up
+-- corresponding components using @(,)@, for every type parameter:
 --
--- > zipMatchK = zipMatchWithK (\x y -> Just (,) :^: M0)
+-- > zipMatchK = zipMatchWithK pairMappings
 --
 -- @since 0.2.0
 zipMatchK :: forall f as bs. (ZipMatchK f, PairMappings as bs) => f :@@: as -> f :@@: bs -> Maybe (f :@@: ZipLoT as bs)

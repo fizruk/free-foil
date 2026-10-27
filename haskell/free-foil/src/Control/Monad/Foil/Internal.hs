@@ -1215,9 +1215,9 @@ class CoSinkable pattern => UnifiablePattern pattern where
   -- pattern that carries them does: 'alphaEquivIn' asks for a 'Scope'.
   --
   -- Note that the verdict speaks about binders, so an instance comparing
-  -- payloads has to apply the renaming the verdict prescribes before it
-  -- compares them, exactly as 'Control.Monad.Free.Foil.alphaEquivScoped'
-  -- applies it to the body of a scoped term. Two telescopes @(A : 𝕌) (x : A)@
+  -- payloads has to take the renaming the verdict prescribes into account when
+  -- it compares them, as 'Control.Monad.Free.Foil.alphaEquivScoped' does for
+  -- the body of a scoped term. Two telescopes @(A : 𝕌) (x : A)@
   -- and @(B : 𝕌) (y : B)@ are α-equivalent, and their second payloads are only
   -- equal once the first binders have been identified.
   --
@@ -2497,7 +2497,7 @@ instance (SinkableK f, ExtractRenamingK i) => GSinkableK (Field (Kon f :@: Var i
         cont (putBackRenamingK @_ @i rename' irename) (Field (unsafeCoerce x')) -- unsafeCoerce?
 
 -- | A field indexed by the innermost scope variable only, such as the body of
--- 'Control.Monad.Free.Foil.ScopedAST'. Under a binder the traversal holds one
+-- t'Control.Monad.Free.Foil.ScopedAST'. Under a binder the traversal holds one
 -- renaming per scope variable, so the field takes the innermost one, as
 -- @t'Field' ('Kon' f ':@:' 'Var' i)@ does.
 instance SinkableK (f a) => GSinkableK (Field (Kon f :@: Kon a :@: Var0)) where

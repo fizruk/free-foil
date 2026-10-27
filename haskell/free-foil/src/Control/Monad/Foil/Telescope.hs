@@ -144,8 +144,9 @@ telescopePayloads = map paramType . telescopeParams
 -- unified?
 --
 -- The verdict speaks about binders only, so the renaming it prescribes has to
--- be applied before the payloads are compared, which is exactly what
--- 'Control.Monad.Free.alphaEquivScoped' does to the body of a scoped term.
+-- be applied before the payloads are compared, much as
+-- 'Control.Monad.Free.Foil.alphaEquivScoped' takes it into account for the
+-- body of a scoped term.
 -- Comparing them as they stand would report @(A : 𝕌) (x : A)@ and
 -- @(B : 𝕌) (y : B)@ as different, since the second payloads name different
 -- binders until the first ones have been identified.
