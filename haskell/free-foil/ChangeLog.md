@@ -1,29 +1,35 @@
 # CHANGELOG for `free-foil`
 
-# Unreleased
+# 0.6.1 — 2026-10-27
+
+This release lets `substitute`, `alphaEquiv` and `unsafeEqAST` specialise in client code, and fixes problems found by an audit of the documentation. One of the fixes changes the types of `unsinkAST` and `nameSetSubsetOfScope`, described first.
 
 Breaking changes:
 
-- `unsinkAST` requires `DExt n l` instead of `Distinct l`, and `nameSetSubsetOfScope` requires `Ext n l`: the scope `l` of the term (or set) must extend the scope `n` it is restricted to. Both compare raw identifiers, which identify a name only within one chain of scope extensions, so with unrelated scopes the answer was meaningless.
+- `unsinkAST` requires `DExt n l` instead of `Distinct l`, and `nameSetSubsetOfScope` requires `Ext n l`: the scope `l` of the term (or set) must extend the scope `n` it is restricted to. Both compare raw identifiers, which identify a name only within one chain of scope extensions, so with unrelated scopes the answer was meaningless (see [#127](https://github.com/fizruk/free-foil/pull/127)).
   - To migrate, bring `Ext n l` into scope where it is missing, e.g. with `assertExt` on the binder that leads from `n` to `l`, or from `withFresh` and `withThinnedNameBinderList`, which provide it.
 
 Changed:
 
-- `zipMatchWith1`, `zipMatch1`, `zipMatchWith2` and `zipMatch2` no longer require `Traversable` (or `Bitraversable`). `alphaEquiv`, `unsafeEqAST` and the functions behind them no longer require `Bitraversable` or `SinkableK`, and `alphaEquivRefreshed` requires `Bifunctor` instead of `Bitraversable`. None of them used these instances.
+- `zipMatchWith1`, `zipMatch1`, `zipMatchWith2` and `zipMatch2` no longer require `Traversable` (or `Bitraversable`). `alphaEquiv`, `unsafeEqAST` and the functions behind them no longer require `Bitraversable` or `SinkableK`, and `alphaEquivRefreshed` requires `Bifunctor` instead of `Bitraversable`. None of them used these instances (see [#125](https://github.com/fizruk/free-foil/pull/125)).
 
 Fixes:
 
-- `alphaEquivRefreshed` compares patterns with `unifyPatternsIn`, as `alphaEquiv` does (through the new `unsafeEqASTIn`). It compared them with `unifyPatterns`, which compares binders only, so it accepted terms whose binders differ in a payload (such as a type annotation) that `alphaEquiv` rejects.
+- `alphaEquivRefreshed` compares patterns with `unifyPatternsIn`, as `alphaEquiv` does (through the new `unsafeEqASTIn`). It compared them with `unifyPatterns`, which compares binders only, so it accepted terms whose binders differ in a payload (such as a type annotation) that `alphaEquiv` rejects (see [#127](https://github.com/fizruk/free-foil/pull/127)).
 
 Performance:
 
-- `substitute`, `alphaEquiv`, `unsafeEqAST` and the functions behind them are `INLINE` wrappers around local loops, which take the instances from the wrapper. Inlined at a known signature, the loops use its instances directly. Before, they looked the instances up at every node, and a `SPECIALIZE` pragma in a client did not help: GHC split each function into a wrapper and a worker, since some of its dictionaries (such as `Distinct`) are never used at runtime, and the pragma reached only the wrapper. On the library's benchmarks, α-equivalence takes 0.54–0.91 of the time and normalisation 0.58–0.85.
+- `substitute`, `alphaEquiv`, `unsafeEqAST` and the functions behind them are `INLINE` wrappers around local loops, which take the instances from the wrapper. Inlined at a known signature, the loops use its instances directly. Before, they looked the instances up at every node, and a `SPECIALIZE` pragma in a client did not help: GHC split each function into a wrapper and a worker, since some of its dictionaries (such as `Distinct`) are never used at runtime, and the pragma reached only the wrapper. On the library's benchmarks, α-equivalence takes 0.54–0.91 of the time and normalisation 0.58–0.85 (see [#125](https://github.com/fizruk/free-foil/pull/125)).
 
 New:
 
-- `unsafeEqASTIn` and `unsafeEqScopedASTIn` compare two terms in one scope, like `unsafeEqAST`, but compare patterns with `unifyPatternsIn`, so the payloads of patterns are compared as well.
-- `unresolvedNamesWith` is `unresolvedNames` for the arguments of `tryConvertToASTWith`: it also takes the table of constants, so that the constants no longer count as unresolved.
-- `Control.Monad.Free.Foil.Internal` holds the implementation of `Control.Monad.Free.Foil`, which now has an export list. The loops behind α-equivalence and `unsafeEqAST` (`AlphaEquivLoops`, `alphaEquivLoops`, `EqLoops`, `unsafeEqLoops`) are exported only from the internal module.
+- `unsafeEqASTIn` and `unsafeEqScopedASTIn` compare two terms in one scope, like `unsafeEqAST`, but compare patterns with `unifyPatternsIn`, so the payloads of patterns are compared as well (see [#127](https://github.com/fizruk/free-foil/pull/127)).
+- `unresolvedNamesWith` is `unresolvedNames` for the arguments of `tryConvertToASTWith`: it also takes the table of constants, so that the constants no longer count as unresolved (see [#127](https://github.com/fizruk/free-foil/pull/127)).
+- `Control.Monad.Free.Foil.Internal` holds the implementation of `Control.Monad.Free.Foil`, which now has an export list. The loops behind α-equivalence, `unsafeEqAST` and `unsafeEqASTIn` (`AlphaEquivLoops`, `alphaEquivLoops`, `EqLoops`, `unsafeEqLoops`, `EqInLoops`, `unsafeEqInLoops`) are exported only from the internal module (see [#125](https://github.com/fizruk/free-foil/pull/125), [#127](https://github.com/fizruk/free-foil/pull/127)).
+
+Documentation:
+
+- Doc comments and README passages that the code contradicted are corrected, among them the equation given for `substituteRefreshed` and the `zipMatchK` example. Haddock links written through a module alias (such as `'Foil.sink'`) resolve, where in 0.6.0 they pointed to a nonexistent page (see [#126](https://github.com/fizruk/free-foil/pull/126)).
 
 # 0.6.0 — 2026-10-26
 
