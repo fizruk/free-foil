@@ -74,7 +74,7 @@ The Haskell code is organized into four packages. Only `free-foil` is published 
 - [`Control.Monad.Foil`](https://hackage.haskell.org/package/free-foil/docs/Control-Monad-Foil.html) provides basic definitions for the foil[^1], including safe scopes, sinking, name maps, and scope constraints. In addition to the standard definitions, we contribute
 
   - [`CoSinkable`](https://hackage.haskell.org/package/free-foil/docs/Control-Monad-Foil.html#t:CoSinkable) class (dual to [`Sinkable`](https://hackage.haskell.org/package/free-foil/docs/Control-Monad-Foil.html#t:Sinkable), for patterns that generalize `NameBinder`)
-  - a general total [`NameMap`](https://hackage.haskell.org/package/free-foil/docs/Control-Monad-Foil.html#g:4) which is useful for some implementations (e.g. conversion functions)
+  - a general total [`NameMap`](https://hackage.haskell.org/package/free-foil/docs/Control-Monad-Foil.html#t:NameMap), which is useful for some implementations (e.g. conversion functions)
   - unification of binders, which is useful for efficient α-equivalence implementations
 
 - [`Control.Monad.Foil.TH`](https://hackage.haskell.org/package/free-foil/docs/Control-Monad-Foil-TH.html) provides Template Haskell functions that generate scope-safe representation types together with some conversion functions and helpers for patterns. All of this is generated from a raw recursive representation of syntax, that has to be split into 4 types: type of variable identifiers, type of terms, type of scoped terms (to clearly understand which parts get under binders), and type of patterns.
