@@ -1,5 +1,19 @@
 # CHANGELOG for `free-foil`
 
+# Unreleased
+
+Changed:
+
+- `zipMatchWith1`, `zipMatch1`, `zipMatchWith2` and `zipMatch2` no longer require `Traversable` (or `Bitraversable`). `alphaEquiv`, `unsafeEqAST` and the functions behind them no longer require `Bitraversable` or `SinkableK`, and `alphaEquivRefreshed` requires `Bifunctor` instead of `Bitraversable`. None of them used these instances.
+
+Performance:
+
+- `substitute`, `alphaEquiv`, `unsafeEqAST` and the functions behind them are `INLINE` wrappers around local loops, which take the instances from the wrapper. Inlined at a known signature, the loops use its instances directly. Before, they looked the instances up at every node, and a `SPECIALIZE` pragma in a client did not help: GHC split each function into a wrapper and a worker, since some of its dictionaries (such as `Distinct`) are never used at runtime, and the pragma reached only the wrapper. On the library's benchmarks, α-equivalence takes 0.54–0.91 of the time and normalisation 0.58–0.85.
+
+New:
+
+- `AlphaEquivLoops`, `alphaEquivLoops`, `EqLoops` and `unsafeEqLoops`, the loops behind α-equivalence and `unsafeEqAST`.
+
 # 0.6.0 — 2026-10-26
 
 This release lets `mkFreeFoil` generate most instances of a signature, and adds folds that traverse terms without rebuilding them. Several breaking changes come with it, described first.
