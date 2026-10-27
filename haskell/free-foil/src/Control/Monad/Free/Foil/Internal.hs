@@ -277,17 +277,38 @@ refreshScopedAST scope (ScopedAST binder body) =
 --
 -- Compared to 'alphaEquiv', this function renames every binder on both sides
 -- unconditionally, so it does strictly more work. It remains as an
--- independent implementation of the same test.
+-- independent implementation of the same test. Like 'alphaEquiv', it compares
+-- patterns with 'Control.Monad.Foil.unifyPatternsIn', so the payloads of a
+-- pattern are compared as well.
 --
 -- @since 0.0.3
 {-# INLINABLE alphaEquivRefreshed #-}
 alphaEquivRefreshed
-  :: (Bifunctor sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder)
+  :: forall sig binder n. (Bifunctor sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder)
   => Foil.Scope n
   -> AST binder sig n
   -> AST binder sig n
   -> Bool
-alphaEquivRefreshed scope t1 t2 = refreshAST scope t1 `unsafeEqAST` refreshAST scope t2
+alphaEquivRefreshed scope t1 t2 = goAST scope (refreshAST scope t1) (refreshAST scope t2)
+  where
+    -- Refreshing gives α-equivalent terms the same binders, so the binders
+    -- of the two sides must coincide at every level.
+    goAST :: Foil.Distinct m => Foil.Scope m -> AST binder sig m -> AST binder sig m -> Bool
+    goAST _ (Var x) (Var y) = x == y
+    goAST scope' (Node node1) (Node node2) =
+      case zipMatchWithK ((unit . goScoped scope') :^: (unit . goAST scope') :^: M0) node1 node2 of
+        Nothing -> False
+        Just _  -> True
+    goAST _ _ _ = False
+
+    goScoped :: Foil.Distinct m => Foil.Scope m -> ScopedAST binder sig m -> ScopedAST binder sig m -> Bool
+    goScoped scope' (ScopedAST binder1 body1) (ScopedAST binder2 body2) =
+      case Foil.unifyPatternsIn scope' binder1 binder2 of
+        Foil.SameNameBinders{} -> case Foil.assertDistinct binder1 of
+          Foil.Distinct -> goAST (Foil.extendScopePattern binder1 scope') body1 body2
+        _ -> False
+
+    unit f x = if f x then Just () else Nothing
 
 -- | A term is a scope-indexed value that can be compared up to α, which is what
 -- a pattern carrying terms as payloads needs of them.
