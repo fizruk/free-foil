@@ -1030,8 +1030,9 @@ convertFromASTWith fromSig fromVar makePattern makeScoped freeName boundName =
 -- | The support of a term: exactly the names that occur free in it.
 --
 -- This is the annotation that co-de-Bruijn syntax carries intrinsically and
--- that the foil, having global names and therefore free weakening, does not.
--- Computing it is \(O(size)\); a client that restricts often should cache it.
+-- that the foil does not need for weakening, since 'Foil.sink' is a coercion.
+-- Computing it traverses the whole term, so a client that restricts often
+-- should cache it.
 --
 -- @since 0.4.0
 supportOf
