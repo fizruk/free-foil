@@ -36,6 +36,7 @@ module Control.Monad.Free.Foil (
   -- ** Convert to free foil
   UnresolvedName(..),
   unresolvedNames,
+  unresolvedNamesWith,
   tryConvertToAST,
   tryConvertToASTWith,
   unsafeConvertToAST,

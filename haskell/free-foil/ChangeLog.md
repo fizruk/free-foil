@@ -16,6 +16,7 @@ Performance:
 
 New:
 
+- `unresolvedNamesWith` is `unresolvedNames` for the arguments of `tryConvertToASTWith`: it also takes the table of constants, so that the constants no longer count as unresolved.
 - `Control.Monad.Free.Foil.Internal` holds the implementation of `Control.Monad.Free.Foil`, which now has an export list. The loops behind α-equivalence and `unsafeEqAST` (`AlphaEquivLoops`, `alphaEquivLoops`, `EqLoops`, `unsafeEqLoops`) are exported only from the internal module.
 
 # 0.6.0 — 2026-10-26

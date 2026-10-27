@@ -715,7 +715,9 @@ data UnresolvedName rawIdent = UnresolvedName
 -- the order they occur.
 --
 -- This is 'unsafeConvertToAST' with the conversion left out, so it descends
--- under binders in the same way and accounts for what they bind.
+-- under binders in the same way and accounts for what they bind. A caller
+-- that converts with 'tryConvertToASTWith' should use 'unresolvedNamesWith'
+-- instead, so that its constants do not count as unresolved.
 --
 -- @since 0.4.0
 unresolvedNames
@@ -742,14 +744,54 @@ unresolvedNames
   -> rawTerm
   -- ^ Raw term.
   -> [UnresolvedName rawIdent]
-unresolvedNames toSig fromRawPattern getScopedTerm = go
+unresolvedNames toSig fromRawPattern getScopedTerm scope names =
+  unresolvedNamesWith toSig fromRawPattern getScopedTerm scope names Map.empty
+
+-- | The identifiers a raw term mentions that neither a set of names nor a
+-- table of constants can resolve, in the order they occur. This is
+-- 'unresolvedNames' for the arguments of 'tryConvertToASTWith': given the same
+-- names and constants, it reports every identifier that
+-- 'tryConvertToASTWith' would fail on, and the first of them is the one that
+-- 'tryConvertToASTWith' reports.
+--
+-- @since 0.6.1
+unresolvedNamesWith
+  :: forall sig binder rawIdent rawTerm rawPattern rawScopedTerm n.
+     (Foil.Distinct n, Bifoldable sig, Ord rawIdent, Foil.CoSinkable binder)
+  => (rawTerm -> Either rawIdent (sig (rawPattern, rawScopedTerm) rawTerm))
+  -- ^ Unpeel one syntax node (or a variable) from a raw term.
+  -> (forall x z. Foil.Distinct x
+      => Foil.Scope x
+      -> Map rawIdent (Foil.Name x)
+      -> rawPattern
+      -> (forall y. Foil.DExt x y
+          => binder x y
+          -> Map rawIdent (Foil.Name y)
+          -> z)
+      -> z)
+  -- ^ Convert raw pattern into a scope-safe pattern.
+  -> (rawScopedTerm -> rawTerm)
+  -- ^ Extract a term from a scoped term (or crash).
+  -> Foil.Scope n
+  -- ^ Resulting scope of the constructed term.
+  -> Map rawIdent (Foil.Name n)
+  -- ^ Known names of free variables in scope @n@.
+  -> Map rawIdent (AST binder sig n)
+  -- ^ Identifiers that denote a term rather than a variable.
+  -> rawTerm
+  -- ^ Raw term.
+  -> [UnresolvedName rawIdent]
+unresolvedNamesWith toSig fromRawPattern getScopedTerm scope0 names0 terms =
+  go scope0 names0
   where
+    constants = Map.keys terms
+
     go :: forall x. Foil.Distinct x
        => Foil.Scope x -> Map rawIdent (Foil.Name x) -> rawTerm -> [UnresolvedName rawIdent]
     go scope names t = case toSig t of
       Left x
-        | Map.member x names -> []
-        | otherwise          -> [UnresolvedName x (Map.keys names)]
+        | Map.member x names || Map.member x terms -> []
+        | otherwise -> [UnresolvedName x (Map.keys names <> constants)]
       Right node -> bifoldMap (goScoped scope names) (go scope names) node
 
     goScoped :: forall x. Foil.Distinct x
