@@ -923,6 +923,7 @@ unsafeConvertToScopedAST toSig fromRawPattern getScopedTerm scope names (pat, sc
 -- ** Convert from free foil
 
 -- | Convert a scope-safe term back into a raw term.
+-- Use 'convertFromASTWith' to name free variables separately from bound ones.
 --
 -- @since 0.0.3
 convertFromAST
@@ -936,7 +937,7 @@ convertFromAST
   -> (rawTerm -> rawScopedTerm)
   -- ^ Wrap raw term into a scoped term.
   -> (Int -> rawIdent)
-  -- ^ Convert underlying integer identifier of a bound variable into a raw identifier.
+  -- ^ Name a variable, bound or free, from its underlying integer identifier.
   -> AST binder sig n
   -- ^ Scope-safe term.
   -> rawTerm
@@ -962,7 +963,7 @@ convertFromScopedAST
   -> (rawTerm -> rawScopedTerm)
   -- ^ Wrap raw term into a scoped term.
   -> (Int -> rawIdent)
-  -- ^ Convert underlying integer identifier of a bound variable into a raw identifier.
+  -- ^ Name a variable, bound or free, from its underlying integer identifier.
   -> ScopedAST binder sig n
   -- ^ Scope-safe scoped term.
   -> (rawPattern, rawScopedTerm)
