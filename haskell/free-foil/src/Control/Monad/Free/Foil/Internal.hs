@@ -607,10 +607,10 @@ alphaEquivLoops = AlphaEquivLoops goAlpha goScoped goPairs goEnv goScopedEnv
 
 -- ** Unsafe equality checks
 
--- | /Unsafe/ equality check for two terms.
--- This check ignores the possibility that two terms might have different
--- scope extensions under binders (which might happen due to substitution
--- under a binder in absence of name conflicts).
+-- | /Unsafe/ equality check for two terms. Names are compared by their raw
+-- identifiers, and patterns by 'Foil.unsafeEqPattern', which uses the
+-- binder-only 'Foil.unifyPatterns'. Thus α-equivalent terms whose binders
+-- differ compare unequal, so normalize both sides with 'refreshAST' first.
 --
 -- @since 0.0.3
 {-# INLINE unsafeEqAST #-}
