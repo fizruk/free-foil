@@ -2,6 +2,11 @@
 
 # Unreleased
 
+Breaking changes:
+
+- `unsinkAST` and `nameSetSubsetOfScope` require `Ext n l`: the scope `l` of the term (or set) must extend the scope `n` it is restricted to. Both compare raw identifiers, which identify a name only within one chain of scope extensions, so with unrelated scopes the answer was meaningless.
+  - To migrate, bring `Ext n l` into scope where it is missing, e.g. with `assertExt` on the binder that leads from `n` to `l`, or from `withFresh` and `withThinnedNameBinderList`, which provide it.
+
 Changed:
 
 - `zipMatchWith1`, `zipMatch1`, `zipMatchWith2` and `zipMatch2` no longer require `Traversable` (or `Bitraversable`). `alphaEquiv`, `unsafeEqAST` and the functions behind them no longer require `Bitraversable` or `SinkableK`, and `alphaEquivRefreshed` requires `Bifunctor` instead of `Bitraversable`. None of them used these instances.

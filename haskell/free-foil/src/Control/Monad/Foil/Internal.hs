@@ -680,8 +680,12 @@ nameSetOfPattern binder = UnsafeNameSet bound
 -- place a restriction is paid for: compare a term\'s support against the scope
 -- it is to be restricted to.
 --
+-- The scope @l@ of the set must extend @n@, since names are compared by their
+-- raw identifiers, which identify a name only within one chain of scope
+-- extensions.
+--
 -- @since 0.4.0
-nameSetSubsetOfScope :: NameSet l -> Scope n -> Bool
+nameSetSubsetOfScope :: Ext n l => NameSet l -> Scope n -> Bool
 nameSetSubsetOfScope (UnsafeNameSet names) (UnsafeScope scope) =
   names `IntSet.isSubsetOf` scope
 

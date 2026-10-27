@@ -193,8 +193,8 @@ etaReduce :: Foil.Distinct n => Foil.Scope n -> Term' a n -> Term' a n
 etaReduce scope term = case term of
   Lam _loc (PatternVar _pos binder) (App _appLoc f (Var x))
     | x == Foil.nameOf binder ->
-        case Foil.assertDistinct binder of
-          Foil.Distinct -> case unsinkAST scope f of
+        case (Foil.assertExt binder, Foil.assertDistinct binder) of
+          (Foil.Ext, Foil.Distinct) -> case unsinkAST scope f of
             Just f' -> f'
             Nothing -> term
   _ -> term

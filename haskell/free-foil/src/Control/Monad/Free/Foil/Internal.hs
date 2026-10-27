@@ -1137,16 +1137,17 @@ withRelevantScope term cont =
   Foil.withRestrictedScope (supportOf term) $ \scope ->
     cont scope (unsafeCoerce term)
 
--- | Unsink an AST from a larger scope to a smaller scope.
+-- | Restrict a term from scope @l@ to a smaller scope @n@, if every name that
+-- occurs free in it is in @n@.
 --
--- This is the a-posteriori form, and the one that has to be paid for: the
--- term's support is computed and compared against the scope. When it succeeds
--- the term itself is untouched, since restriction of a term that does inhabit
--- the smaller scope is a coercion.
+-- The scope @l@ must extend @n@, since names are compared by their raw
+-- identifiers, which identify a name only within one chain of scope
+-- extensions. On success the term is returned unchanged, since restricting a
+-- term that does inhabit @n@ is a coercion.
 --
 -- @since 0.3.0
 unsinkAST
-  :: (Foil.Distinct l, Foil.CoSinkable binder, Bifoldable sig)
+  :: (Foil.Ext n l, Foil.Distinct l, Foil.CoSinkable binder, Bifoldable sig)
   => Foil.Scope n -> AST binder sig l -> Maybe (AST binder sig n)
 unsinkAST scope term
   | Foil.nameSetSubsetOfScope (supportOf term) scope = Just (unsafeCoerce term)

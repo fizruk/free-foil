@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveTraversable   #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -166,7 +167,7 @@ render s = case s of
 renderShifted :: Int -> Skel -> Term Foil.VoidS
 renderShifted k s = go k Foil.emptyScope
   where
-    go :: Foil.Distinct n => Int -> Foil.Scope n -> Term Foil.VoidS
+    go :: (Foil.Distinct n, Foil.Ext Foil.VoidS n) => Int -> Foil.Scope n -> Term Foil.VoidS
     go 0 scope =
       fromMaybe (error "the term uses a dummy binder")
         (unsinkAST Foil.emptyScope (renderIn scope [] (case s of SLam{} -> s; _ -> SLam s)))
