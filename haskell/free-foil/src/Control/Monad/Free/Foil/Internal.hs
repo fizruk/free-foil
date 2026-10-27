@@ -1054,10 +1054,10 @@ supportOfScopedAST (ScopedAST binder body) =
 
 -- | Cut a term down to the scope of exactly the names it uses.
 --
--- This is the a-priori form of restriction, and the cheap one: the term
--- inhabits the smaller scope /by construction/, so nothing is tested and
--- nothing can fail. @'Foil.Ext' m n@ comes back with it, so the term can be
--- 'Foil.sink'ed to where it came from for free.
+-- The term's support is computed with 'supportOf', as in 'unsinkAST', but
+-- nothing is tested and nothing can fail, since the term inhabits the
+-- restricted scope by construction. @'Foil.Ext' m n@ comes back with it, so
+-- the term can be 'Foil.sink'ed to where it came from for free.
 --
 -- Verifying a declared dependency, such as a @uses@ clause or a module's
 -- parameters, is this plus a comparison: compute the scope a term really
