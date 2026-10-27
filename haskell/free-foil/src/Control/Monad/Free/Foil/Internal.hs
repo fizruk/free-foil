@@ -170,7 +170,7 @@ substituteRefreshed scope subst = \case
             body' = substituteRefreshed scope' subst' body
         in ScopedAST binder' body'
 
--- | @'AST' sig@ is a monad relative to 'Foil.Name'.
+-- | @'AST' binder sig@ is a monad relative to 'Foil.Name'.
 instance (Bifunctor sig, Foil.CoSinkable binder, Foil.SinkableK binder)
   => Foil.RelMonad Foil.Name (AST binder sig) where
   rreturn = Var
