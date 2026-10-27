@@ -284,31 +284,13 @@ refreshScopedAST scope (ScopedAST binder body) =
 -- @since 0.0.3
 {-# INLINABLE alphaEquivRefreshed #-}
 alphaEquivRefreshed
-  :: forall sig binder n. (Bifunctor sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder)
+  :: (Bifunctor sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder)
   => Foil.Scope n
   -> AST binder sig n
   -> AST binder sig n
   -> Bool
-alphaEquivRefreshed scope t1 t2 = goAST scope (refreshAST scope t1) (refreshAST scope t2)
-  where
-    -- Refreshing gives α-equivalent terms the same binders, so the binders
-    -- of the two sides must coincide at every level.
-    goAST :: Foil.Distinct m => Foil.Scope m -> AST binder sig m -> AST binder sig m -> Bool
-    goAST _ (Var x) (Var y) = x == y
-    goAST scope' (Node node1) (Node node2) =
-      case zipMatchWithK ((unit . goScoped scope') :^: (unit . goAST scope') :^: M0) node1 node2 of
-        Nothing -> False
-        Just _  -> True
-    goAST _ _ _ = False
-
-    goScoped :: Foil.Distinct m => Foil.Scope m -> ScopedAST binder sig m -> ScopedAST binder sig m -> Bool
-    goScoped scope' (ScopedAST binder1 body1) (ScopedAST binder2 body2) =
-      case Foil.unifyPatternsIn scope' binder1 binder2 of
-        Foil.SameNameBinders{} -> case Foil.assertDistinct binder1 of
-          Foil.Distinct -> goAST (Foil.extendScopePattern binder1 scope') body1 body2
-        _ -> False
-
-    unit f x = if f x then Just () else Nothing
+alphaEquivRefreshed scope t1 t2 =
+  unsafeEqASTIn scope (refreshAST scope t1) (refreshAST scope t2)
 
 -- | A term is a scope-indexed value that can be compared up to α, which is what
 -- a pattern carrying terms as payloads needs of them.
@@ -686,6 +668,73 @@ unsafeEqLoops = EqLoops goAST goScoped
       , case (Foil.assertDistinct binder1, Foil.assertDistinct binder2) of
           (Foil.Distinct, Foil.Distinct) -> body1 `goAST` body2
       ]
+
+    unit f x = if f x then Just () else Nothing
+
+-- | /Unsafe/ equality check for two terms in one scope. Names are compared
+-- directly, and patterns by 'Control.Monad.Foil.unifyPatternsIn', which must
+-- find their binders the same. Thus α-equivalent terms whose binders differ
+-- compare unequal, so normalize both sides with 'refreshAST' first, as
+-- 'alphaEquivRefreshed' does.
+--
+-- Unlike 'unsafeEqAST', this compares the payloads of patterns, which
+-- 'Control.Monad.Foil.unifyPatternsIn' needs the scope for.
+--
+-- @since 0.6.1
+{-# INLINE unsafeEqASTIn #-}
+unsafeEqASTIn
+  :: (ZipMatchK sig, Foil.UnifiablePattern binder, Foil.Distinct n)
+  => Foil.Scope n
+  -> AST binder sig n
+  -> AST binder sig n
+  -> Bool
+unsafeEqASTIn = eqASTIn unsafeEqInLoops
+
+-- | A version of 'unsafeEqASTIn' for scoped terms.
+--
+-- @since 0.6.1
+{-# INLINE unsafeEqScopedASTIn #-}
+unsafeEqScopedASTIn
+  :: (ZipMatchK sig, Foil.UnifiablePattern binder, Foil.Distinct n)
+  => Foil.Scope n
+  -> ScopedAST binder sig n
+  -> ScopedAST binder sig n
+  -> Bool
+unsafeEqScopedASTIn = eqScopedASTIn unsafeEqInLoops
+
+-- | The two mutually recursive loops behind 'unsafeEqASTIn' and
+-- 'unsafeEqScopedASTIn'.
+--
+-- @since 0.6.1
+data EqInLoops binder sig = EqInLoops
+  { eqASTIn       :: forall n. Foil.Distinct n => Foil.Scope n -> AST binder sig n -> AST binder sig n -> Bool
+  , eqScopedASTIn :: forall n. Foil.Distinct n => Foil.Scope n -> ScopedAST binder sig n -> ScopedAST binder sig n -> Bool
+  }
+
+-- | The loops behind 'unsafeEqASTIn' and 'unsafeEqScopedASTIn', local for
+-- the same reason as those of 'alphaEquivLoops'.
+--
+-- @since 0.6.1
+{-# INLINE unsafeEqInLoops #-}
+unsafeEqInLoops
+  :: forall sig binder. (ZipMatchK sig, Foil.UnifiablePattern binder)
+  => EqInLoops binder sig
+unsafeEqInLoops = EqInLoops goAST goScoped
+  where
+    goAST :: forall n. Foil.Distinct n => Foil.Scope n -> AST binder sig n -> AST binder sig n -> Bool
+    goAST _ (Var x) (Var y) = x == y
+    goAST scope (Node t1) (Node t2) =
+      case zipMatchWith2 (unit . goScoped scope) (unit . goAST scope) t1 t2 of
+        Nothing -> False
+        Just _  -> True
+    goAST _ _ _ = False
+
+    goScoped :: forall n. Foil.Distinct n => Foil.Scope n -> ScopedAST binder sig n -> ScopedAST binder sig n -> Bool
+    goScoped scope (ScopedAST binder1 body1) (ScopedAST binder2 body2) =
+      case Foil.unifyPatternsIn scope binder1 binder2 of
+        Foil.SameNameBinders{} -> case Foil.assertDistinct binder1 of
+          Foil.Distinct -> goAST (Foil.extendScopePattern binder1 scope) body1 body2
+        _ -> False
 
     unit f x = if f x then Just () else Nothing
 
