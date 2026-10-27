@@ -657,7 +657,7 @@ unsafeEqLoops = EqLoops goAST goScoped
     goAST :: forall n l. (Foil.Distinct n, Foil.Distinct l) => AST binder sig n -> AST binder sig l -> Bool
     goAST (Var x) (Var y) = Foil.nameId x == Foil.nameId y
     goAST (Node t1) (Node t2) =
-      case zipMatchWithK ((unit . goScoped) :^: (unit . goAST) :^: M0) t1 t2 of
+      case zipMatchWith2 (unit . goScoped) (unit . goAST) t1 t2 of
         Nothing -> False
         Just _  -> True
     goAST _ _ = False
