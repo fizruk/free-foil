@@ -185,7 +185,8 @@ instance (Bifunctor sig, Foil.CoSinkable binder, Foil.SinkableK binder)
           let subst' = extendSubst subst
            in ScopedAST binder' (Foil.rbind scope' body subst')
 
--- | Substitution for a single generalized pattern.
+-- | Substitute terms for the names a pattern binds in a body, and apply an
+-- environment to the body's other names.
 --
 -- @since 0.2.0
 {-# INLINABLE substitutePattern #-}
@@ -194,7 +195,7 @@ substitutePattern
   => Foil.Scope o                           -- ^ Resulting scope.
   -> Foil.Substitution (AST binder sig) n o -- ^ Environment mapping names in scope @n@.
   -> binder' n i                            -- ^ Binders that extend scope @n@ to scope @i@.
-  -> [AST binder sig o]                     -- ^ A list of terms intended to serve as
+  -> [AST binder sig o]                     -- ^ Terms for the bound names, in binding order ('error' if too few, extras ignored).
   -> AST binder sig i
   -> AST binder sig o
 substitutePattern scope env binders args body =
