@@ -1,6 +1,6 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.37.0.
+-- This file has been generated from package.yaml by hpack version 0.39.1.
 --
 -- see: https://github.com/sol/hpack
 
@@ -48,6 +48,7 @@ library
       Control.Monad.Free.Foil.Binary
       Control.Monad.Free.Foil.Binary.TH
       Control.Monad.Free.Foil.Example
+      Control.Monad.Free.Foil.Internal
       Control.Monad.Free.Foil.TH
       Control.Monad.Free.Foil.TH.Convert
       Control.Monad.Free.Foil.TH.MkFreeFoil
