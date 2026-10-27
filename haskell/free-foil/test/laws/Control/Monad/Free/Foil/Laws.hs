@@ -613,7 +613,7 @@ functorSpec sg sinkVerdict verdict = do
 -- a free name by its raw identifier. Patterns are compared by the names
 -- they bind, listed by the given function, and not by their shape.
 alphaEqNameless
-  :: forall binder sig x y. (Bitraversable sig, ZipMatchK sig)
+  :: forall binder sig x y. ZipMatchK sig
   => PatternNames binder -> AST binder sig x -> AST binder sig y -> Bool
 alphaEqNameless binders = go 0 IntMap.empty IntMap.empty
   where
