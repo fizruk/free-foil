@@ -145,12 +145,10 @@ substitute = goSubst
                 body' = goSubst scope' subst' body
             in ScopedAST binder' body'
 
--- | Substitution for free (scoped monads).
+-- | A version of 'substitute' that refreshes every binder of the input term.
 --
--- This is a version of 'substitute' that forces refreshing of all name binders,
--- resulting in a term with normalized binders:
---
--- > substituteRefreshed scope subst = refreshAST scope . subtitute scope subst
+-- The substituted terms are inserted as they are, so their binders are not
+-- refreshed. Apply 'refreshAST' to the result to normalize all of its binders.
 --
 -- In general, 'substitute' is more efficient since it does not always refresh binders.
 --
