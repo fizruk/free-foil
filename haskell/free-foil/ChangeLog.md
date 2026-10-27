@@ -12,7 +12,7 @@ Performance:
 
 New:
 
-- `AlphaEquivLoops`, `alphaEquivLoops`, `EqLoops` and `unsafeEqLoops`, the loops behind α-equivalence and `unsafeEqAST`.
+- `Control.Monad.Free.Foil.Internal` holds the implementation of `Control.Monad.Free.Foil`, which now has an export list. The loops behind α-equivalence and `unsafeEqAST` (`AlphaEquivLoops`, `alphaEquivLoops`, `EqLoops`, `unsafeEqLoops`) are exported only from the internal module.
 
 # 0.6.0 — 2026-10-26
 
