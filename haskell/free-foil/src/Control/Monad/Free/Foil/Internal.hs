@@ -39,7 +39,7 @@ import qualified Data.Map                    as Map
 import           GHC.Generics                (Generic)
 import           Unsafe.Coerce               (unsafeCoerce)
 
--- | Scoped term under a (single) name binder.
+-- | Scoped term under a binder, which may be a pattern binding several names.
 --
 -- @since 0.0.1
 data ScopedAST binder sig n where
