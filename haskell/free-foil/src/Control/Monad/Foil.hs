@@ -1,8 +1,8 @@
 -- | Main definitions of the foil that can be
 -- reused for specific implementations.
 --
--- The original description of this approach
--- is described in the IFL 2022 paper by Maclaurin, Radul, and Paszke
+-- This approach was originally described
+-- in the IFL 2022 paper by Maclaurin, Radul, and Paszke
 -- [«The Foil: Capture-Avoiding Substitution With No Sharp Edges»](https://doi.org/10.1145/3587216.3587224).
 -- This module also introduces 'CoSinkable' class,
 -- generalizing handling of patterns, as described in
