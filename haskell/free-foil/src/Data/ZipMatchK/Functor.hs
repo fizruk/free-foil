@@ -35,6 +35,7 @@ instance GenericK (Product f g) where
 
 -- | Note: instance is limited to 'Type'-kinded functors @f@ and @g@.
 instance (ZipMatchK f, ZipMatchK g) => ZipMatchK (Sum f (g :: Type -> Type)) where
+  {-# INLINE zipMatchWithK #-}
   zipMatchWithK mappings@(_ :^: M0) l r = case (l, r) of
     (InL x, InL y) -> InL <$> zipMatchWithK @_ @f mappings x y
     (InR x, InR y) -> InR <$> zipMatchWithK @_ @g mappings x y
@@ -42,6 +43,7 @@ instance (ZipMatchK f, ZipMatchK g) => ZipMatchK (Sum f (g :: Type -> Type)) whe
 
 -- | Note: instance is limited to 'Type'-kinded functors @f@ and @g@.
 instance (ZipMatchK f, ZipMatchK g) => ZipMatchK (Product f (g :: Type -> Type)) where
+  {-# INLINE zipMatchWithK #-}
   zipMatchWithK mappings@(_ :^: M0) (Pair x1 x2) (Pair y1 y2) =
     Pair <$> zipMatchWithK @_ @f mappings x1 y1 <*> zipMatchWithK @_ @g mappings x2 y2
 
