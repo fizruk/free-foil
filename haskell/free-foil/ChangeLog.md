@@ -1,5 +1,11 @@
 # CHANGELOG for `free-foil`
 
+# Unreleased
+
+Performance:
+
+- The `zipMatchWithK` that `deriveZipMatchK` and `mkFreeFoil` generate is `INLINE`, like their `zipMatchFoldK`, and so are those of `Sum` and `Product`. At a call site with known mappings, `zipMatchWith2` then compiles to a `case` on the two values that builds only the result, instead of calling the instance's method with the mappings as closures.
+
 # 0.6.1 — 2026-10-27
 
 This release lets `substitute`, `alphaEquiv` and `unsafeEqAST` specialise in client code, and fixes problems found by an audit of the documentation. One of the fixes changes the types of `unsinkAST` and `nameSetSubsetOfScope`, described first.
