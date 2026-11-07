@@ -2,14 +2,16 @@
 
 # 0.7.0 — unreleased
 
-This release lets a substitution reach the payloads of patterns, such as the type annotations of binders.
+This release lets substitution and the support of a term reach the payloads of patterns, such as the type annotations of binders.
 
 Breaking changes:
 
 - `substitute`, `substituteRefreshed`, `substitutePattern`, `refreshAST`, `alphaEquivRefreshed` and the `RelMonad Name (AST binder sig)` instance require `BindPayload (Payload binder) (AST binder sig)`. For a concrete binder without payloads it is solved by the instance for `NoPayload`, with nothing to write. Code that is generic in the binder carries the constraint, as it carries `CoSinkable binder`.
+- `supportOf`, `supportOfScopedAST`, `freeVarsOf`, `freeVarsOfScopedAST`, `unsinkAST`, the functions that restrict a term to its support, and `freeVarsOfAnnotated` require `PayloadSupport (Payload binder)`, solved in the same way.
 
 Fixes:
 
+- `supportOf`, and everything built on it, count the names that occur in the payloads of binders. They took the support of a scoped term from its body alone, so `unsinkAST` could restrict a term past a name that only a binder's type uses.
 - `substitute`, `substituteRefreshed` and `rbind` substitute into the payloads of binders. They entered binders with `withRefreshedPattern` (and `withFreshPattern`, `withRefreshedPattern'`), which move a payload along the binders alone, so a payload kept the names the substitution maps: substituting `b` for `a` in `λ(x : a). x` left `a` in the annotation.
 
 New:
@@ -17,6 +19,7 @@ New:
 - `Payload`, an associated type of `CoSinkable`: the fields of a pattern indexed by its own scope. It defaults to `NoPayload`.
 - `withMappedPattern`, a method of `CoSinkable`: rebuild a pattern through a map of the names outside it (a renaming, a substitution or an environment), mapping each payload with the map reached before its binder. The default, for patterns without payloads, refreshes the binders as `withRefreshedPattern` does and costs the same. `Telescope` implements it.
 - `withSubstitutedPattern`, `refreshBinder` and `freshBinder`, for calling `withMappedPattern` with a substitution.
+- `foldMapPayloads`, a method of `CoSinkable` that folds the payloads of a pattern (default: none), `PayloadSupport`, the class of payloads whose support can be computed, with instances for `NoPayload` and `AST binder sig`, and `payloadsSupport`, the names the payloads of a pattern use.
 - `lookupSubstWith`, a lookup with one continuation for a mapped name and another for one the substitution leaves as it is (no `InjectName` needed), and `mapSubst`, which maps the values of a substitution.
 - `sinkabilityProofKViaCoSinkable`: `sinkabilityProofK` for a pattern from its `coSinkabilityProof`, for a pattern that cannot derive `SinkableK`, such as one with payloads. `Telescope` gets a `SinkableK` instance through it, so that it can be the binder of a term.
 - `BindPayload`, the class of payloads a map of names applies to, with instances for `NoPayload` and `AST binder sig`. A payload that is a term is substituted into with `substitute` (`substitutePayload`), which on the normalisation benchmark with typed binders takes 0.95–0.97 of the time of `rbind`.
