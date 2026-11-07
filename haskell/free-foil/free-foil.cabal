@@ -122,6 +122,7 @@ test-suite spec
       Control.Monad.Free.Foil.HoistSpec
       Control.Monad.Free.Foil.LawsSpec
       Control.Monad.Free.Foil.NFDataSpec
+      Control.Monad.Free.Foil.SubstitutePayloadSpec
       Control.Monad.Free.Foil.SupportSpec
       Control.Monad.Free.Foil.TH.MkFreeFoilSpec
       Control.Monad.Free.Foil.TH.MkFreeFoilSpec.Config
