@@ -22,7 +22,6 @@ module Control.Monad.Free.Foil.SubstitutePayloadSpec (spec) where
 import           Test.Hspec
 
 import qualified Control.Monad.Foil              as Foil
-import           Control.Monad.Foil.Internal     (RenamingsK (..))
 import           Control.Monad.Foil.Relative     (RelMonad (..))
 import           Control.Monad.Foil.Telescope    (Telescope (..), telescopePayloads)
 import           Control.Monad.Free.Foil
@@ -64,15 +63,7 @@ instance Foil.CoSinkable Typed where
       cont (extend m x x') (Typed (mapPayload scope m ty) x') (Foil.extendScope x' scope)
 
 instance Foil.SinkableK Typed where
-  sinkabilityProofK renames pat cont = case renames of
-    RCons rename (RCons _ RNil) ->
-      Foil.coSinkabilityProof rename pat $ \rename' pat' -> cont (RCons rename (RCons rename' RNil)) pat'
-    RCons rename (RSkip RNil) ->
-      Foil.coSinkabilityProof rename pat $ \rename' pat' -> cont (RCons rename (RCons rename' RNil)) pat'
-    RSkip (RCons _ RNil) ->
-      Foil.coSinkabilityProof id pat $ \rename' pat' -> cont (RCons id (RCons rename' RNil)) pat'
-    RSkip (RSkip RNil) ->
-      Foil.coSinkabilityProof id pat $ \rename' pat' -> cont (RCons id (RCons rename' RNil)) pat'
+  sinkabilityProofK = Foil.sinkabilityProofKViaCoSinkable
 
 -- | The payload of the outermost binder of a term.
 payloadOf :: Term n -> Maybe String

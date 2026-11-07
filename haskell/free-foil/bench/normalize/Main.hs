@@ -32,7 +32,6 @@ import           Test.Tasty.Bench
 
 import           Control.Monad.Foil            (S (VoidS))
 import qualified Control.Monad.Foil            as Foil
-import           Control.Monad.Foil.Internal   (RenamingsK (..))
 import           Control.Monad.Free.Foil       (AST, pattern Var, substitute)
 import           Control.Monad.Free.Foil.Example (Expr, ExprF, churchN, nf', pattern AppE, pattern LamE)
 
@@ -77,15 +76,7 @@ instance Foil.CoSinkable Typed where
       cont (extend m x x') (Typed (mapPayload scope m ty) x') (Foil.extendScope x' scope)
 
 instance Foil.SinkableK Typed where
-  sinkabilityProofK renames pat cont = case renames of
-    RCons rename (RCons _ RNil) ->
-      Foil.coSinkabilityProof rename pat $ \rename' pat' -> cont (RCons rename (RCons rename' RNil)) pat'
-    RCons rename (RSkip RNil) ->
-      Foil.coSinkabilityProof rename pat $ \rename' pat' -> cont (RCons rename (RCons rename' RNil)) pat'
-    RSkip (RCons _ RNil) ->
-      Foil.coSinkabilityProof id pat $ \rename' pat' -> cont (RCons id (RCons rename' RNil)) pat'
-    RSkip (RSkip RNil) ->
-      Foil.coSinkabilityProof id pat $ \rename' pat' -> cont (RCons id (RCons rename' RNil)) pat'
+  sinkabilityProofK = Foil.sinkabilityProofKViaCoSinkable
 
 -- | The size of a term with its payloads.
 sizeOfTyped :: TExpr n -> Int
