@@ -17,6 +17,7 @@ New:
 - `Payload`, an associated type of `CoSinkable`: the fields of a pattern indexed by its own scope. It defaults to `NoPayload`.
 - `withMappedPattern`, a method of `CoSinkable`: rebuild a pattern through a map of the names outside it (a renaming, a substitution or an environment), mapping each payload with the map reached before its binder. The default, for patterns without payloads, refreshes the binders as `withRefreshedPattern` does and costs the same. `Telescope` implements it.
 - `withSubstitutedPattern`, `refreshBinder` and `freshBinder`, for calling `withMappedPattern` with a substitution.
+- `sinkabilityProofKViaCoSinkable`: `sinkabilityProofK` for a pattern from its `coSinkabilityProof`, for a pattern that cannot derive `SinkableK`, such as one with payloads. `Telescope` gets a `SinkableK` instance through it, so that it can be the binder of a term.
 - `BindPayload`, the class of payloads a map of names applies to, with instances for `NoPayload` and `AST binder sig`. A payload that is a term is substituted into with `substitute` (`substitutePayload`), which on the normalisation benchmark with typed binders takes 0.95–0.97 of the time of `rbind`.
 
 # 0.6.1 — 2026-10-27
