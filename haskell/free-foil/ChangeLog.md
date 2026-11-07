@@ -1,5 +1,24 @@
 # CHANGELOG for `free-foil`
 
+# 0.7.0 — unreleased
+
+This release lets a substitution reach the payloads of patterns, such as the type annotations of binders.
+
+Breaking changes:
+
+- `substitute`, `substituteRefreshed`, `substitutePattern`, `refreshAST`, `alphaEquivRefreshed` and the `RelMonad Name (AST binder sig)` instance require `BindPayload (Payload binder) (AST binder sig)`. For a concrete binder without payloads it is solved by the instance for `NoPayload`, with nothing to write. Code that is generic in the binder carries the constraint, as it carries `CoSinkable binder`.
+
+Fixes:
+
+- `substitute`, `substituteRefreshed` and `rbind` substitute into the payloads of binders. They entered binders with `withRefreshedPattern` (and `withFreshPattern`, `withRefreshedPattern'`), which move a payload along the binders alone, so a payload kept the names the substitution maps: substituting `b` for `a` in `λ(x : a). x` left `a` in the annotation.
+
+New:
+
+- `Payload`, an associated type of `CoSinkable`: the fields of a pattern indexed by its own scope. It defaults to `NoPayload`.
+- `withMappedPattern`, a method of `CoSinkable`: rebuild a pattern through a map of the names outside it (a renaming, a substitution or an environment), mapping each payload with the map reached before its binder. The default, for patterns without payloads, refreshes the binders as `withRefreshedPattern` does and costs the same. `Telescope` implements it.
+- `withSubstitutedPattern`, `refreshBinder` and `freshBinder`, for calling `withMappedPattern` with a substitution.
+- `BindPayload`, the class of payloads a map of names applies to, with instances for `NoPayload` and `AST binder sig`.
+
 # 0.6.1 — 2026-10-27
 
 This release lets `substitute`, `alphaEquiv` and `unsafeEqAST` specialise in client code, and fixes problems found by an audit of the documentation. One of the fixes changes the types of `unsinkAST` and `nameSetSubsetOfScope`, described first.
