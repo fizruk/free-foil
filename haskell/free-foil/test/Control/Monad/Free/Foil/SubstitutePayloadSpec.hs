@@ -8,6 +8,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 -- | A substitution reaches the payloads of binders.
 --
@@ -17,9 +18,15 @@
 -- 'substitute' entered binders with 'Foil.withRefreshedPattern', which moves
 -- a payload along the binders alone, so the payload kept the substituted
 -- name.
+--
+-- The names a payload uses are free in the term, as those of its body are.
+-- Up to 0.6.1 'supportOf' took the support of a scoped term from its body
+-- alone, so the restriction of a term could drop a name only a payload uses.
 module Control.Monad.Free.Foil.SubstitutePayloadSpec (spec) where
 
 import           Test.Hspec
+
+import           Data.Bifoldable                 (Bifoldable (..))
 
 import qualified Control.Monad.Foil              as Foil
 import           Control.Monad.Foil.Relative     (RelMonad (..))
@@ -33,6 +40,16 @@ data Typed (n :: Foil.S) (l :: Foil.S) where
 
 -- | Terms whose λ binds a typed name.
 type Term = AST Typed ExprF
+
+-- | A variable as a term.
+var :: Foil.Name n -> Term n
+var = Var
+
+-- | The example signature derives 'Data.Bifunctor.Bifunctor' only, and
+-- 'freeVarsOf' folds.
+instance Bifoldable ExprF where
+  bifoldMap _ g (AppF f a) = g f <> g a
+  bifoldMap f _ (LamF body) = f body
 
 instance Foil.CoSinkable Typed where
   coSinkabilityProof rename (Typed ty x) cont =
@@ -61,6 +78,8 @@ instance Foil.CoSinkable Typed where
   withMappedPattern refresh extend _ mapPayload scope m (Typed ty x) cont =
     refresh scope x $ \x' ->
       cont (extend m x x') (Typed (mapPayload scope m ty) x') (Foil.extendScope x' scope)
+
+  foldMapPayloads f (Typed ty _) = f ty
 
 instance Foil.SinkableK Typed where
   sinkabilityProofK = Foil.sinkabilityProofKViaCoSinkable
@@ -110,3 +129,32 @@ spec = describe "a substitution reaches the payloads of binders" $ do
     withExample $ \scope b _ tele subst ->
       Foil.withSubstitutedPattern Foil.substitutePayload scope subst tele $ \_ tele' _ ->
         map render (telescopePayloads tele') `shouldBe` [render (Var b)]
+
+  describe "the support of a term includes the payloads of its binders" $ do
+    it "freeVarsOf" $
+      Foil.withFresh Foil.emptyScope $ \a ->
+        let scope = Foil.extendScope a Foil.emptyScope
+        in Foil.withFresh scope $ \x ->
+          map Foil.nameId (freeVarsOf (LamE (Typed (Var (Foil.nameOf a)) x) (Var (Foil.nameOf x))))
+            `shouldBe` [Foil.nameId (Foil.nameOf a)]
+    it "freeVarsOf, a payload naming an outer binder" $
+      Foil.withFresh Foil.emptyScope $ \a ->
+        let scopeA = Foil.extendScope a Foil.emptyScope
+        in Foil.withFresh scopeA $ \x ->
+          Foil.withFresh (Foil.extendScope x scopeA) $ \y ->
+            map Foil.nameId (freeVarsOf (LamE (Typed (Var (Foil.nameOf a)) x) (LamE (Typed (Var (Foil.nameOf x)) y) (Var (Foil.nameOf y)))))
+              `shouldBe` [Foil.nameId (Foil.nameOf a)]
+    it "unsinkAST keeps a name only a payload uses" $
+      Foil.withFresh Foil.emptyScope $ \a ->
+        let scope = Foil.extendScope a Foil.emptyScope
+        in Foil.withFresh scope $ \x ->
+          fmap render (unsinkAST Foil.emptyScope (LamE (Typed (Var (Foil.nameOf a)) x) (Var (Foil.nameOf x))))
+            `shouldBe` Nothing
+    it "the payloads of a telescope, its own names removed" $
+      Foil.withFresh Foil.emptyScope $ \a ->
+        let scopeA = Foil.extendScope a Foil.emptyScope
+        in Foil.withFresh scopeA $ \x ->
+          Foil.withFresh (Foil.extendScope x scopeA) $ \y ->
+            let tele = TelescopeCons () (var (Foil.nameOf a)) x (TelescopeCons () (var (Foil.nameOf x)) y TelescopeEmpty)
+            in map Foil.nameId (Foil.nameSetToList (Foil.unsinkNameSet tele (Foil.payloadsSupport tele)))
+                 `shouldBe` [Foil.nameId (Foil.nameOf a)]
