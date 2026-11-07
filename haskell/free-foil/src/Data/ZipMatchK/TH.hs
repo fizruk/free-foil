@@ -135,6 +135,9 @@ deriveZipMatchKWith arity typeName = do
 -- 'deriveZipMatchKWith' generates after reifying the type. It is for code
 -- that declares the type in the same splice, such as
 -- 'Control.Monad.Free.Foil.TH.MkFreeFoil.mkFreeFoil', which cannot reify it.
+-- The method is @INLINE@, like the derived 'zipMatchFoldK', so that at a call
+-- site with known mappings the match compiles to a @case@ on the two values
+-- and builds only the result.
 --
 -- @since 0.6.0
 zipMatchKInstance :: Name -> [Name] -> Int -> [(Name, [Type])] -> Q [Dec]
@@ -163,7 +166,8 @@ zipMatchKInstance typeName params n fieldsOf = do
       context = [ AppT (ConT ''ZipMatchK) (VarT v)
                 | v <- fixed, v `Set.member` usedVars ]
 
-  return [InstanceD Nothing context (AppT (ConT ''ZipMatchK) headType) [impl]]
+  return [InstanceD Nothing context (AppT (ConT ''ZipMatchK) headType)
+            [PragmaD (InlineP 'zipMatchWithK Inline FunLike AllPhases), impl]]
 
 -- | The 'ZipMatchFoldK' instance of a data type, from the same arguments as
 -- 'zipMatchKInstance'. A field of a zipped parameter contributes the result of
