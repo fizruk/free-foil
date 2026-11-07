@@ -299,7 +299,7 @@ genSubstInto sg kind o cont = case kind of
 -- | Kleisli composition @s2 ⊙ s1@: substitute with @s1@, then with @s2@.
 -- The result maps every name of @i@ explicitly.
 composeSubst
-  :: (Bifunctor sig, CoSinkable binder, SinkableK binder, Distinct o2)
+  :: (Bifunctor sig, CoSinkable binder, SinkableK binder, Distinct o2, BindPayload (Payload binder) (AST binder sig))
   => Ctx i -> Scope o2
   -> Substitution (AST binder sig) i o1
   -> Substitution (AST binder sig) o1 o2
@@ -392,19 +392,19 @@ showRenamingCase sg (RenamingCase chain t) = showChain chain <> "t = " <> showAS
 
 -- | 'rbind' at 'Name'.
 rbindN
-  :: (Bifunctor sig, CoSinkable binder, SinkableK binder, Distinct b)
+  :: (Bifunctor sig, CoSinkable binder, SinkableK binder, Distinct b, BindPayload (Payload binder) (AST binder sig))
   => Scope b -> AST binder sig a -> (Name a -> AST binder sig b) -> AST binder sig b
 rbindN = rbind
 
 -- | 'rreturn' at 'Name'.
 rreturnN
-  :: (Bifunctor sig, CoSinkable binder, SinkableK binder)
+  :: (Bifunctor sig, CoSinkable binder, SinkableK binder, BindPayload (Payload binder) (AST binder sig))
   => Name a -> AST binder sig a
 rreturnN = rreturn
 
 -- | 'liftRM' at 'Name'.
 liftRMN
-  :: (Bifunctor sig, CoSinkable binder, SinkableK binder, Distinct b)
+  :: (Bifunctor sig, CoSinkable binder, SinkableK binder, Distinct b, BindPayload (Payload binder) (AST binder sig))
   => Scope b -> (Name a -> Name b) -> AST binder sig a -> AST binder sig b
 liftRMN = liftRM
 
@@ -433,7 +433,7 @@ data RelMonadLaws binder sig = RelMonadLaws
 -- equality.
 relMonadLaws
   :: forall binder sig.
-     (Bitraversable sig, ZipMatchK sig, CoSinkable binder, SinkableK binder)
+     (Bitraversable sig, ZipMatchK sig, CoSinkable binder, SinkableK binder, BindPayload (Payload binder) (AST binder sig))
   => SyntaxGen binder sig -> RelMonadLaws binder sig
 relMonadLaws sg = RelMonadLaws
   { substLeftUnit = \(SubstCase i o1 _ s1 _ _) -> withCtx o1 $ \scope1 ->
@@ -512,7 +512,7 @@ data FunctorLaws binder sig = FunctorLaws
 -- | The functor laws for a language.
 functorLaws
   :: forall binder sig.
-     (Bitraversable sig, ZipMatchK sig, CoSinkable binder, SinkableK binder)
+     (Bitraversable sig, ZipMatchK sig, CoSinkable binder, SinkableK binder, BindPayload (Payload binder) (AST binder sig))
   => SyntaxGen binder sig -> FunctorLaws binder sig
 functorLaws sg = FunctorLaws
   { termSinkableLaws =
@@ -549,7 +549,7 @@ data RelMonadLaw
 -- checked for each combination of 'SubstKind's, which the verdict is given
 -- (it is given 'Nothing' for the laws on terms).
 relMonadSpec
-  :: (Bitraversable sig, ZipMatchK sig, CoSinkable binder, SinkableK binder)
+  :: (Bitraversable sig, ZipMatchK sig, CoSinkable binder, SinkableK binder, BindPayload (Payload binder) (AST binder sig))
   => SyntaxGen binder sig -> (RelMonadLaw -> Maybe (SubstKind, SubstKind) -> Verdict) -> Spec
 relMonadSpec sg verdict = do
   let laws = relMonadLaws sg
@@ -577,7 +577,7 @@ data FunctorLaw = LiftRMIdentity | LiftRMComposition | LiftRMInclusion | SinkAgr
 -- | The functor laws of terms: 'sinkabilityProof', 'liftRM', and their
 -- agreement, along each class of renamings.
 functorSpec
-  :: (Bitraversable sig, ZipMatchK sig, CoSinkable binder, SinkableK binder)
+  :: (Bitraversable sig, ZipMatchK sig, CoSinkable binder, SinkableK binder, BindPayload (Payload binder) (AST binder sig))
   => SyntaxGen binder sig
   -> (RenamingClass -> SinkLaw -> Verdict)
   -> (RenamingClass -> FunctorLaw -> Verdict)
@@ -659,7 +659,7 @@ data PairCase binder sig where
   PairCase :: Ctx n -> AST binder sig n -> AST binder sig n -> PairCase binder sig
 
 genPairCase
-  :: (Bitraversable sig, CoSinkable binder, SinkableK binder)
+  :: (Bitraversable sig, CoSinkable binder, SinkableK binder, BindPayload (Payload binder) (AST binder sig))
   => SyntaxGen binder sig -> Gen (PairCase binder sig)
 genPairCase sg = do
   SomeCtx n <- genCtx
@@ -674,7 +674,7 @@ genPairCase sg = do
 
 -- | The library's α-equivalence checks against 'alphaEqNameless'.
 alphaSpec
-  :: (Bitraversable sig, ZipMatchK sig, UnifiablePattern binder, SinkableK binder)
+  :: (Bitraversable sig, ZipMatchK sig, UnifiablePattern binder, SinkableK binder, BindPayload (Payload binder) (AST binder sig))
   => SyntaxGen binder sig -> (AlphaLaw -> Verdict) -> Spec
 alphaSpec sg verdict = do
   law (verdict AlphaEquivRefreshed') "alphaEquiv n t (refreshAST n t)" $

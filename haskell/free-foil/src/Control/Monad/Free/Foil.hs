@@ -12,6 +12,7 @@ module Control.Monad.Free.Foil (
   substitute,
   substituteRefreshed,
   substitutePattern,
+  substitutePayload,
 
   -- * Transformations between signatures
   foldAST,

@@ -70,6 +70,12 @@ module Control.Monad.Foil (
   composeNameBinderRenamings,
   fromNameBinderRenaming,
   extendRenamingNameBinder,
+  -- ** Mapping a pattern's payloads
+  NoPayload,
+  BindPayload(..),
+  withSubstitutedPattern,
+  refreshBinder,
+  freshBinder,
   -- ** Transporting a pattern's payloads
   PatternTransport,
   verbatimTransport,

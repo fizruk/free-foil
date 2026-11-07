@@ -102,10 +102,17 @@ instance Foil.InjectName (AST binder sig) where
 
 -- | Substitution for free (scoped monads).
 --
+-- The substitution reaches the payloads of the binders too
+-- ('Foil.withMappedPattern'), such as the types of a telescope's steps, which
+-- is what the 'Foil.BindPayload' constraint is for. For a binder without
+-- payloads it is solved by the instance for 'Foil.NoPayload' and costs
+-- nothing. Since 0.7.0; before, payloads kept the names the substitution
+-- maps.
+--
 -- @since 0.0.1
 {-# INLINE substitute #-}
 substitute
-  :: forall sig binder o i. (Bifunctor sig, Foil.Distinct o, Foil.CoSinkable binder, Foil.SinkableK binder)
+  :: forall sig binder o i. (Bifunctor sig, Foil.Distinct o, Foil.CoSinkable binder, Foil.SinkableK binder, Foil.BindPayload (Foil.Payload binder) (AST binder sig))
   => Foil.Scope o
   -> Foil.Substitution (AST binder sig) i o
   -> AST binder sig i
@@ -140,9 +147,8 @@ substitute = goSubst
           Var name -> Foil.lookupSubst subst name
           Node node -> Node (bimap f go node)
         f (ScopedAST binder body) =
-          Foil.withRefreshedPattern scope binder $ \extendSubst binder' scope' ->
-            let subst' = extendSubst (Foil.sink subst)
-                body' = goSubst scope' subst' body
+          Foil.withSubstitutedPattern substitutePayload scope subst binder $ \subst' binder' scope' ->
+            let body' = goSubst scope' subst' body
             in ScopedAST binder' body'
 
 -- | A version of 'substitute' that refreshes every binder of the input term.
@@ -155,7 +161,7 @@ substitute = goSubst
 -- @since 0.0.3
 {-# INLINABLE substituteRefreshed #-}
 substituteRefreshed
-  :: (Bifunctor sig, Foil.Distinct o, Foil.CoSinkable binder, Foil.SinkableK binder)
+  :: (Bifunctor sig, Foil.Distinct o, Foil.CoSinkable binder, Foil.SinkableK binder, Foil.BindPayload (Foil.Payload binder) (AST binder sig))
   => Foil.Scope o
   -> Foil.Substitution (AST binder sig) i o
   -> AST binder sig i
@@ -165,13 +171,25 @@ substituteRefreshed scope subst = \case
   Node node -> Node (bimap f (substituteRefreshed scope subst) node)
   where
     f (ScopedAST binder body) =
-      Foil.withFreshPattern scope binder $ \extendSubst binder' scope' ->
-        let subst' = extendSubst (Foil.sink subst)
-            body' = substituteRefreshed scope' subst' body
+      Foil.withMappedPattern Foil.freshBinder Foil.extendSubstitution Foil.sink substitutePayload scope subst binder $ \subst' binder' scope' ->
+        let body' = substituteRefreshed scope' subst' body
         in ScopedAST binder' body'
 
+-- | Substitute into a payload of a binder, with the substitution reached
+-- before the binder. The payload function that 'substitute' gives
+-- 'Foil.withSubstitutedPattern'.
+--
+-- @since 0.7.0
+substitutePayload
+  :: (Foil.BindPayload t e, Foil.Distinct y, Foil.InjectName e)
+  => Foil.Scope y -> Foil.Substitution e x y -> t x -> t y
+substitutePayload scope subst payload = Foil.bindPayload scope payload (Foil.lookupSubst subst)
+{-# INLINE substitutePayload #-}
+
 -- | @'AST' binder sig@ is a monad relative to t'Control.Monad.Foil.Name'.
-instance (Bifunctor sig, Foil.CoSinkable binder, Foil.SinkableK binder)
+--
+-- Like 'substitute', 'Foil.rbind' maps the payloads of binders as well.
+instance (Bifunctor sig, Foil.CoSinkable binder, Foil.SinkableK binder, Foil.BindPayload (Foil.Payload binder) (AST binder sig))
   => Foil.RelMonad Foil.Name (AST binder sig) where
   rreturn = Var
   rbind scope term subst =
@@ -181,9 +199,47 @@ instance (Bifunctor sig, Foil.CoSinkable binder, Foil.SinkableK binder)
     where
       g x = Foil.rbind scope x subst
       g' (ScopedAST binder body) =
-        Foil.withRefreshedPattern' scope binder $ \extendSubst binder' scope' ->
-          let subst' = extendSubst subst
-           in ScopedAST binder' (Foil.rbind scope' body subst')
+        Foil.withMappedPattern Foil.refreshBinder extendNameMap sinkNameMap bindPayloadWith scope (NameMap subst) binder $ \(NameMap subst') binder' scope' ->
+          ScopedAST binder' (Foil.rbind scope' body subst')
+
+-- | A payload of a binder is a term, and a map of names applies to it as to
+-- the body.
+--
+-- @since 0.7.0
+instance (Bifunctor sig, Foil.CoSinkable binder, Foil.SinkableK binder, Foil.BindPayload (Foil.Payload binder) (AST binder sig))
+  => Foil.BindPayload (AST binder sig) (AST binder sig) where
+  bindPayload = Foil.rbind
+
+-- | A map of names as a function, for 'Foil.withMappedPattern'.
+--
+-- @since 0.7.0
+newtype NameMap e n o = NameMap (Foil.Name n -> e o)
+
+-- | Extend a map of names under a binder: the binder's name goes to the
+-- refreshed name, every other name through the map.
+--
+-- @since 0.7.0
+extendNameMap
+  :: (Foil.InjectName e, Foil.Sinkable e, Foil.DExt y y')
+  => NameMap e x y -> Foil.NameBinder x x' -> Foil.NameBinder y y' -> NameMap e x' y'
+extendNameMap (NameMap subst) binder binder' = NameMap $ \name -> case Foil.unsinkName binder name of
+  Nothing    -> Foil.injectName (Foil.nameOf binder')
+  Just name' -> Foil.sink (subst name')
+{-# INLINE extendNameMap #-}
+
+-- | Sink a map of names into a larger ambient scope.
+--
+-- @since 0.7.0
+sinkNameMap :: (Foil.Sinkable e, Foil.DExt y y') => NameMap e x y -> NameMap e x y'
+sinkNameMap (NameMap subst) = NameMap (Foil.sink . subst)
+{-# INLINE sinkNameMap #-}
+
+-- | Apply a map of names to a payload.
+--
+-- @since 0.7.0
+bindPayloadWith :: (Foil.BindPayload t e, Foil.Distinct y) => Foil.Scope y -> NameMap e x y -> t x -> t y
+bindPayloadWith scope (NameMap subst) payload = Foil.bindPayload scope payload subst
+{-# INLINE bindPayloadWith #-}
 
 -- | Substitute terms for the names a pattern binds in a body, and apply an
 -- environment to the body's other names.
@@ -191,7 +247,7 @@ instance (Bifunctor sig, Foil.CoSinkable binder, Foil.SinkableK binder)
 -- @since 0.2.0
 {-# INLINABLE substitutePattern #-}
 substitutePattern
-  :: (Bifunctor sig, Foil.Distinct o, Foil.CoSinkable binder', Foil.CoSinkable binder, Foil.SinkableK binder)
+  :: (Bifunctor sig, Foil.Distinct o, Foil.CoSinkable binder', Foil.CoSinkable binder, Foil.SinkableK binder, Foil.BindPayload (Foil.Payload binder) (AST binder sig))
   => Foil.Scope o                           -- ^ Resulting scope.
   -> Foil.Substitution (AST binder sig) n o -- ^ Environment mapping names in scope @n@.
   -> binder' n i                            -- ^ Binders that extend scope @n@ to scope @i@.
@@ -251,7 +307,7 @@ hoistAST f = foldAST Var ScopedAST (Node . f)
 -- @since 0.0.3
 {-# INLINABLE refreshAST #-}
 refreshAST
-  :: (Bifunctor sig, Foil.Distinct n, Foil.CoSinkable binder, Foil.SinkableK binder)
+  :: (Bifunctor sig, Foil.Distinct n, Foil.CoSinkable binder, Foil.SinkableK binder, Foil.BindPayload (Foil.Payload binder) (AST binder sig))
   => Foil.Scope n
   -> AST binder sig n
   -> AST binder sig n
@@ -263,7 +319,7 @@ refreshAST scope = \case
 --
 -- @since 0.0.3
 {-# INLINABLE refreshScopedAST #-}
-refreshScopedAST :: (Bifunctor sig, Foil.Distinct n, Foil.CoSinkable binder, Foil.SinkableK binder)
+refreshScopedAST :: (Bifunctor sig, Foil.Distinct n, Foil.CoSinkable binder, Foil.SinkableK binder, Foil.BindPayload (Foil.Payload binder) (AST binder sig))
   => Foil.Scope n
   -> ScopedAST binder sig n
   -> ScopedAST binder sig n
@@ -284,7 +340,7 @@ refreshScopedAST scope (ScopedAST binder body) =
 -- @since 0.0.3
 {-# INLINABLE alphaEquivRefreshed #-}
 alphaEquivRefreshed
-  :: (Bifunctor sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder)
+  :: (Bifunctor sig, ZipMatchK sig, Foil.Distinct n, Foil.UnifiablePattern binder, Foil.SinkableK binder, Foil.BindPayload (Foil.Payload binder) (AST binder sig))
   => Foil.Scope n
   -> AST binder sig n
   -> AST binder sig n

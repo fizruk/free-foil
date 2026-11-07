@@ -4,6 +4,7 @@
 {-# LANGUAGE InstanceSigs        #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 -- | The labelled telescope: a chain of binders, each carrying a label and a
@@ -107,6 +108,35 @@ instance (Sinkable e, RelMonad Name e) => CoSinkable (Telescope label e) where
               scope''
 
   nameBinderListOf = telescopeBinders
+
+  type Payload (Telescope label e) = e
+
+  -- Each payload goes through the map reached before its own binder, so that
+  -- a substitution reaches the types of the steps.
+  withMappedPattern
+    :: forall m o n l r. Distinct o
+    => (forall x y z r'. Distinct z => Scope z -> NameBinder x y -> (forall z'. DExt z z' => NameBinder z z' -> r') -> r')
+    -> (forall x x' y y'. DExt y y' => m x y -> NameBinder x x' -> NameBinder y y' -> m x' y')
+    -> (forall x y y'. DExt y y' => m x y -> m x y')
+    -> (forall x y. Distinct y => Scope y -> m x y -> e x -> e y)
+    -> Scope o
+    -> m n o
+    -> Telescope label e n l
+    -> (forall o'. DExt o o' => m l o' -> Telescope label e o o' -> Scope o' -> r)
+    -> r
+  withMappedPattern refresh extend _sinkMap mapPayload = go
+    where
+      go :: forall n' l' o' r'. Distinct o'
+         => Scope o'
+         -> m n' o'
+         -> Telescope label e n' l'
+         -> (forall o''. DExt o' o'' => m l' o'' -> Telescope label e o' o'' -> Scope o'' -> r')
+         -> r'
+      go scope m TelescopeEmpty cont = cont m TelescopeEmpty scope
+      go scope m (TelescopeCons label payload binder rest) cont =
+        refresh scope binder $ \binder' ->
+          go (extendScope binder' scope) (extend m binder binder') rest $ \m' rest' scope'' ->
+            cont m' (TelescopeCons label (mapPayload scope m payload) binder' rest') scope''
 
 -- | Two telescopes unify when their binders line up and their payloads agree.
 --

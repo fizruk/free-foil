@@ -1736,6 +1736,157 @@ class CoSinkable (pattern :: S -> S -> Type) where
   nameBinderListOf = nameBinderListOfViaWithPattern
   {-# INLINE nameBinderListOf #-}
 
+  -- | The fields of a pattern indexed by its own scope, such as the type of
+  -- each step of a telescope. A pattern without them takes the default,
+  -- 'NoPayload'.
+  --
+  -- @since 0.7.0
+  type Payload pattern :: S -> Type
+  type Payload pattern = NoPayload
+
+  -- | Rebuild a pattern in an ambient scope through a map of the names
+  -- outside it, such as a renaming, a substitution or an environment.
+  --
+  -- 'withPattern' relates the pattern's scope @n@ to the ambient scope @o@
+  -- by the binders alone, so a payload that mentions a name of @n@ keeps it
+  -- ('PatternTransport'). That is right when @o@ extends @n@, and wrong when
+  -- the names of @n@ are mapped to something else, as 'substitute' maps
+  -- them. This method takes the map along: each payload goes through the
+  -- given function with the map reached /before/ its binder, and the map is
+  -- extended under each binder.
+  --
+  -- The arguments are how to refresh a binder against the ambient scope
+  -- (as 'withRefreshed' or 'withFresh' do), how to extend the map under a
+  -- binder, how to sink the map into a larger ambient scope, and how to map
+  -- a payload.
+  --
+  -- A pattern without payloads takes the default, which refreshes the
+  -- binders through 'withPattern', extends the map under each and never
+  -- calls the payload function. For a substitution it is what
+  -- 'withRefreshedPattern' does. A pattern with payloads sets 'Payload' and
+  -- implements this method by hand, mapping each payload in the scope before
+  -- its binder; the default requires @'Payload' pattern ~ 'NoPayload'@, so
+  -- that it cannot be taken by mistake.
+  --
+  -- @since 0.7.0
+  withMappedPattern
+    :: Distinct o
+    => (forall x y z r'. Distinct z => Scope z -> NameBinder x y -> (forall z'. DExt z z' => NameBinder z z' -> r') -> r')
+    -- ^ Refresh a binder against the ambient scope.
+    -> (forall x x' y y'. DExt y y' => m x y -> NameBinder x x' -> NameBinder y y' -> m x' y')
+    -- ^ Extend the map under a binder and its refreshed version.
+    -> (forall x y y'. DExt y y' => m x y -> m x y')
+    -- ^ Sink the map into a larger ambient scope.
+    -> (forall x y. Distinct y => Scope y -> m x y -> Payload pattern x -> Payload pattern y)
+    -- ^ Map a payload, in the scope before its binder.
+    -> Scope o
+    -- ^ Ambient scope.
+    -> m n o
+    -- ^ The map of the names outside the pattern.
+    -> pattern n l
+    -- ^ Pattern to rebuild.
+    -> (forall o'. DExt o o' => m l o' -> pattern o o' -> Scope o' -> r)
+    -- ^ Continuation, accepting the map extended under the pattern, the
+    -- rebuilt pattern, and the scope extended by it.
+    -> r
+  default withMappedPattern
+    :: (Payload pattern ~ NoPayload, Distinct o)
+    => (forall x y z r'. Distinct z => Scope z -> NameBinder x y -> (forall z'. DExt z z' => NameBinder z z' -> r') -> r')
+    -> (forall x x' y y'. DExt y y' => m x y -> NameBinder x x' -> NameBinder y y' -> m x' y')
+    -> (forall x y y'. DExt y y' => m x y -> m x y')
+    -> (forall x y. Distinct y => Scope y -> m x y -> Payload pattern x -> Payload pattern y)
+    -> Scope o
+    -> m n o
+    -> pattern n l
+    -> (forall o'. DExt o o' => m l o' -> pattern o o' -> Scope o' -> r)
+    -> r
+  withMappedPattern refresh extend sinkMap _mapPayload scope m pattern cont = withPattern
+    (\scope' binder k -> refresh scope' binder (\binder' -> k (MappedPattern (\m' -> extend m' binder binder')) binder'))
+    (MappedPattern sinkMap)
+    (\(MappedPattern f) (MappedPattern g) -> MappedPattern (g . f))
+    scope
+    pattern
+    (\(MappedPattern f) pattern' scope' -> cont (f m) pattern' scope')
+  {-# INLINE withMappedPattern #-}
+
+-- | The payload of a pattern that has none: it has no values.
+--
+-- @since 0.7.0
+data NoPayload (n :: S)
+
+-- | Auxiliary structure to accumulate the extensions of a map of names under
+-- the binders of a pattern. Used by the default 'withMappedPattern'.
+--
+-- @since 0.7.0
+newtype MappedPattern m n l o o' = MappedPattern (m n o -> m l o')
+
+-- | Payloads of type @t@ that a map of names to @e@ applies to, as 'rbind'
+-- applies one to a term. 'substitute' needs it for the payloads of its
+-- binders.
+--
+-- @since 0.7.0
+class BindPayload t e where
+  -- | Apply a map of names to a payload.
+  --
+  -- @since 0.7.0
+  bindPayload :: Distinct o => Scope o -> t n -> (Name n -> e o) -> t o
+
+-- | There is no payload to map.
+--
+-- @since 0.7.0
+instance BindPayload NoPayload e where
+  bindPayload _ payload _ = case payload of {}
+
+-- | Refresh a binder only if it clashes with the ambient scope, as
+-- 'withRefreshed' does. An argument to 'withMappedPattern'.
+--
+-- @since 0.7.0
+refreshBinder :: Distinct z => Scope z -> NameBinder x y -> (forall z'. DExt z z' => NameBinder z z' -> r) -> r
+refreshBinder scope binder = withRefreshed scope (nameOf binder)
+{-# INLINE refreshBinder #-}
+
+-- | Refresh every binder, as 'withFresh' does. An argument to
+-- 'withMappedPattern'.
+--
+-- @since 0.7.0
+freshBinder :: Distinct z => Scope z -> NameBinder x y -> (forall z'. DExt z z' => NameBinder z z' -> r) -> r
+freshBinder scope _ = withFresh scope
+{-# INLINE freshBinder #-}
+
+-- | Rebuild a pattern under a substitution: binders are refreshed where they
+-- clash with the ambient scope, the substitution is extended under them, and
+-- each payload goes through the given function with the substitution reached
+-- before its binder. For a pattern without payloads this is
+-- 'withRefreshedPattern' applied to the substitution.
+--
+-- @since 0.7.0
+withSubstitutedPattern
+  :: (Distinct o, CoSinkable pattern, Sinkable e, InjectName e)
+  => (forall x y. Distinct y => Scope y -> Substitution e x y -> Payload pattern x -> Payload pattern y)
+  -- ^ Substitute into a payload.
+  -> Scope o
+  -- ^ Ambient scope.
+  -> Substitution e n o
+  -- ^ The substitution of the names outside the pattern.
+  -> pattern n l
+  -- ^ Pattern to rebuild.
+  -> (forall o'. DExt o o' => Substitution e l o' -> pattern o o' -> Scope o' -> r)
+  -- ^ Continuation, accepting the substitution extended under the pattern,
+  -- the rebuilt pattern, and the scope extended by it.
+  -> r
+withSubstitutedPattern = withMappedPattern refreshBinder extendSubstitution sink
+{-# INLINE withSubstitutedPattern #-}
+
+-- | Extend a substitution under a binder and its refreshed version: the
+-- binder's name goes to the refreshed name.
+--
+-- @since 0.7.0
+extendSubstitution
+  :: (Sinkable e, InjectName e, DExt y y')
+  => Substitution e x y -> NameBinder x x' -> NameBinder y y' -> Substitution e x' y'
+extendSubstitution subst binder binder' = addRename (sink subst) binder (nameOf binder')
+{-# INLINE extendSubstitution #-}
+
 -- ** Transporting a pattern's payloads
 
 -- | The renaming that carries a pattern's payloads into the ambient scope of

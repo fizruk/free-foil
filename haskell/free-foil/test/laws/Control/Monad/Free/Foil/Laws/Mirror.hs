@@ -72,7 +72,7 @@ mapSubst f (UnsafeSubstitution env) = UnsafeSubstitution (fmap f env)
 mirrorSpec
   :: forall binder sig e.
      ( Bitraversable sig, ZipMatchK sig, UnifiablePattern binder, SinkableK binder
-     , Sinkable e, InjectName e, RelMonad Name e )
+     , Sinkable e, InjectName e, RelMonad Name e , BindPayload (Payload binder) (AST binder sig))
   => Mirror binder sig e
   -> (RenamingClass -> MirrorLaw -> Verdict)
   -> Spec
