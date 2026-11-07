@@ -70,6 +70,7 @@ import Control.Monad.Foil.Internal.ValidNameBinders
 -- >>> import qualified Data.Map as Map
 -- >>> import qualified Data.IntSet as IntSet
 -- >>> import Data.Bifunctor.Tannen
+-- >>> import Data.Functor.Const (Const (..))
 
 -- * Safe types and operations
 
@@ -2069,6 +2070,33 @@ lookupSubst (UnsafeSubstitution env) (UnsafeName name) =
     case IntMap.lookup name env of
         Just ex -> ex
         Nothing -> injectName (UnsafeName name)
+
+-- | Look a name up in a substitution, with one continuation for a name the
+-- substitution maps and another for a name it leaves as it is. Unlike
+-- 'lookupSubst', it needs no 'InjectName', and the caller can tell the two
+-- cases apart.
+--
+-- >>> withFresh emptyScope $ \x -> lookupSubstWith (const Nothing) (Just . getConst) (addSubst voidSubst x (Const 'a')) (nameOf x)
+-- Just 'a'
+--
+-- @since 0.7.0
+{-# INLINE lookupSubstWith #-}
+lookupSubstWith :: (Name o -> r) -> (e o -> r) -> Substitution e i o -> Name i -> r
+lookupSubstWith unmapped mapped (UnsafeSubstitution env) (UnsafeName name) =
+  case IntMap.lookup name env of
+    Just ex -> mapped ex
+    Nothing -> unmapped (UnsafeName name)
+
+-- | Map the values of a substitution. The names it leaves as they are stay
+-- so.
+--
+-- >>> withFresh emptyScope $ \x -> lookupSubstWith (const Nothing) (Just . getConst) (mapSubst (Const . succ . getConst) (addSubst voidSubst x (Const 'a'))) (nameOf x)
+-- Just 'b'
+--
+-- @since 0.7.0
+{-# INLINE mapSubst #-}
+mapSubst :: (e o -> e' o) -> Substitution e i o -> Substitution e' i o
+mapSubst f (UnsafeSubstitution env) = UnsafeSubstitution (IntMap.map f env)
 
 -- | Identity substitution maps all names to expresion-variables.
 --

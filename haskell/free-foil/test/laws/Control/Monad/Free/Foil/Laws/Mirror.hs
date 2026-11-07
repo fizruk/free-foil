@@ -22,7 +22,6 @@ import           Test.Hspec
 import           Test.QuickCheck
 
 import           Control.Monad.Foil
-import           Control.Monad.Foil.Internal  (Substitution (..))
 import           Control.Monad.Foil.Laws
 import           Control.Monad.Foil.Relative  (RelMonad, liftRM, rbind, rreturn)
 import           Control.Monad.Free.Foil      (AST, refreshAST)
@@ -61,10 +60,6 @@ data MirrorLaw
   | MirrorAlphaEquivRefresh
   | MirrorAlphaEquivAgrees
   deriving (Eq, Show)
-
--- | Convert the values of a substitution.
-mapSubst :: (e o -> e' o) -> Substitution e i o -> Substitution e' i o
-mapSubst f (UnsafeSubstitution env) = UnsafeSubstitution (fmap f env)
 
 -- | All the laws for a plain foil language, given a verdict for each law
 -- along each class of renamings (the class is 'Inclusions' for the laws

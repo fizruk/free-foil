@@ -86,6 +86,8 @@ module Control.Monad.Foil (
   -- * Safe substitutions
   Substitution,
   lookupSubst,
+  lookupSubstWith,
+  mapSubst,
   identitySubst,
   nullSubst,
   voidSubst,
