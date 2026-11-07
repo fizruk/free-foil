@@ -138,6 +138,10 @@ instance (Sinkable e, RelMonad Name e) => CoSinkable (Telescope label e) where
           go (extendScope binder' scope) (extend m binder binder') rest $ \m' rest' scope'' ->
             cont m' (TelescopeCons label (mapPayload scope m payload) binder' rest') scope''
 
+  foldMapPayloads _ TelescopeEmpty = mempty
+  foldMapPayloads f (TelescopeCons _ payload binder rest) = case assertDistinct binder of
+    Distinct -> f payload <> foldMapPayloads f rest
+
 -- | A telescope is sinkable through its 'coSinkabilityProof', so that it can
 -- be the binder of a term ('Control.Monad.Free.Foil.substitute' asks for
 -- 'SinkableK').

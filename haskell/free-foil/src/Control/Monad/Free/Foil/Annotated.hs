@@ -177,7 +177,7 @@ annotationOf = \case
 --
 -- @since 0.3.2
 freeVarsOfAnnotated
-  :: (Foil.Distinct n, Foil.CoSinkable binder, Bifoldable sig, Foldable ann)
+  :: (Foil.Distinct n, Foil.CoSinkable binder, Bifoldable sig, Foldable ann, Foil.PayloadSupport (Foil.Payload binder))
   => AnnAST binder ann sig n -> [Foil.Name n]
 freeVarsOfAnnotated = \case
   Var name -> [name]
@@ -186,11 +186,12 @@ freeVarsOfAnnotated = \case
       <> bifoldMap freeVarsOfAnnotatedScoped freeVarsOfAnnotated sig
 
 -- | The free variables of an annotated scoped term, including those inside
--- annotations.
+-- annotations and in the payloads of its binder.
 freeVarsOfAnnotatedScoped
-  :: (Foil.Distinct n, Foil.CoSinkable binder, Bifoldable sig, Foldable ann)
+  :: (Foil.Distinct n, Foil.CoSinkable binder, Bifoldable sig, Foldable ann, Foil.PayloadSupport (Foil.Payload binder))
   => AnnScopedAST binder ann sig n -> [Foil.Name n]
 freeVarsOfAnnotatedScoped (ScopedAST binder body) =
   case Foil.assertDistinct binder of
     Foil.Distinct ->
-      mapMaybe (Foil.unsinkNamePattern binder) (freeVarsOfAnnotated body)
+      mapMaybe (Foil.unsinkNamePattern binder)
+        (Foil.nameSetToList (Foil.payloadsSupport binder) <> freeVarsOfAnnotated body)

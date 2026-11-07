@@ -155,7 +155,7 @@ decodeStored (StoredTerm bytes) =
 --
 -- @since 0.4.0
 termSpellings
-  :: (Distinct n, CoSinkable binder, Bifoldable sig)
+  :: (Distinct n, CoSinkable binder, Bifoldable sig, PayloadSupport (Payload binder))
   => NameMap n ident      -- ^ Spellings of the top-level names.
   -> AST binder sig n
   -> Map RawName ident

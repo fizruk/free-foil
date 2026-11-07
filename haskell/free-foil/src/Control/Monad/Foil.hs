@@ -74,6 +74,8 @@ module Control.Monad.Foil (
   -- ** Mapping a pattern's payloads
   NoPayload,
   BindPayload(..),
+  PayloadSupport(..),
+  payloadsSupport,
   withSubstitutedPattern,
   refreshBinder,
   freshBinder,

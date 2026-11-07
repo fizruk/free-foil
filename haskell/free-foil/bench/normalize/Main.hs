@@ -75,6 +75,8 @@ instance Foil.CoSinkable Typed where
     refresh scope x $ \x' ->
       cont (extend m x x') (Typed (mapPayload scope m ty) x') (Foil.extendScope x' scope)
 
+  foldMapPayloads f (Typed ty _) = f ty
+
 instance Foil.SinkableK Typed where
   sinkabilityProofK = Foil.sinkabilityProofKViaCoSinkable
 

@@ -1810,6 +1810,25 @@ class CoSinkable (pattern :: S -> S -> Type) where
     (\(MappedPattern f) pattern' scope' -> cont (f m) pattern' scope')
   {-# INLINE withMappedPattern #-}
 
+  -- | Fold the payloads of a pattern, in the order of their binders, each in
+  -- the scope before its binder. A pattern without payloads takes the
+  -- default, which folds nothing; the default requires
+  -- @'Payload' pattern ~ 'NoPayload'@, as that of 'withMappedPattern' does.
+  --
+  -- @since 0.7.0
+  foldMapPayloads
+    :: (Monoid m, Distinct n)
+    => (forall x. Distinct x => Payload pattern x -> m)
+    -> pattern n l
+    -> m
+  default foldMapPayloads
+    :: (Payload pattern ~ NoPayload, Monoid m, Distinct n)
+    => (forall x. Distinct x => Payload pattern x -> m)
+    -> pattern n l
+    -> m
+  foldMapPayloads _ _ = mempty
+  {-# INLINE foldMapPayloads #-}
+
 -- | The payload of a pattern that has none: it has no values.
 --
 -- @since 0.7.0
@@ -1847,6 +1866,35 @@ class BindPayload t e where
 -- @since 0.7.0
 instance BindPayload NoPayload e where
   bindPayload _ payload _ = case payload of {}
+
+-- | Payloads of type @t@ whose support (the names that occur free in them)
+-- can be computed, as 'Control.Monad.Free.Foil.supportOf' computes that of a
+-- term. 'Control.Monad.Free.Foil.supportOf' needs it for the payloads of its
+-- binders.
+--
+-- @since 0.7.0
+class PayloadSupport t where
+  -- | The names that occur free in a payload.
+  --
+  -- @since 0.7.0
+  payloadSupport :: Distinct n => t n -> NameSet n
+
+-- | There is no payload, and so no support.
+--
+-- @since 0.7.0
+instance PayloadSupport NoPayload where
+  payloadSupport payload = case payload of {}
+
+-- | The names the payloads of a pattern use, in the scope the pattern
+-- extends to. The pattern's own names are among them when a payload uses an
+-- earlier binder; 'unsinkNameSet' removes them.
+--
+-- @since 0.7.0
+payloadsSupport
+  :: (CoSinkable pattern, PayloadSupport (Payload pattern), Distinct n)
+  => pattern n l -> NameSet l
+payloadsSupport = foldMapPayloads (\payload -> case payloadSupport payload of UnsafeNameSet names -> UnsafeNameSet names)
+{-# INLINE payloadsSupport #-}
 
 -- | Refresh a binder only if it clashes with the ambient scope, as
 -- 'withRefreshed' does. An argument to 'withMappedPattern'.

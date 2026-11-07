@@ -200,6 +200,13 @@ instance (Bifunctor sig, Foil.CoSinkable binder, Foil.SinkableK binder, Foil.Bin
   bindPayload = Foil.rbind
   substitutePayload = substitute
 
+-- | A payload of a binder is a term, whose support is that of the term.
+--
+-- @since 0.7.0
+instance (Foil.CoSinkable binder, Bifoldable sig, Foil.PayloadSupport (Foil.Payload binder))
+  => Foil.PayloadSupport (AST binder sig) where
+  payloadSupport = supportOf
+
 -- | A map of names as a function, for 'Foil.withMappedPattern'.
 --
 -- @since 0.7.0
@@ -1194,7 +1201,7 @@ convertFromASTWith fromSig fromVar makePattern makeScoped freeName boundName =
 --
 -- @since 0.4.0
 supportOf
-  :: (Foil.Distinct n, Foil.CoSinkable binder, Bifoldable sig)
+  :: (Foil.Distinct n, Foil.CoSinkable binder, Bifoldable sig, Foil.PayloadSupport (Foil.Payload binder))
   => AST binder sig n -> Foil.NameSet n
 supportOf = \case
   Var name  -> Foil.nameSetSingleton name
@@ -1204,11 +1211,11 @@ supportOf = \case
 --
 -- @since 0.4.0
 supportOfScopedAST
-  :: (Foil.Distinct n, Foil.CoSinkable binder, Bifoldable sig)
+  :: (Foil.Distinct n, Foil.CoSinkable binder, Bifoldable sig, Foil.PayloadSupport (Foil.Payload binder))
   => ScopedAST binder sig n -> Foil.NameSet n
 supportOfScopedAST (ScopedAST binder body) =
   case Foil.assertDistinct binder of
-    Foil.Distinct -> Foil.unsinkNameSet binder (supportOf body)
+    Foil.Distinct -> Foil.unsinkNameSet binder (supportOf body <> Foil.payloadsSupport binder)
 
 -- | Cut a term down to the scope of exactly the names it uses.
 --
@@ -1223,7 +1230,7 @@ supportOfScopedAST (ScopedAST binder body) =
 --
 -- @since 0.4.0
 withRelevantScope
-  :: (Foil.Distinct n, Foil.CoSinkable binder, Bifoldable sig)
+  :: (Foil.Distinct n, Foil.CoSinkable binder, Bifoldable sig, Foil.PayloadSupport (Foil.Payload binder))
   => AST binder sig n
   -> (forall m. (Foil.Ext m n, Foil.Distinct m)
       => Foil.Scope m -> AST binder sig m -> r)
@@ -1242,7 +1249,7 @@ withRelevantScope term cont =
 --
 -- @since 0.3.0
 unsinkAST
-  :: (Foil.DExt n l, Foil.CoSinkable binder, Bifoldable sig)
+  :: (Foil.DExt n l, Foil.CoSinkable binder, Bifoldable sig, Foil.PayloadSupport (Foil.Payload binder))
   => Foil.Scope n -> AST binder sig l -> Maybe (AST binder sig n)
 unsinkAST scope term
   | Foil.nameSetSubsetOfScope (supportOf term) scope = Just (unsafeCoerce term)
@@ -1255,7 +1262,7 @@ unsinkAST scope term
 --
 -- @since 0.3.0
 freeVarsOf
-  :: (Foil.Distinct n, Foil.CoSinkable binder, Bifoldable sig)
+  :: (Foil.Distinct n, Foil.CoSinkable binder, Bifoldable sig, Foil.PayloadSupport (Foil.Payload binder))
   => AST binder sig n -> [Foil.Name n]
 freeVarsOf = Foil.nameSetToList . supportOf
 
@@ -1263,6 +1270,6 @@ freeVarsOf = Foil.nameSetToList . supportOf
 --
 -- @since 0.3.0
 freeVarsOfScopedAST
-  :: (Foil.Distinct n, Foil.CoSinkable binder, Bifoldable sig)
+  :: (Foil.Distinct n, Foil.CoSinkable binder, Bifoldable sig, Foil.PayloadSupport (Foil.Payload binder))
   => ScopedAST binder sig n -> [Foil.Name n]
 freeVarsOfScopedAST = Foil.nameSetToList . supportOfScopedAST
