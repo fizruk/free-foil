@@ -147,7 +147,7 @@ substitute = goSubst
           Var name -> Foil.lookupSubst subst name
           Node node -> Node (bimap f go node)
         f (ScopedAST binder body) =
-          Foil.withSubstitutedPattern substitutePayload scope subst binder $ \subst' binder' scope' ->
+          Foil.withSubstitutedPattern Foil.substitutePayload scope subst binder $ \subst' binder' scope' ->
             let body' = goSubst scope' subst' body
             in ScopedAST binder' body'
 
@@ -171,20 +171,9 @@ substituteRefreshed scope subst = \case
   Node node -> Node (bimap f (substituteRefreshed scope subst) node)
   where
     f (ScopedAST binder body) =
-      Foil.withMappedPattern Foil.freshBinder Foil.extendSubstitution Foil.sink substitutePayload scope subst binder $ \subst' binder' scope' ->
+      Foil.withMappedPattern Foil.freshBinder Foil.extendSubstitution Foil.sink Foil.substitutePayload scope subst binder $ \subst' binder' scope' ->
         let body' = substituteRefreshed scope' subst' body
         in ScopedAST binder' body'
-
--- | Substitute into a payload of a binder, with the substitution reached
--- before the binder. The payload function that 'substitute' gives
--- 'Foil.withSubstitutedPattern'.
---
--- @since 0.7.0
-substitutePayload
-  :: (Foil.BindPayload t e, Foil.Distinct y, Foil.InjectName e)
-  => Foil.Scope y -> Foil.Substitution e x y -> t x -> t y
-substitutePayload scope subst payload = Foil.bindPayload scope payload (Foil.lookupSubst subst)
-{-# INLINE substitutePayload #-}
 
 -- | @'AST' binder sig@ is a monad relative to t'Control.Monad.Foil.Name'.
 --
@@ -209,6 +198,7 @@ instance (Bifunctor sig, Foil.CoSinkable binder, Foil.SinkableK binder, Foil.Bin
 instance (Bifunctor sig, Foil.CoSinkable binder, Foil.SinkableK binder, Foil.BindPayload (Foil.Payload binder) (AST binder sig))
   => Foil.BindPayload (AST binder sig) (AST binder sig) where
   bindPayload = Foil.rbind
+  substitutePayload = substitute
 
 -- | A map of names as a function, for 'Foil.withMappedPattern'.
 --

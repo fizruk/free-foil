@@ -27,7 +27,6 @@ import           Control.Monad.Foil.Relative     (RelMonad (..))
 import           Control.Monad.Foil.Telescope    (Telescope (..), telescopePayloads)
 import           Control.Monad.Free.Foil
 import           Control.Monad.Free.Foil.Example (ExprF (..), pattern AppE, pattern LamE)
-import qualified Control.Monad.Free.Foil.Internal as Internal
 
 -- | A binder with the type of its name.
 data Typed (n :: Foil.S) (l :: Foil.S) where
@@ -118,5 +117,5 @@ spec = describe "a substitution reaches the payloads of binders" $ do
       payloadOf (rbind scope term (Foil.lookupSubst subst)) `shouldBe` Just (render (Var b))
   it "the payloads of a telescope" $
     withExample $ \scope b _ tele subst ->
-      Foil.withSubstitutedPattern Internal.substitutePayload scope subst tele $ \_ tele' _ ->
+      Foil.withSubstitutedPattern Foil.substitutePayload scope subst tele $ \_ tele' _ ->
         map render (telescopePayloads tele') `shouldBe` [render (Var b)]

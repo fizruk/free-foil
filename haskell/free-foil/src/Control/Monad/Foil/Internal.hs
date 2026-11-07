@@ -1826,10 +1826,20 @@ newtype MappedPattern m n l o o' = MappedPattern (m n o -> m l o')
 --
 -- @since 0.7.0
 class BindPayload t e where
-  -- | Apply a map of names to a payload.
+  -- | Apply a map of names, given as a function, to a payload.
   --
   -- @since 0.7.0
   bindPayload :: Distinct o => Scope o -> t n -> (Name n -> e o) -> t o
+
+  -- | Apply a substitution to a payload. The default looks names up with
+  -- 'lookupSubst' and applies 'bindPayload'. A payload that is a term
+  -- substitutes as the term does, which can be cheaper: the instance for
+  -- terms is 'Control.Monad.Free.Foil.substitute' itself.
+  --
+  -- @since 0.7.0
+  substitutePayload :: (Distinct o, InjectName e) => Scope o -> Substitution e n o -> t n -> t o
+  substitutePayload scope subst payload = bindPayload scope payload (lookupSubst subst)
+  {-# INLINE substitutePayload #-}
 
 -- | There is no payload to map.
 --
