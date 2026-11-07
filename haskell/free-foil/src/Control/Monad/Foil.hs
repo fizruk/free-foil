@@ -58,6 +58,7 @@ module Control.Monad.Foil (
   withRestrictedScope,
   -- * Safe (co)sinking and renaming
   SinkableK(..),
+  sinkabilityProofKViaCoSinkable,
   Sinkable(..),
   CoSinkable(..),
   HasNameBinders(getNameBinders),

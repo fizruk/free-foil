@@ -138,6 +138,12 @@ instance (Sinkable e, RelMonad Name e) => CoSinkable (Telescope label e) where
           go (extendScope binder' scope) (extend m binder binder') rest $ \m' rest' scope'' ->
             cont m' (TelescopeCons label (mapPayload scope m payload) binder' rest') scope''
 
+-- | A telescope is sinkable through its 'coSinkabilityProof', so that it can
+-- be the binder of a term ('Control.Monad.Free.Foil.substitute' asks for
+-- 'SinkableK').
+instance (Sinkable e, RelMonad Name e) => SinkableK (Telescope label e) where
+  sinkabilityProofK = sinkabilityProofKViaCoSinkable
+
 -- | Two telescopes unify when their binders line up and their payloads agree.
 --
 -- Labels are ignored, which is what α-equivalence should do with a label: a

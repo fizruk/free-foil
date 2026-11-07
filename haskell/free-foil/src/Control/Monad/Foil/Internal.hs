@@ -2502,6 +2502,32 @@ class SinkableK (f :: S -> k) where
     gsinkabilityProofK rename (fromK @_ @f e) $ \rename' e' ->
       cont rename' (toK @_ @f e')
 
+-- | 'sinkabilityProofK' for a pattern, from its 'coSinkabilityProof': the
+-- outer scope is renamed by the first renaming (or kept, where it is
+-- skipped), the inner scope by the renaming 'coSinkabilityProof' extends it
+-- to. For a pattern that cannot derive 'SinkableK', such as one whose
+-- payloads are indexed by its scope ('Payload'):
+--
+-- > instance SinkableK Typed where
+-- >   sinkabilityProofK = sinkabilityProofKViaCoSinkable
+--
+-- @since 0.7.0
+sinkabilityProofKViaCoSinkable
+  :: forall pattern as bs r. CoSinkable pattern
+  => RenamingsK as bs
+  -> pattern :@@: as
+  -> (forall cs. RenamingsK as cs -> pattern :@@: cs -> r)
+  -> r
+sinkabilityProofKViaCoSinkable renames pattern cont = case renames of
+  RCons rename (RCons _ RNil) ->
+    coSinkabilityProof rename pattern $ \rename' pattern' -> cont (RCons rename (RCons rename' RNil)) pattern'
+  RCons rename (RSkip RNil) ->
+    coSinkabilityProof rename pattern $ \rename' pattern' -> cont (RCons rename (RCons rename' RNil)) pattern'
+  RSkip (RCons _ RNil) ->
+    coSinkabilityProof id pattern $ \rename' pattern' -> cont (RCons id (RCons rename' RNil)) pattern'
+  RSkip (RSkip RNil) ->
+    coSinkabilityProof id pattern $ \rename' pattern' -> cont (RCons id (RCons rename' RNil)) pattern'
+
 -- | Move a value between two scope index lists reached from a common one, as
 -- a coercion.
 --
